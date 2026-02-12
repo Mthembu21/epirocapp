@@ -44,6 +44,8 @@ export default function TechnicianPortal() {
         end_time: '17:00',
         notes: ''
     });
+
+    const [subtaskDraftProgress, setSubtaskDraftProgress] = useState({});
     const [reportData, setReportData] = useState({
         work_completed: '',
         has_bottleneck: false,
@@ -130,15 +132,25 @@ export default function TechnicianPortal() {
         enabled: !!user?.id
     });
 
-    const pendingJobs = myJobs.filter(j => !j.confirmed_by_technician && j.status === 'pending_confirmation');
-    const activeJobs = myJobs.filter(j => j.confirmed_by_technician && !['completed', 'pending_confirmation'].includes(j.status));
+    const getMyAssignment = (job) => {
+        const assignments = job?.technicians || [];
+        return assignments.find(t => String(t.technician_id) === String(user?.id)) || null;
+    };
+
+    const pendingJobs = myJobs.filter(j => {
+        const mine = getMyAssignment(j);
+        return !!mine && !mine.confirmed_by_technician && j.status === 'pending_confirmation';
+    });
+    const activeJobs = myJobs.filter(j => {
+        const mine = getMyAssignment(j);
+        return !!mine && mine.confirmed_by_technician && !['completed', 'pending_confirmation'].includes(j.status);
+    });
 
     const confirmJobMutation = useMutation({
-        mutationFn: (jobId) => base44.entities.Job.update(jobId, {
-            confirmed_by_technician: true,
-            confirmed_date: new Date().toISOString(),
-            status: 'active'
-        }),
+        mutationFn: (jobId) => {
+            const job = myJobs.find(j => j.id === jobId);
+            return base44.entities.Job.confirmByJobNumber(job?.job_number, user?.id);
+        },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] })
     });
 
@@ -193,7 +205,7 @@ export default function TechnicianPortal() {
     
     // Check if this job already has an entry for today
     const hasEntryForJobOnDate = myEntries.some(
-        entry => entry.date === formData.date && entry.job_id === formData.job_id
+        entry => entry.date === formData.date && entry.job_number === selectedJob?.job_number
     );
 
     const handleSubmit = (e) => {
@@ -215,7 +227,7 @@ export default function TechnicianPortal() {
             technician_name: user.name,
             date: formData.date,
             day_of_week: calculations.dayOfWeek,
-            job_id: formData.job_id,
+            job_id: job?.job_number || '',
             job_number: job?.job_number || '',
             hr_hours: entriesForDate.length === 0 ? calculations.hrHours : 0, // HR hours only on first entry of day
             productive_hours: actualProductiveHours,
@@ -228,7 +240,7 @@ export default function TechnicianPortal() {
         };
 
         const report = reportData.work_completed ? {
-            job_id: formData.job_id,
+            job_id: job?.job_number || '',
             job_number: job?.job_number || '',
             technician_id: user.id,
             technician_name: user.name,
@@ -623,12 +635,65 @@ export default function TechnicianPortal() {
                                                    </div>
                                                </div>
                                                 <div className="mb-2">
-                                                    <Progress value={job.progress_percentage || 0} className="h-2" />
+                                                    <Progress value={job.aggregated_progress_percentage ?? job.progress_percentage ?? 0} className="h-2" />
                                                     <div className="flex justify-between text-xs text-slate-500 mt-1">
-                                                        <span>{(job.progress_percentage || 0).toFixed(0)}% complete</span>
+                                                        <span>{(job.aggregated_progress_percentage ?? job.progress_percentage ?? 0).toFixed(0)}% complete</span>
                                                         <span>{(job.remaining_hours || job.allocated_hours).toFixed(1)}h remaining</span>
                                                     </div>
                                                 </div>
+
+                                                {(job.subtasks || []).length > 0 && (
+                                                    <div className="mt-3 space-y-2">
+                                                        <p className="text-sm font-medium text-slate-700">Subtasks</p>
+                                                        <div className="space-y-2">
+                                                            {(job.subtasks || []).map((st) => {
+                                                                const subtaskId = st.id || st._id;
+                                                                const myProgress = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(user.id))?.progress_percentage || 0;
+                                                                const draftKey = `${job.job_number}:${subtaskId}`;
+                                                                const draftValue = subtaskDraftProgress[draftKey];
+                                                                const shownValue = typeof draftValue === 'number' ? draftValue : myProgress;
+                                                                return (
+                                                                    <div key={subtaskId} className="bg-slate-50 rounded p-3">
+                                                                        <div className="flex items-center justify-between gap-2">
+                                                                            <div className="min-w-0">
+                                                                                <p className="text-sm font-semibold text-slate-800 truncate">{st.title}</p>
+                                                                                <p className="text-xs text-slate-500">My progress: {Number(myProgress).toFixed(0)}%</p>
+                                                                            </div>
+                                                                            <Input
+                                                                                type="number"
+                                                                                min="0"
+                                                                                max="100"
+                                                                                step="1"
+                                                                                value={shownValue}
+                                                                                onChange={(e) => {
+                                                                                    const next = Number(e.target.value);
+                                                                                    setSubtaskDraftProgress(prev => ({ ...prev, [draftKey]: next }));
+                                                                                }}
+                                                                                onBlur={() => {
+                                                                                    const next = subtaskDraftProgress[draftKey];
+                                                                                    if (typeof next !== 'number') return;
+                                                                                    base44.entities.Job.subtasks.setProgress(job.job_number, subtaskId, {
+                                                                                        technician_id: user.id,
+                                                                                        progress_percentage: next
+                                                                                    }).then(() => {
+                                                                                        queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+                                                                                    }).catch(() => {}).finally(() => {
+                                                                                        setSubtaskDraftProgress(prev => {
+                                                                                            const copy = { ...prev };
+                                                                                            delete copy[draftKey];
+                                                                                            return copy;
+                                                                                        });
+                                                                                    });
+                                                                                }}
+                                                                                className="w-24"
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="grid grid-cols-3 gap-2 text-sm">
                                                     <div className="bg-slate-50 rounded p-2 text-center">
                                                         <p className="text-slate-500 text-xs">Allocated</p>

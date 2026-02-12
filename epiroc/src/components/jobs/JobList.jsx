@@ -67,12 +67,24 @@ export default function JobList({ jobs, onDelete, onReassign, technicians = [], 
                             {jobs.map((job) => {
                                 const config = statusConfig[job.status] || statusConfig.active;
                                 const StatusIcon = config.icon;
+                                const progress = job.aggregated_progress_percentage ?? job.progress_percentage ?? 0;
+                                const technicianNames = (job.technicians && job.technicians.length > 0)
+                                    ? job.technicians.map(t => t.technician_name).filter(Boolean).join(', ')
+                                    : (job.assigned_technician_name || '');
+                                const perTechProgress = (job.technicians && job.technicians.length > 0 && job.progress_by_technician)
+                                    ? job.technicians
+                                        .map(t => {
+                                            const pct = job.progress_by_technician?.[String(t.technician_id)] ?? 0;
+                                            return `${t.technician_name || 'Technician'}: ${Number(pct).toFixed(0)}%`;
+                                        })
+                                        .join(' | ')
+                                    : '';
                                 
                                 return (
                                     <TableRow key={job.id}>
                                         <TableCell className="font-mono font-semibold">{job.job_number}</TableCell>
                                         <TableCell className="max-w-[200px] truncate">{job.description}</TableCell>
-                                        <TableCell>{job.assigned_technician_name}</TableCell>
+                                        <TableCell className="max-w-[200px] truncate" title={technicianNames}>{technicianNames}</TableCell>
                                         <TableCell>
                                             <Badge className={`${config.color} flex items-center gap-1 w-fit`}>
                                                 <StatusIcon className="w-3 h-3" />
@@ -86,8 +98,13 @@ export default function JobList({ jobs, onDelete, onReassign, technicians = [], 
                                         </TableCell>
                                         <TableCell>
                                             <div className="w-24">
-                                                <Progress value={job.progress_percentage || 0} className="h-2" />
-                                                <p className="text-xs text-center mt-1">{(job.progress_percentage || 0).toFixed(0)}%</p>
+                                                <Progress value={progress} className="h-2" />
+                                                <p className="text-xs text-center mt-1">{Number(progress).toFixed(0)}%</p>
+                                                {!!perTechProgress && (
+                                                    <p className="text-[10px] text-slate-500 mt-1 text-center" title={perTechProgress}>
+                                                        {perTechProgress}
+                                                    </p>
+                                                )}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right font-medium">{job.allocated_hours}h</TableCell>

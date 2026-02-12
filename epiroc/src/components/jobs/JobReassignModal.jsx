@@ -59,7 +59,7 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
                         <p className="text-sm text-blue-600">Currently Assigned To</p>
                         <p className="font-semibold text-blue-800">{job?.assigned_technician_name}</p>
                         <p className="text-xs text-blue-600 mt-1">
-                            Progress: {(job?.progress_percentage || 0).toFixed(0)}% | 
+                            Progress: {(job?.aggregated_progress_percentage ?? job?.progress_percentage ?? 0).toFixed(0)}% | 
                             Consumed: {(job?.consumed_hours || 0).toFixed(1)}h
                         </p>
                     </div>

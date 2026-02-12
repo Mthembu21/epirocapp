@@ -79,6 +79,28 @@ class APIClient {
                 }
                 return this.request('/jobs');
             },
+            getByJobNumber: (jobNumber) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}`),
+            confirmByJobNumber: (jobNumber, technician_id) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/confirm`, {
+                method: 'PUT',
+                body: JSON.stringify({ technician_id })
+            }),
+            subtasks: {
+                add: (jobNumber, data) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks`, {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                }),
+                update: (jobNumber, subtaskId, data) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks/${subtaskId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                }),
+                delete: (jobNumber, subtaskId) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks/${subtaskId}`, {
+                    method: 'DELETE'
+                }),
+                setProgress: (jobNumber, subtaskId, data) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks/${subtaskId}/progress`, {
+                    method: 'PUT',
+                    body: JSON.stringify(data)
+                })
+            },
             create: (data) => this.request('/jobs', {
                 method: 'POST',
                 body: JSON.stringify(data)
