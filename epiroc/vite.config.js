@@ -25,6 +25,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    sourcemap: true,
+  },
   server: {
     port: 5175, // your preferred dev port
     proxy: {

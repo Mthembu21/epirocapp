@@ -147,9 +147,3 @@ class APIClient {
 
 export const apiClient = new APIClient();
 export { apiClient as base44 };
-
-
-
-
-src/api/apiClient.js
-
