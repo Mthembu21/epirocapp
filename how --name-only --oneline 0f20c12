@@ -1,0 +1,41 @@
+[33mcommit 0f20c12aa004a0fd55865cc69b82c80ca8062747[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Fri Feb 13 13:54:12 2026 +0200
+
+    Fix frontend build crash and enable sourcemaps
+
+[33mcommit 4e46b9547a410432c58109b4daab76b95021eed3[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Thu Feb 12 14:31:25 2026 +0200
+
+    Adjusted the Api To call the backENd withou cookies
+
+[33mcommit af5d540f44ad2637e5b463a24e57d0f2ebf94955[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Thu Feb 12 10:22:45 2026 +0200
+
+    fix the url
+
+[33mcommit c1f357c736decdfae6d9dd86bd8d35b0fe51a3b3[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Thu Feb 12 09:58:33 2026 +0200
+
+    Created a sub task on technician
+
+[33mcommit 680c82f1d63f8e0dacc0026d66f93ebc11849287[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Wed Feb 11 09:54:28 2026 +0200
+
+    Updating the Package.json file
+
+[33mcommit f5842d48dd6fe50399ba84e1fb38341be60d4c7c[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Mon Feb 9 15:21:43 2026 +0200
+
+    `Updated VITE_API_URL from http to https`
+
+[33mcommit 1b8c6adc9c2c0ca8c9f0c8089b888cfb63b4b088[m
+Author: Sabelo Mthembu <tembesabelo7@gmail.com>
+Date:   Mon Feb 9 13:04:24 2026 +0200
+
+    first commit
