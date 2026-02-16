@@ -1,4 +1,6 @@
 // src/utils/index.js
 export const createPageUrl = (pageName) => {
-  return `/${pageName}`;
+  if (!pageName || pageName === '/') return '/';
+  const normalized = String(pageName).replace(/^\/+/, '');
+  return `/#/${normalized}`;
 };
