@@ -24,7 +24,10 @@ export default function WorkshopLogin() {
         setError('');
 
         try {
-            const result = await base44.auth.technicianLogin(techForm.name, techForm.employee_id);
+            const result = await base44.auth.technicianLogin(
+                techForm.name.trim(),
+                techForm.employee_id.trim()
+            );
             localStorage.setItem('epiroc_user', JSON.stringify(result.user));
             window.location.href = createPageUrl('TechnicianPortal');
         } catch (err) {

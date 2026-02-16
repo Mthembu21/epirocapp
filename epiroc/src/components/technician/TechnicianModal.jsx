@@ -16,6 +16,9 @@ export default function TechnicianModal({ onAdd, isOpen, setIsOpen }) {
         e.preventDefault();
         onAdd({
             ...formData,
+            name: formData.name.trim(),
+            employee_id: formData.employee_id.trim(),
+            department: formData.department.trim(),
             status: 'active'
         });
         setFormData({ name: '', employee_id: '', department: '' });
@@ -47,12 +50,13 @@ export default function TechnicianModal({ onAdd, isOpen, setIsOpen }) {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="employee_id">Employee ID</Label>
+                        <Label htmlFor="employee_id">Employee ID *</Label>
                         <Input
                             id="employee_id"
                             placeholder="e.g., EMP001"
                             value={formData.employee_id}
                             onChange={(e) => setFormData(prev => ({ ...prev, employee_id: e.target.value }))}
+                            required
                             className="border-slate-300"
                         />
                     </div>
