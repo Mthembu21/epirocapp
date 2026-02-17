@@ -150,11 +150,11 @@ export default function TechnicianPortal() {
 
     const pendingJobs = myJobs.filter(j => {
         const mine = getMyAssignment(j);
-        return !!mine && !mine.confirmed_by_technician && j.status === 'pending_confirmation';
+        return !!mine && !mine.confirmed_by_technician && j.status !== 'completed';
     });
     const activeJobs = myJobs.filter(j => {
         const mine = getMyAssignment(j);
-        return !!mine && mine.confirmed_by_technician && !['completed', 'pending_confirmation'].includes(j.status);
+        return !!mine && mine.confirmed_by_technician && j.status !== 'completed';
     });
 
     const confirmJobMutation = useMutation({
