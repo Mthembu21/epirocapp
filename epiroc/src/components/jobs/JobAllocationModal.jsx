@@ -139,6 +139,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
                     <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800">
                         <p className="font-medium">Note:</p>
                         <p>Job becomes active only after technician confirms/accepts it.</p>
+                        <p>If the Job Number already exists, the selected technician will be added to the same job.</p>
                     </div>
 
                     <Button type="submit" className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-800">
