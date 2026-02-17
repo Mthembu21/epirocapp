@@ -80,6 +80,10 @@ class APIClient {
                 return this.request('/jobs');
             },
             getByJobNumber: (jobNumber) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}`),
+            assignTechnicianByJobNumber: (jobNumber, technician_id, technician_name) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/assign-technician`, {
+                method: 'PUT',
+                body: JSON.stringify({ technician_id, technician_name })
+            }),
             confirmByJobNumber: (jobNumber, technician_id) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/confirm`, {
                 method: 'PUT',
                 body: JSON.stringify({ technician_id })

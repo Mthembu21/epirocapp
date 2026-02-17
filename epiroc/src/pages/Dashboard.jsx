@@ -130,14 +130,12 @@ export default function Dashboard() {
                 reason: reason || ''
             });
 
-            return base44.entities.Job.update(jobId, {
-                assigned_technician_id: newTechnicianId,
-                assigned_technician_name: newTechnicianName,
-                confirmed_by_technician: false,
-                confirmed_date: null,
-                status: 'pending_confirmation',
-                reassignment_history: reassignmentHistory
-            });
+            // Assign an additional technician to the same job (do not create a new job)
+            return base44.entities.Job.assignTechnicianByJobNumber(
+                job?.job_number,
+                newTechnicianId,
+                newTechnicianName
+            );
         },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });

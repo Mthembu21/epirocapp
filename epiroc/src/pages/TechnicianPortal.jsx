@@ -54,9 +54,10 @@ export default function TechnicianPortal() {
     });
     const [calculations, setCalculations] = useState({
         dayOfWeek: '',
-        hrHours: 8,
-        productiveHours: 7,
-        normalHours: 8,
+        totalWorkedHours: 0,
+        hrHours: 0,
+        productiveHours: 0,
+        normalHours: 0,
         overtimeHours: 0,
         overtimeRate: 1.5,
         weightedOvertime: 0
@@ -101,15 +102,23 @@ export default function TechnicianPortal() {
 
         const [startH, startM] = formData.start_time.split(':').map(Number);
         const [endH, endM] = formData.end_time.split(':').map(Number);
-        const totalWorked = (endH + endM / 60) - (startH + startM / 60);
+
+        let totalMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+        if (totalMinutes < 0) totalMinutes += 24 * 60; // Handle overnight shifts
+
+        const totalWorked = Math.round((totalMinutes / 60) * 100) / 100;
+        const hrHours = Math.min(totalWorked, hr);
+        const productiveHours = Math.min(totalWorked, productive);
+
         const overtimeHours = Math.max(0, totalWorked - hr);
         const overtimeRate = dayIndex === 0 ? 2 : 1.5;
 
         setCalculations({
             dayOfWeek: dayName,
-            hrHours: hr,
-            productiveHours: productive,
-            normalHours: hr,
+            totalWorkedHours: totalWorked,
+            hrHours: Math.round(hrHours * 100) / 100,
+            productiveHours: Math.round(productiveHours * 100) / 100,
+            normalHours: Math.round(hrHours * 100) / 100,
             overtimeHours: Math.round(overtimeHours * 100) / 100,
             overtimeRate,
             weightedOvertime: Math.round(overtimeHours * overtimeRate * 100) / 100
@@ -219,6 +228,7 @@ export default function TechnicianPortal() {
         // Limit productive hours to remaining hours for the day
         const actualProductiveHours = Math.min(
             calculations.productiveHours,
+            calculations.totalWorkedHours,
             remainingProductiveHoursForDay
         );
 

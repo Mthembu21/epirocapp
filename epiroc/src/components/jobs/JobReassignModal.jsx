@@ -44,7 +44,7 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <ArrowRightLeft className="w-5 h-5 text-yellow-500" />
-                        Reassign Job
+                        Assign Additional Technician
                     </DialogTitle>
                 </DialogHeader>
 
@@ -65,7 +65,7 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
                     </div>
 
                     <div className="space-y-2">
-                        <Label>Reassign To</Label>
+                        <Label>Assign To</Label>
                         <Select value={selectedTechnician} onValueChange={setSelectedTechnician}>
                             <SelectTrigger>
                                 <SelectValue placeholder="Select technician" />
@@ -101,7 +101,7 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
                         disabled={!selectedTechnician || isLoading}
                         className="bg-yellow-400 hover:bg-yellow-500 text-slate-800"
                     >
-                        {isLoading ? 'Reassigning...' : 'Reassign Job'}
+                        {isLoading ? 'Assigning...' : 'Assign Technician'}
                     </Button>
                 </DialogFooter>
             </DialogContent>
