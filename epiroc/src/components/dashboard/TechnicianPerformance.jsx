@@ -39,14 +39,16 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
         );
 
         // Job Efficiency = (Allocated Hours / Hours Utilized) × 100
-        const jobEfficiency = totalHoursUtilized > 0 
+        const jobEfficiencyRaw = totalHoursUtilized > 0 
             ? (totalAllocatedHours / totalHoursUtilized) * 100 
             : 0;
+        const jobEfficiency = Math.max(0, Math.min(100, jobEfficiencyRaw));
 
         // Productivity Ratio = Total Productive Hours / Total HR Hours
-        const productivityRatio = totalHRHours > 0 
+        const productivityRatioRaw = totalHRHours > 0 
             ? (totalProductiveHours / totalHRHours) * 100 
             : 0;
+        const productivityRatio = Math.max(0, Math.min(100, productivityRatioRaw));
 
         const activeJobs = jobs.filter(j => 
             j.assigned_technician_id === tech.id && 

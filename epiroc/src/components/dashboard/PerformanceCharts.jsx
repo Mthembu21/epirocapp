@@ -49,12 +49,13 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         const totalUtilized = completedJobs.reduce((sum, j) => sum + (j.total_hours_utilized || j.consumed_hours || 0), 0);
         const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
         
-        const efficiency = totalUtilized > 0 ? (totalAllocated / totalUtilized) * 100 : 0;
+        const efficiencyRaw = totalUtilized > 0 ? (totalAllocated / totalUtilized) * 100 : 0;
+        const efficiency = Math.max(0, Math.min(100, efficiencyRaw));
         
         return {
             name: tech.name?.split(' ')[0] || 'Unknown',
             fullName: tech.name,
-            efficiency: Math.min(efficiency, 150),
+            efficiency,
             completedJobs: completedJobs.length,
             activeJobs: techJobs.filter(j => ['active', 'in_progress'].includes(j.status)).length,
             productiveHours: totalProductiveHours,
@@ -160,7 +161,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                             <ResponsiveContainer width="100%" height={300}>
                                 <BarChart data={technicianEfficiency} layout="vertical">
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                    <XAxis type="number" domain={[0, 150]} tick={{ fill: '#64748b', fontSize: 12 }} />
+                                    <XAxis type="number" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 12 }} />
                                     <YAxis dataKey="name" type="category" width={80} tick={{ fill: '#64748b', fontSize: 12 }} />
                                     <Tooltip
                                         formatter={(value) => [`${value.toFixed(1)}%`, 'Efficiency']}

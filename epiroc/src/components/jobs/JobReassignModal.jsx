@@ -10,8 +10,11 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
     const [selectedTechnician, setSelectedTechnician] = useState('');
     const [reason, setReason] = useState('');
 
+    const assignedIds = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
+    if (job?.assigned_technician_id) assignedIds.add(String(job.assigned_technician_id));
+
     const availableTechnicians = technicians.filter(
-        t => t.id !== job?.assigned_technician_id && t.status === 'active'
+        t => !assignedIds.has(String(t.id)) && t.status === 'active'
     );
 
     const handleSubmit = () => {
