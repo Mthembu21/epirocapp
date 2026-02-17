@@ -27,6 +27,8 @@ const getHoursForDay = (dayIndex) => {
     return { hr: 8, productive: 7 };
 };
 
+const LUNCH_BREAK_HOURS = 1;
+
 const bottleneckCategories = [
     { value: 'waiting_for_parts', label: 'Waiting for Parts' },
     { value: 'equipment_failure', label: 'Equipment Failure' },
@@ -108,7 +110,7 @@ export default function TechnicianPortal() {
 
         const totalWorked = Math.round((totalMinutes / 60) * 100) / 100;
         const hrHours = Math.min(totalWorked, hr);
-        const productiveHours = Math.min(totalWorked, productive);
+        const productiveHours = Math.max(0, Math.min(hrHours - LUNCH_BREAK_HOURS, productive));
 
         const overtimeHours = Math.max(0, totalWorked - hr);
         const overtimeRate = dayIndex === 0 ? 2 : 1.5;
