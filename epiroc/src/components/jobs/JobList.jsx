@@ -4,9 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Briefcase, Trash2, AlertTriangle, Clock, CheckCircle2, XCircle, ArrowRightLeft } from 'lucide-react';
+import { Briefcase, Trash2, AlertTriangle, Clock, CheckCircle2, XCircle, ArrowRightLeft, Plus } from 'lucide-react';
 
 import JobReassignModal from './JobReassignModal';
+import JobAddTechnicianModal from './JobAddTechnicianModal';
 
 const statusConfig = {
     pending_confirmation: { label: 'Pending', color: 'bg-slate-100 text-slate-700', icon: Clock },
@@ -17,14 +18,22 @@ const statusConfig = {
     over_allocated: { label: 'Over-Allocated', color: 'bg-orange-100 text-orange-700', icon: XCircle }
 };
 
-export default function JobList({ jobs, onDelete, onReassign, technicians = [], showActions = true, isReassigning = false }) {
+export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false }) {
     const [reassignJob, setReassignJob] = useState(null);
+    const [addTechJob, setAddTechJob] = useState(null);
 
     const handleReassign = (data) => {
         if (onReassign) {
             onReassign(data);
         }
         setReassignJob(null);
+    };
+
+    const handleAddTechnician = (data) => {
+        if (onAddTechnician) {
+            onAddTechnician(data);
+        }
+        setAddTechJob(null);
     };
 
     if (!jobs || jobs.length === 0) {
@@ -120,6 +129,17 @@ export default function JobList({ jobs, onDelete, onReassign, technicians = [], 
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
+                                                            onClick={() => setAddTechJob(job)}
+                                                            className="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                                                            title="Add Technician"
+                                                        >
+                                                            <Plus className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
+                                                    {job.status !== 'completed' && technicians.length > 0 && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
                                                             onClick={() => setReassignJob(job)}
                                                             className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
                                                             title="Reassign Job"
@@ -154,6 +174,17 @@ export default function JobList({ jobs, onDelete, onReassign, technicians = [], 
                     onClose={() => setReassignJob(null)}
                     onReassign={handleReassign}
                     isLoading={isReassigning}
+                />
+            )}
+
+            {addTechJob && (
+                <JobAddTechnicianModal
+                    job={addTechJob}
+                    technicians={technicians}
+                    isOpen={!!addTechJob}
+                    onClose={() => setAddTechJob(null)}
+                    onSubmit={handleAddTechnician}
+                    isLoading={isAddingTechnician}
                 />
             )}
         </Card>

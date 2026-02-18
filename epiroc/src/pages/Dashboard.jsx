@@ -141,6 +141,31 @@ export default function Dashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });
 
+    const addTechnicianMutation = useMutation({
+        mutationFn: async ({ jobId, jobNumber, technicianId, technicianName, allocated_hours }) => {
+            const addRes = await base44.entities.Job.assignTechnicianByJobNumber(
+                jobNumber,
+                technicianId,
+                technicianName
+            );
+
+            const desiredAllocated = allocated_hours === '' || typeof allocated_hours === 'undefined' || allocated_hours === null
+                ? null
+                : Number(allocated_hours);
+
+            if (desiredAllocated !== null && !Number.isNaN(desiredAllocated)) {
+                const current = jobs.find(j => j.id === jobId);
+                const currentAllocated = Number(current?.allocated_hours);
+                if (!Number.isNaN(currentAllocated) && desiredAllocated !== currentAllocated) {
+                    await base44.entities.Job.update(jobId, { allocated_hours: desiredAllocated });
+                }
+            }
+
+            return addRes;
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    });
+
     const activeJobs = jobs.filter(j => ['active', 'in_progress'].includes(j.status));
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
@@ -348,7 +373,9 @@ export default function Dashboard() {
                             technicians={technicians}
                             onDelete={deleteJobMutation.mutate}
                             onReassign={reassignJobMutation.mutate}
+                            onAddTechnician={addTechnicianMutation.mutate}
                             isReassigning={reassignJobMutation.isPending}
+                            isAddingTechnician={addTechnicianMutation.isPending}
                         />
                     </TabsContent>
 
