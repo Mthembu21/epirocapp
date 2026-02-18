@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, parseISO, getDay } from 'date-fns';
+import { format, parseISO, getDay, isSameDay } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -204,35 +204,43 @@ export default function TechnicianPortal() {
 
 
     // Calculate total productive hours logged for the selected date
-    const entriesForDate = myEntries.filter(entry => entry.date === formData.date);
-    const totalProductiveHoursForDate = entriesForDate.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
+    const selectedDateObj = formData.date ? parseISO(formData.date) : null;
+    const entriesForDate = selectedDateObj
+        ? myEntries.filter(entry => entry?.date && isSameDay(parseISO(entry.date), selectedDateObj))
+        : [];
+    const totalProductiveHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.productive_hours) || 0), 0);
+    const totalHrHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.hr_hours) || 0), 0);
     const selectedDayIndex = formData.date ? getDay(parseISO(formData.date)) : 1;
+    const maxHrForDay = getHoursForDay(selectedDayIndex).hr;
     const maxProductiveForDay = getHoursForDay(selectedDayIndex).productive;
     const remainingProductiveHoursForDay = Math.max(0, maxProductiveForDay - totalProductiveHoursForDate);
+    const remainingHrHoursForDay = Math.max(0, maxHrForDay - totalHrHoursForDate);
     const hasMaxedOutDay = remainingProductiveHoursForDay <= 0;
 
     const selectedJob = myJobs.find(j => j.id === formData.job_id);
-    const exceedsJobHours = selectedJob && (selectedJob.remaining_hours || 0) < calculations.productiveHours;
+    const selectedJobRemainingHours = Number(selectedJob?.remaining_hours || 0);
     
-    // Check if this job already has an entry for today
-    const hasEntryForJobOnDate = myEntries.some(
-        entry => entry.date === formData.date && entry.job_number === selectedJob?.job_number
-    );
-
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!user || !formData.job_id) return;
         if (hasMaxedOutDay) return;
-        if (hasEntryForJobOnDate) return;
 
         const job = myJobs.find(j => j.id === formData.job_id);
         
-        // Limit productive hours to remaining hours for the day
+        // Limit hours to remaining hours for the day
+        const actualHrHours = Math.min(
+            calculations.hrHours,
+            calculations.totalWorkedHours,
+            remainingHrHoursForDay
+        );
         const actualProductiveHours = Math.min(
             calculations.productiveHours,
             calculations.totalWorkedHours,
-            remainingProductiveHoursForDay
+            remainingProductiveHoursForDay,
+            selectedJobRemainingHours || Infinity
         );
+
+        const isFirstEntryForDay = entriesForDate.length === 0;
 
         const timeEntry = {
             technician_id: user.id,
@@ -241,13 +249,13 @@ export default function TechnicianPortal() {
             day_of_week: calculations.dayOfWeek,
             job_id: job?.job_number || '',
             job_number: job?.job_number || '',
-            hr_hours: entriesForDate.length === 0 ? calculations.hrHours : 0, // HR hours only on first entry of day
+            hr_hours: actualHrHours,
             productive_hours: actualProductiveHours,
             start_time: formData.start_time,
             end_time: formData.end_time,
-            overtime_hours: entriesForDate.length === 0 ? calculations.overtimeHours : 0,
+            overtime_hours: isFirstEntryForDay ? calculations.overtimeHours : 0,
             overtime_rate: calculations.overtimeRate,
-            weighted_overtime: entriesForDate.length === 0 ? calculations.weightedOvertime : 0,
+            weighted_overtime: isFirstEntryForDay ? calculations.weightedOvertime : 0,
             notes: formData.notes
         };
 

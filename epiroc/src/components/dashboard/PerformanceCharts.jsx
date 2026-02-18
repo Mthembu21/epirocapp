@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { BarChart3, TrendingUp, Award, Users } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, subMonths } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, isSameDay } from 'date-fns';
 
 const COLORS = ['#facc15', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#f97316'];
 
@@ -33,6 +33,35 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         const techMatch = selectedTechnician === 'all' || e.technician_id === selectedTechnician;
         return inRange && techMatch;
     });
+
+    const getStandardProductiveHoursForDate = (dateObj) => {
+        const dayIndex = dateObj.getDay();
+        if (dayIndex === 5) return 6;
+        return 7;
+    };
+
+    const dayKey = (dateObj) => dateObj.toISOString().slice(0, 10);
+    const dailyByTech = new Map();
+    for (const e of filteredEntries) {
+        if (!e?.technician_id || !e?.date) continue;
+        const d = parseISO(e.date);
+        const key = `${e.technician_id}::${dayKey(d)}`;
+        const prev = dailyByTech.get(key) || { productive: 0, hr: 0, dateObj: d };
+        prev.productive += Number(e.productive_hours || 0);
+        prev.hr += Number(e.hr_hours || 0);
+        dailyByTech.set(key, prev);
+    }
+
+    let availableProductive = 0;
+    let productiveTotal = 0;
+    for (const v of dailyByTech.values()) {
+        productiveTotal += v.productive;
+        if (v.hr > 0) {
+            availableProductive += getStandardProductiveHoursForDate(v.dateObj);
+        }
+    }
+    const utilizationRaw = availableProductive > 0 ? (productiveTotal / availableProductive) * 100 : 0;
+    const utilization = Math.max(0, Math.min(100, utilizationRaw));
 
     const filteredJobs = jobs.filter(j => {
         const techMatch = selectedTechnician === 'all' || j.assigned_technician_id === selectedTechnician;
@@ -66,8 +95,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
 
     // Daily productivity data
     const dailyData = eachDayOfInterval({ start, end }).map(day => {
-        const dayStr = format(day, 'yyyy-MM-dd');
-        const dayEntries = filteredEntries.filter(e => e.date === dayStr);
+        const dayEntries = filteredEntries.filter(e => e?.date && isSameDay(parseISO(e.date), day));
         
         return {
             date: format(day, 'dd'),
@@ -148,6 +176,32 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card className="border-0 shadow-lg bg-white/95">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                            <TrendingUp className="w-5 h-5 text-yellow-500" />
+                            Labour Utilization
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <div className="text-4xl font-bold text-slate-800">{utilization.toFixed(0)}%</div>
+                                <div className="text-sm text-slate-500">Target 85%</div>
+                            </div>
+                            <div className="text-right text-sm text-slate-600">
+                                <div>Productive: {productiveTotal.toFixed(1)}h</div>
+                                <div>Available: {availableProductive.toFixed(1)}h</div>
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-yellow-400" style={{ width: `${utilization}%` }} />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* Efficiency Comparison Bar Chart */}
                 <Card className="border-0 shadow-lg bg-white/95">
                     <CardHeader className="pb-2">

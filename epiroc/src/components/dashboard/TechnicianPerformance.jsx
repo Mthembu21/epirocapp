@@ -15,6 +15,15 @@ const getPerformanceCategory = (efficiency) => {
 };
 
 export default function TechnicianPerformance({ technicians, jobs, timeEntries, month }) {
+    const getStandardProductiveHoursForDate = (dateStr) => {
+        if (!dateStr) return 0;
+        const d = new Date(dateStr);
+        if (Number.isNaN(d.getTime())) return 0;
+        const dayIndex = d.getDay();
+        if (dayIndex === 5) return 6;
+        return 7;
+    };
+
     // Calculate performance metrics for each technician
     const performanceData = technicians.map(tech => {
         // Get completed jobs for this technician
@@ -33,6 +42,26 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
         const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
         const totalHRHours = techEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0);
 
+        const daily = new Map();
+        for (const e of techEntries) {
+            const dateKey = e?.date ? String(e.date).slice(0, 10) : '';
+            if (!dateKey) continue;
+            const prev = daily.get(dateKey) || { productive: 0, hr: 0 };
+            prev.productive += Number(e.productive_hours || 0);
+            prev.hr += Number(e.hr_hours || 0);
+            daily.set(dateKey, prev);
+        }
+
+        let availableProductive = 0;
+        for (const [dateKey, v] of daily.entries()) {
+            if ((v.hr || 0) > 0) {
+                availableProductive += getStandardProductiveHoursForDate(dateKey);
+            }
+        }
+
+        const utilizationRaw = availableProductive > 0 ? (totalProductiveHours / availableProductive) * 100 : 0;
+        const utilization = Math.max(0, Math.min(100, utilizationRaw));
+
         // Get total hours utilized from completed jobs
         const totalHoursUtilized = techJobs.reduce((sum, j) => 
             sum + (j.total_hours_utilized || j.consumed_hours || 0), 0
@@ -43,12 +72,6 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             ? (totalAllocatedHours / totalHoursUtilized) * 100 
             : 0;
         const jobEfficiency = Math.max(0, Math.min(100, jobEfficiencyRaw));
-
-        // Productivity Ratio = Total Productive Hours / Total HR Hours
-        const productivityRatioRaw = totalHRHours > 0 
-            ? (totalProductiveHours / totalHRHours) * 100 
-            : 0;
-        const productivityRatio = Math.max(0, Math.min(100, productivityRatioRaw));
 
         const activeJobs = jobs.filter(j => 
             j.assigned_technician_id === tech.id && 
@@ -70,7 +93,7 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             totalHRHours,
             totalHoursUtilized,
             jobEfficiency,
-            productivityRatio,
+            utilization,
             performance: getPerformanceCategory(jobEfficiency)
         };
     });
@@ -96,7 +119,7 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
                                 <TableHead className="text-right">HR Hours</TableHead>
                                 <TableHead className="text-right">Utilized</TableHead>
                                 <TableHead className="text-right">Efficiency</TableHead>
-                                <TableHead className="text-right">Productivity</TableHead>
+                                <TableHead className="text-right">Utilization</TableHead>
                                 <TableHead>Rating</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -141,7 +164,7 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
                                         {tech.jobEfficiency.toFixed(0)}%
                                     </TableCell>
                                     <TableCell className="text-right text-slate-600">
-                                        {tech.productivityRatio.toFixed(0)}%
+                                        {tech.utilization.toFixed(0)}%
                                     </TableCell>
                                     <TableCell>
                                         <Badge className={tech.performance.color}>

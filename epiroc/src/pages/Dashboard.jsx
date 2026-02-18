@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle } from 'lucide-react';
 import { createPageUrl } from '@/utils';
+import { parseISO, startOfMonth, endOfMonth } from 'date-fns';
 
 import StatsCard from '../components/timesheet/StatsCard';
 import ExportButton from '../components/timesheet/ExportButton';
@@ -147,6 +148,47 @@ export default function Dashboard() {
     const totalHRHours = timeEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0);
     const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
 
+    const getStandardProductiveHoursForDate = (dateObj) => {
+        const dayIndex = dateObj.getDay();
+        if (dayIndex === 5) return 6;
+        return 7;
+    };
+
+    const now = new Date();
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+    const monthEntries = timeEntries.filter(e => {
+        if (!e?.date) return false;
+        const d = parseISO(e.date);
+        return d >= monthStart && d <= monthEnd;
+    });
+
+    const dayKey = (dateObj) => dateObj.toISOString().slice(0, 10);
+    const dailyByTech = new Map();
+    for (const e of monthEntries) {
+        if (!e?.technician_id || !e?.date) continue;
+        const d = parseISO(e.date);
+        const key = `${e.technician_id}::${dayKey(d)}`;
+        const prev = dailyByTech.get(key) || { productive: 0, hr: 0, dateObj: d };
+        prev.productive += Number(e.productive_hours || 0);
+        prev.hr += Number(e.hr_hours || 0);
+        dailyByTech.set(key, prev);
+    }
+
+    let availableProductiveThisMonth = 0;
+    let productiveThisMonth = 0;
+    for (const v of dailyByTech.values()) {
+        productiveThisMonth += v.productive;
+        if (v.hr > 0) {
+            availableProductiveThisMonth += getStandardProductiveHoursForDate(v.dateObj);
+        }
+    }
+
+    const labourUtilizationRaw = availableProductiveThisMonth > 0
+        ? (productiveThisMonth / availableProductiveThisMonth) * 100
+        : 0;
+    const labourUtilization = Math.max(0, Math.min(100, labourUtilizationRaw));
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
             <header className="bg-slate-800/90 backdrop-blur-lg border-b border-yellow-500/20 sticky top-0 z-10">
@@ -233,6 +275,13 @@ export default function Dashboard() {
                         subtitle="Job hours"
                         icon={Clock}
                         color="green"
+                    />
+                    <StatsCard
+                        title="Utilization"
+                        value={`${labourUtilization.toFixed(0)}%`}
+                        subtitle="This month (Target 85%)"
+                        icon={TrendingUp}
+                        color="yellow"
                     />
                 </div>
 
