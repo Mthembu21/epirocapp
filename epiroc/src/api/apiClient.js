@@ -124,6 +124,7 @@ class APIClient {
                 }
                 return this.request('/time-entries');
             },
+            idleCategories: () => this.request('/time-entries/idle-categories'),
             create: (data) => this.request('/time-entries', {
                 method: 'POST',
                 body: JSON.stringify(data)

@@ -35,20 +35,25 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
         // Get time entries for this technician in the selected month
         const techEntries = timeEntries.filter(e => 
             e.technician_id === tech.id &&
-            (month ? e.date?.startsWith(month) : true)
+            (month ? e.log_date?.startsWith(month) : true)
         );
 
         const totalAllocatedHours = techJobs.reduce((sum, j) => sum + (j.allocated_hours || 0), 0);
-        const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
-        const totalHRHours = techEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0);
+        const totalHours = techEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+        const totalOvertimeHours = techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+        const productiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+        const nonProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+
+        const productivityRaw = totalHours > 0 ? (productiveHours / totalHours) * 100 : 0;
+        const productivity = Math.max(0, Math.min(100, productivityRaw));
 
         const daily = new Map();
         for (const e of techEntries) {
-            const dateKey = e?.date ? String(e.date).slice(0, 10) : '';
+            const dateKey = e?.log_date ? String(e.log_date).slice(0, 10) : '';
             if (!dateKey) continue;
             const prev = daily.get(dateKey) || { productive: 0, hr: 0 };
-            prev.productive += Number(e.productive_hours || 0);
-            prev.hr += Number(e.hr_hours || 0);
+            prev.productive += (e.is_idle ? 0 : Number(e.hours_logged || 0));
+            prev.hr += Number(e.hours_logged || 0);
             daily.set(dateKey, prev);
         }
 
@@ -59,7 +64,7 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             }
         }
 
-        const utilizationRaw = availableProductive > 0 ? (totalProductiveHours / availableProductive) * 100 : 0;
+        const utilizationRaw = availableProductive > 0 ? (productiveHours / availableProductive) * 100 : 0;
         const utilization = Math.max(0, Math.min(100, utilizationRaw));
 
         // Get total hours utilized from completed jobs
@@ -89,11 +94,14 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             activeJobs,
             jobsWithBottlenecks,
             totalAllocatedHours,
-            totalProductiveHours,
-            totalHRHours,
+            totalHours,
+            totalOvertimeHours,
+            productiveHours,
+            nonProductiveHours,
             totalHoursUtilized,
             jobEfficiency,
             utilization,
+            productivity,
             performance: getPerformanceCategory(jobEfficiency)
         };
     });
@@ -115,11 +123,14 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
                                 <TableHead className="text-center">Active Jobs</TableHead>
                                 <TableHead className="text-center">Completed</TableHead>
                                 <TableHead className="text-center">Bottlenecks</TableHead>
-                                <TableHead className="text-right">Productive Hrs</TableHead>
-                                <TableHead className="text-right">HR Hours</TableHead>
+                                <TableHead className="text-right">Total Hrs</TableHead>
+                                <TableHead className="text-right">OT Hrs</TableHead>
+                                <TableHead className="text-right">Prod Hrs</TableHead>
+                                <TableHead className="text-right">Non-Prod</TableHead>
                                 <TableHead className="text-right">Utilized</TableHead>
                                 <TableHead className="text-right">Efficiency</TableHead>
                                 <TableHead className="text-right">Utilization</TableHead>
+                                <TableHead className="text-right">Productivity</TableHead>
                                 <TableHead>Rating</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -151,11 +162,17 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
                                             <span className="text-slate-400">-</span>
                                         )}
                                     </TableCell>
+                                    <TableCell className="text-right text-slate-600">
+                                        {tech.totalHours.toFixed(1)}h
+                                    </TableCell>
+                                    <TableCell className="text-right text-yellow-700">
+                                        {tech.totalOvertimeHours.toFixed(1)}h
+                                    </TableCell>
                                     <TableCell className="text-right font-medium">
-                                        {tech.totalProductiveHours.toFixed(1)}h
+                                        {tech.productiveHours.toFixed(1)}h
                                     </TableCell>
                                     <TableCell className="text-right text-slate-600">
-                                        {tech.totalHRHours.toFixed(1)}h
+                                        {tech.nonProductiveHours.toFixed(1)}h
                                     </TableCell>
                                     <TableCell className="text-right text-purple-600 font-medium">
                                         {tech.totalHoursUtilized.toFixed(1)}h
@@ -165,6 +182,9 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
                                     </TableCell>
                                     <TableCell className="text-right text-slate-600">
                                         {tech.utilization.toFixed(0)}%
+                                    </TableCell>
+                                    <TableCell className="text-right text-slate-600">
+                                        {tech.productivity.toFixed(0)}%
                                     </TableCell>
                                     <TableCell>
                                         <Badge className={tech.performance.color}>

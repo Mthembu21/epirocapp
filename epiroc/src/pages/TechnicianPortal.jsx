@@ -13,21 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Wrench, Clock, Save, Calculator, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2, CheckSquare } from 'lucide-react';
+import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2, CheckSquare } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-// Get hours based on day of week
-const getHoursForDay = (dayIndex) => {
-    if (dayIndex === 5) { // Friday
-        return { hr: 7, productive: 6 };
-    }
-    // Monday-Thursday (and weekend for reference)
-    return { hr: 8, productive: 7 };
-};
-
-const LUNCH_BREAK_HOURS = 1;
+const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE';
 
 const bottleneckCategories = [
     { value: 'waiting_for_parts', label: 'Waiting for Parts' },
@@ -42,9 +33,8 @@ export default function TechnicianPortal() {
     const [formData, setFormData] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
         job_id: '',
-        start_time: '08:00',
-        end_time: '17:00',
-        notes: ''
+        hours_logged: '',
+        category: ''
     });
 
     const [subtaskDraftProgress, setSubtaskDraftProgress] = useState({});
@@ -54,17 +44,6 @@ export default function TechnicianPortal() {
         bottleneck_category: '',
         bottleneck_description: ''
     });
-    const [calculations, setCalculations] = useState({
-        dayOfWeek: '',
-        totalWorkedHours: 0,
-        hrHours: 0,
-        productiveHours: 0,
-        normalHours: 0,
-        overtimeHours: 0,
-        overtimeRate: 1.5,
-        weightedOvertime: 0
-    });
-
     const queryClient = useQueryClient();
 
     useEffect(() => {
@@ -96,41 +75,6 @@ export default function TechnicianPortal() {
         validateSession();
     }, []);
 
-    const calculateHours = () => {
-        if (!formData.date) return;
-        const dayIndex = getDay(parseISO(formData.date));
-        const dayName = DAYS[dayIndex];
-        const { hr, productive } = getHoursForDay(dayIndex);
-
-        const [startH, startM] = formData.start_time.split(':').map(Number);
-        const [endH, endM] = formData.end_time.split(':').map(Number);
-
-        let totalMinutes = (endH * 60 + endM) - (startH * 60 + startM);
-        if (totalMinutes < 0) totalMinutes += 24 * 60; // Handle overnight shifts
-
-        const totalWorked = Math.round((totalMinutes / 60) * 100) / 100;
-        const hrHours = Math.min(totalWorked, hr);
-        const productiveHours = Math.max(0, Math.min(hrHours - LUNCH_BREAK_HOURS, productive));
-
-        const overtimeHours = Math.max(0, totalWorked - hr);
-        const overtimeRate = dayIndex === 0 ? 2 : 1.5;
-
-        setCalculations({
-            dayOfWeek: dayName,
-            totalWorkedHours: totalWorked,
-            hrHours: Math.round(hrHours * 100) / 100,
-            productiveHours: Math.round(productiveHours * 100) / 100,
-            normalHours: Math.round(hrHours * 100) / 100,
-            overtimeHours: Math.round(overtimeHours * 100) / 100,
-            overtimeRate,
-            weightedOvertime: Math.round(overtimeHours * overtimeRate * 100) / 100
-        });
-    };
-
-    useEffect(() => {
-        calculateHours();
-    }, [formData.date, formData.start_time, formData.end_time]);
-
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', user?.id],
         queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.id }),
@@ -139,7 +83,13 @@ export default function TechnicianPortal() {
 
     const { data: myEntries = [] } = useQuery({
         queryKey: ['myTimeEntries', user?.id],
-        queryFn: () => base44.entities.DailyTimeEntry.filter({ technician_id: user.id }, '-date', 50),
+        queryFn: () => base44.entities.DailyTimeEntry.filter({ technician_id: user.id }),
+        enabled: !!user?.id
+    });
+
+    const { data: idleInfo } = useQuery({
+        queryKey: ['idleCategories'],
+        queryFn: () => base44.entities.DailyTimeEntry.idleCategories(),
         enabled: !!user?.id
     });
 
@@ -183,7 +133,7 @@ export default function TechnicianPortal() {
             // Send timeEntry and report together — backend handles
             // job report creation, bottleneck tracking, and job hour updates
             const entry = await base44.entities.DailyTimeEntry.create({
-                timeEntry: data.timeEntry,
+                timeLog: data.timeLog,
                 report: data.report || null
             });
             return entry;
@@ -191,7 +141,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
-            setFormData(prev => ({ ...prev, notes: '', job_id: '' }));
+            setFormData(prev => ({ ...prev, job_id: '', hours_logged: '', category: '' }));
             setReportData({
                 work_completed: '',
                 has_bottleneck: false,
@@ -203,65 +153,49 @@ export default function TechnicianPortal() {
 
 
 
-    // Calculate total productive hours logged for the selected date
     const selectedDateObj = formData.date ? parseISO(formData.date) : null;
     const entriesForDate = selectedDateObj
-        ? myEntries.filter(entry => entry?.date && isSameDay(parseISO(entry.date), selectedDateObj))
+        ? myEntries.filter(entry => entry?.log_date && isSameDay(parseISO(entry.log_date), selectedDateObj))
         : [];
-    const totalProductiveHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.productive_hours) || 0), 0);
-    const totalHrHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.hr_hours) || 0), 0);
-    const selectedDayIndex = formData.date ? getDay(parseISO(formData.date)) : 1;
-    const maxHrForDay = getHoursForDay(selectedDayIndex).hr;
-    const maxProductiveForDay = getHoursForDay(selectedDayIndex).productive;
-    const remainingProductiveHoursForDay = Math.max(0, maxProductiveForDay - totalProductiveHoursForDate);
-    const remainingHrHoursForDay = Math.max(0, maxHrForDay - totalHrHoursForDate);
-    const hasMaxedOutDay = remainingProductiveHoursForDay <= 0;
+    const totalLoggedHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.hours_logged) || 0), 0);
+    const totalOvertimeForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.overtime_hours) || 0), 0);
 
-    const selectedJob = myJobs.find(j => j.id === formData.job_id);
+    const requiredNormalForDay = selectedDateObj
+        ? (getDay(selectedDateObj) === 5 ? 7 : 8)
+        : 8;
+
+    const belowRequiredNormalForDay = totalLoggedHoursForDate > 0 && totalLoggedHoursForDate < requiredNormalForDay;
+
+    const selectedJob = myJobs.find(j => j.job_number === formData.job_id);
     const selectedJobRemainingHours = Number(selectedJob?.remaining_hours || 0);
+    const isIdleSelected = formData.job_id === IDLE_JOB_ID;
     
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!user || !formData.job_id) return;
-        if (hasMaxedOutDay) return;
 
-        const job = myJobs.find(j => j.id === formData.job_id);
-        
-        // Limit hours to remaining hours for the day
-        const actualHrHours = Math.min(
-            calculations.hrHours,
-            calculations.totalWorkedHours,
-            remainingHrHoursForDay
-        );
-        const actualProductiveHours = Math.min(
-            calculations.productiveHours,
-            calculations.totalWorkedHours,
-            remainingProductiveHoursForDay,
-            selectedJobRemainingHours || Infinity
-        );
+        const hoursLogged = Number(formData.hours_logged);
+        if (!hoursLogged || hoursLogged <= 0) return;
+        if (totalLoggedHoursForDate + hoursLogged > 24) return;
 
-        const isFirstEntryForDay = entriesForDate.length === 0;
+        const jobNumber = isIdleSelected ? IDLE_JOB_ID : (selectedJob?.job_number || '');
+        if (!jobNumber) return;
 
-        const timeEntry = {
+        if (!isIdleSelected && selectedJobRemainingHours > 0 && hoursLogged > selectedJobRemainingHours) return;
+        if (isIdleSelected && !formData.category) return;
+
+        const timeLog = {
             technician_id: user.id,
-            technician_name: user.name,
-            date: formData.date,
-            day_of_week: calculations.dayOfWeek,
-            job_id: job?.job_number || '',
-            job_number: job?.job_number || '',
-            hr_hours: actualHrHours,
-            productive_hours: actualProductiveHours,
-            start_time: formData.start_time,
-            end_time: formData.end_time,
-            overtime_hours: isFirstEntryForDay ? calculations.overtimeHours : 0,
-            overtime_rate: calculations.overtimeRate,
-            weighted_overtime: isFirstEntryForDay ? calculations.weightedOvertime : 0,
-            notes: formData.notes
+            job_id: jobNumber,
+            hours_logged: hoursLogged,
+            log_date: formData.date,
+            is_idle: isIdleSelected,
+            category: isIdleSelected ? formData.category : null
         };
 
-        const report = reportData.work_completed ? {
-            job_id: job?.job_number || '',
-            job_number: job?.job_number || '',
+        const report = (!isIdleSelected && reportData.work_completed) ? {
+            job_id: jobNumber,
+            job_number: jobNumber,
             technician_id: user.id,
             technician_name: user.name,
             date: formData.date,
@@ -271,7 +205,7 @@ export default function TechnicianPortal() {
             bottleneck_description: reportData.has_bottleneck ? reportData.bottleneck_description : null
         } : null;
 
-        createEntryMutation.mutate({ timeEntry, report });
+        createEntryMutation.mutate({ timeLog, report });
     };
 
     const handleLogout = async () => {
@@ -288,9 +222,9 @@ export default function TechnicianPortal() {
         }
     };
 
-    const totalHRHours = myEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0);
-    const totalProductiveHours = myEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
-    const totalWeightedOT = myEntries.reduce((sum, e) => sum + (e.weighted_overtime || 0), 0);
+    const totalHours = myEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+    const totalOvertimeHours = myEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+    const totalProductiveHours = myEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
 
     if (!user) return null;
 
@@ -364,9 +298,9 @@ export default function TechnicianPortal() {
                 <div className="grid grid-cols-3 gap-4 mb-8">
                     <Card className="border-0 bg-gradient-to-br from-blue-500 to-blue-600">
                         <CardContent className="p-4 text-white">
-                            <p className="text-sm text-white/80">HR Hours</p>
-                            <p className="text-2xl font-bold">{totalHRHours.toFixed(1)}h</p>
-                            <p className="text-xs text-white/60">For payroll</p>
+                            <p className="text-sm text-white/80">Total Hours</p>
+                            <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
+                            <p className="text-xs text-white/60">Logged</p>
                         </CardContent>
                     </Card>
                     <Card className="border-0 bg-gradient-to-br from-green-500 to-green-600">
@@ -378,8 +312,8 @@ export default function TechnicianPortal() {
                     </Card>
                     <Card className="border-0 bg-gradient-to-br from-yellow-400 to-yellow-500">
                         <CardContent className="p-4 text-slate-800">
-                            <p className="text-sm text-slate-700">Weighted OT</p>
-                            <p className="text-2xl font-bold">{totalWeightedOT.toFixed(1)}h</p>
+                            <p className="text-sm text-slate-700">Overtime</p>
+                            <p className="text-2xl font-bold">{totalOvertimeHours.toFixed(1)}h</p>
                             <p className="text-xs text-slate-600">Overtime</p>
                         </CardContent>
                     </Card>
@@ -410,14 +344,7 @@ export default function TechnicianPortal() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="pt-6">
-                                {activeJobs.length === 0 ? (
-                                    <div className="py-12 text-center text-slate-500">
-                                        <Briefcase className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                                        <p>No active jobs assigned</p>
-                                        <p className="text-sm">Accept a job first to log hours</p>
-                                    </div>
-                                ) : (
-                                    <form onSubmit={handleSubmit} className="space-y-6">
+                                <form onSubmit={handleSubmit} className="space-y-6">
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <div className="space-y-2">
                                                 <Label>Date</Label>
@@ -432,75 +359,97 @@ export default function TechnicianPortal() {
                                                 <Label>Job / Work Number</Label>
                                                 <Select
                                                     value={formData.job_id}
-                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value }))}
+                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, category: '' }))}
                                                 >
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Select job" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {activeJobs.map(job => (
-                                                            <SelectItem key={job.id} value={job.id}>
-                                                                {job.job_number} - {(job.remaining_hours || job.allocated_hours).toFixed(1)}h remaining
-                                                            </SelectItem>
-                                                        ))}
+                                                        {activeJobs
+                                                            .filter(j => (Number(j.remaining_hours ?? (j.allocated_hours || 0)) || 0) > 0)
+                                                            .map(job => (
+                                                                <SelectItem key={job.id} value={job.job_number}>
+                                                                    {job.job_number} - {(job.remaining_hours ?? (job.allocated_hours || 0)).toFixed(1)}h remaining
+                                                                </SelectItem>
+                                                            ))}
+                                                        <SelectItem value={IDLE_JOB_ID}>{IDLE_JOB_ID}</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-4">
+                                        {isIdleSelected && (
                                             <div className="space-y-2">
-                                                <Label>Start Time</Label>
+                                                <Label>Idle Category</Label>
+                                                <Select
+                                                    value={formData.category}
+                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select category" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {(idleInfo?.categories || []).map((c) => (
+                                                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <Label>Hours Logged</Label>
                                                 <Input
-                                                    type="time"
-                                                    value={formData.start_time}
-                                                    onChange={(e) => setFormData(prev => ({ ...prev, start_time: e.target.value }))}
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.25"
+                                                    value={formData.hours_logged}
+                                                    onChange={(e) => setFormData(prev => ({ ...prev, hours_logged: e.target.value }))}
                                                     className="border-slate-300"
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <Label>End Time</Label>
-                                                <Input
-                                                    type="time"
-                                                    value={formData.end_time}
-                                                    onChange={(e) => setFormData(prev => ({ ...prev, end_time: e.target.value }))}
-                                                    className="border-slate-300"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-xl p-4">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <Calculator className="w-4 h-4 text-yellow-400" />
-                                                <span className="font-medium text-white text-sm">Calculated Hours</span>
-                                            </div>
-                                            <div className="grid grid-cols-4 gap-2 text-sm">
-                                                <div className="bg-slate-900/50 rounded-lg p-2 text-center">
-                                                    <p className="text-slate-400 text-xs">Day</p>
-                                                    <p className="font-semibold text-white text-sm">{calculations.dayOfWeek?.slice(0,3) || '-'}</p>
-                                                </div>
-                                                <div className="bg-slate-900/50 rounded-lg p-2 text-center">
-                                                    <p className="text-slate-400 text-xs">HR Hours</p>
-                                                    <p className="font-semibold text-blue-400 text-sm">{calculations.hrHours}h</p>
-                                                </div>
-                                                <div className="bg-slate-900/50 rounded-lg p-2 text-center">
-                                                    <p className="text-slate-400 text-xs">Productive</p>
-                                                    <p className="font-semibold text-green-400 text-sm">{calculations.productiveHours}h</p>
-                                                </div>
-                                                <div className="bg-slate-900/50 rounded-lg p-2 text-center">
-                                                    <p className="text-slate-400 text-xs">OT ({calculations.overtimeRate}x)</p>
-                                                    <p className="font-semibold text-yellow-400 text-sm">{calculations.weightedOvertime}h</p>
+                                                <Label>Day Summary</Label>
+                                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-slate-600">Logged today</span>
+                                                        <span className="font-semibold text-slate-800">{totalLoggedHoursForDate.toFixed(1)}h</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-slate-600">Overtime today</span>
+                                                        <span className="font-semibold text-yellow-700">{totalOvertimeForDate.toFixed(1)}h</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-slate-600">Required normal</span>
+                                                        <span className="font-semibold text-slate-800">{requiredNormalForDay}h</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {exceedsJobHours && (
+                                        {!isIdleSelected && selectedJob && selectedJobRemainingHours > 0 && Number(formData.hours_logged || 0) > selectedJobRemainingHours && (
                                             <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
                                                 <AlertTriangle className="w-4 h-4" />
                                                 Job has only {selectedJob?.remaining_hours?.toFixed(1)}h remaining. Supervisor approval required.
                                             </div>
                                         )}
 
+                                        {(totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24) && (
+                                            <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
+                                                <AlertTriangle className="w-4 h-4" />
+                                                Cannot log more than 24 hours in a day.
+                                            </div>
+                                        )}
+
+                                        {belowRequiredNormalForDay && (
+                                            <div className="flex items-center gap-2 text-blue-700 text-sm bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                                <Clock className="w-4 h-4" />
+                                                You have logged {totalLoggedHoursForDate.toFixed(1)}h for this date. Required normal hours are {requiredNormalForDay}h.
+                                            </div>
+                                        )}
+
+                                        {!isIdleSelected && (
                                         <div className="border-t pt-6">
                                             <h3 className="font-semibold text-slate-800 mb-4">Daily Job Report (Optional)</h3>
                                             <div className="space-y-4">
@@ -556,18 +505,8 @@ export default function TechnicianPortal() {
                                                 )}
                                             </div>
                                         </div>
+                                        )}
 
-                                        <div className="space-y-2">
-                                            <Label>Notes (Optional)</Label>
-                                            <Textarea
-                                                placeholder="Any additional notes..."
-                                                value={formData.notes}
-                                                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                                                className="h-16 border-slate-300"
-                                            />
-                                        </div>
-
-                                        {/* Remaining hours indicator */}
                                         {entriesForDate.length > 0 && (
                                             <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
                                                 <div className="flex items-center justify-between">
@@ -576,36 +515,27 @@ export default function TechnicianPortal() {
                                                         Entries today: {entriesForDate.length}
                                                     </span>
                                                     <span className="text-sm font-semibold text-blue-800">
-                                                        {remainingProductiveHoursForDay.toFixed(1)}h remaining
+                                                        {totalLoggedHoursForDate.toFixed(1)}h logged
                                                     </span>
                                                 </div>
-                                            </div>
-                                        )}
-
-                                        {hasMaxedOutDay && (
-                                            <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
-                                                <Calendar className="w-4 h-4" />
-                                                You have reached the maximum productive hours ({maxProductiveForDay}h) for this date.
-                                            </div>
-                                        )}
-
-                                        {hasEntryForJobOnDate && !hasMaxedOutDay && (
-                                            <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
-                                                <Briefcase className="w-4 h-4" />
-                                                You already logged hours for this job today. Select a different job.
                                             </div>
                                         )}
 
                                         <Button 
                                             type="submit" 
                                             className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold"
-                                            disabled={createEntryMutation.isPending || hasMaxedOutDay || hasEntryForJobOnDate || !formData.job_id}
+                                            disabled={
+                                                createEntryMutation.isPending ||
+                                                !formData.job_id ||
+                                                !formData.hours_logged ||
+                                                (isIdleSelected && !formData.category) ||
+                                                (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24)
+                                            }
                                         >
                                             <Save className="w-4 h-4 mr-2" />
                                             {createEntryMutation.isPending ? 'Saving...' : 'Submit Hours'}
                                         </Button>
                                     </form>
-                                )}
                             </CardContent>
                         </Card>
                     </TabsContent>
@@ -757,8 +687,9 @@ export default function TechnicianPortal() {
                                                 <TableRow className="bg-slate-100">
                                                     <TableHead>Date</TableHead>
                                                     <TableHead>Job</TableHead>
-                                                    <TableHead className="text-right">HR Hrs</TableHead>
-                                                    <TableHead className="text-right">Prod Hrs</TableHead>
+                                                    <TableHead>Category</TableHead>
+                                                    <TableHead className="text-right">Hours</TableHead>
+                                                    <TableHead className="text-right">Normal</TableHead>
                                                     <TableHead className="text-right">OT</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -767,16 +698,14 @@ export default function TechnicianPortal() {
                                                     <TableRow key={entry.id}>
                                                         <TableCell>
                                                             <div>
-                                                                <p className="font-medium">{entry.date ? format(parseISO(entry.date), 'dd MMM') : '-'}</p>
-                                                                <Badge variant="outline" className={getDayBadgeColor(entry.day_of_week)}>
-                                                                    {entry.day_of_week?.slice(0, 3)}
-                                                                </Badge>
+                                                                <p className="font-medium">{entry.log_date ? format(parseISO(entry.log_date), 'dd MMM') : '-'}</p>
                                                             </div>
                                                         </TableCell>
-                                                        <TableCell className="font-mono text-sm">{entry.job_number}</TableCell>
-                                                        <TableCell className="text-right text-blue-600">{entry.hr_hours || 0}h</TableCell>
-                                                        <TableCell className="text-right text-green-600">{entry.productive_hours || 0}h</TableCell>
-                                                        <TableCell className="text-right font-semibold text-yellow-600">{entry.weighted_overtime || 0}h</TableCell>
+                                                        <TableCell className="font-mono text-sm">{entry.job_id}</TableCell>
+                                                        <TableCell>{entry.is_idle ? entry.category : '-'}</TableCell>
+                                                        <TableCell className="text-right text-slate-800">{(entry.hours_logged || 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-blue-600">{(entry.normal_hours || 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right font-semibold text-yellow-600">{(entry.overtime_hours || 0).toFixed(1)}h</TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>

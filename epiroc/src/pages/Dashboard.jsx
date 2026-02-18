@@ -145,8 +145,13 @@ export default function Dashboard() {
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
     
-    const totalHRHours = timeEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0);
-    const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
+    const totalHours = timeEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+    const totalOvertimeHours = timeEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+    const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = timeEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+
+    const productivityRaw = totalHours > 0 ? (totalProductiveHours / totalHours) * 100 : 0;
+    const productivity = Math.max(0, Math.min(100, productivityRaw));
 
     const getStandardProductiveHoursForDate = (dateObj) => {
         const dayIndex = dateObj.getDay();
@@ -158,20 +163,20 @@ export default function Dashboard() {
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
     const monthEntries = timeEntries.filter(e => {
-        if (!e?.date) return false;
-        const d = parseISO(e.date);
+        if (!e?.log_date) return false;
+        const d = parseISO(e.log_date);
         return d >= monthStart && d <= monthEnd;
     });
 
     const dayKey = (dateObj) => dateObj.toISOString().slice(0, 10);
     const dailyByTech = new Map();
     for (const e of monthEntries) {
-        if (!e?.technician_id || !e?.date) continue;
-        const d = parseISO(e.date);
+        if (!e?.technician_id || !e?.log_date) continue;
+        const d = parseISO(e.log_date);
         const key = `${e.technician_id}::${dayKey(d)}`;
         const prev = dailyByTech.get(key) || { productive: 0, hr: 0, dateObj: d };
-        prev.productive += Number(e.productive_hours || 0);
-        prev.hr += Number(e.hr_hours || 0);
+        prev.productive += (e.is_idle ? 0 : Number(e.hours_logged || 0));
+        prev.hr += Number(e.hours_logged || 0);
         dailyByTech.set(key, prev);
     }
 
@@ -263,17 +268,38 @@ export default function Dashboard() {
                         color="green"
                     />
                     <StatsCard
-                        title="HR Hours"
-                        value={`${totalHRHours.toFixed(0)}h`}
-                        subtitle="For payroll"
+                        title="Total Hours"
+                        value={`${totalHours.toFixed(0)}h`}
+                        subtitle="All logged"
                         icon={Clock}
                         color="blue"
                     />
                     <StatsCard
                         title="Productive"
                         value={`${totalProductiveHours.toFixed(0)}h`}
-                        subtitle="Job hours"
+                        subtitle="Workshop jobs"
                         icon={Clock}
+                        color="green"
+                    />
+                    <StatsCard
+                        title="Non-Prod"
+                        value={`${totalNonProductiveHours.toFixed(0)}h`}
+                        subtitle="IDLE categories"
+                        icon={Clock}
+                        color="slate"
+                    />
+                    <StatsCard
+                        title="Overtime"
+                        value={`${totalOvertimeHours.toFixed(0)}h`}
+                        subtitle="Above daily limit"
+                        icon={Clock}
+                        color="yellow"
+                    />
+                    <StatsCard
+                        title="Productivity"
+                        value={`${productivity.toFixed(0)}%`}
+                        subtitle="Productive / Total"
+                        icon={TrendingUp}
                         color="green"
                     />
                     <StatsCard

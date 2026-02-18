@@ -28,7 +28,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
 
     // Filter data based on selection
     const filteredEntries = timeEntries.filter(e => {
-        const entryDate = e.date ? parseISO(e.date) : null;
+        const entryDate = e.log_date ? parseISO(e.log_date) : null;
         const inRange = entryDate && entryDate >= start && entryDate <= end;
         const techMatch = selectedTechnician === 'all' || e.technician_id === selectedTechnician;
         return inRange && techMatch;
@@ -43,12 +43,12 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     const dayKey = (dateObj) => dateObj.toISOString().slice(0, 10);
     const dailyByTech = new Map();
     for (const e of filteredEntries) {
-        if (!e?.technician_id || !e?.date) continue;
-        const d = parseISO(e.date);
+        if (!e?.technician_id || !e?.log_date) continue;
+        const d = parseISO(e.log_date);
         const key = `${e.technician_id}::${dayKey(d)}`;
         const prev = dailyByTech.get(key) || { productive: 0, hr: 0, dateObj: d };
-        prev.productive += Number(e.productive_hours || 0);
-        prev.hr += Number(e.hr_hours || 0);
+        prev.productive += (e.is_idle ? 0 : Number(e.hours_logged || 0));
+        prev.hr += Number(e.hours_logged || 0);
         dailyByTech.set(key, prev);
     }
 
@@ -76,7 +76,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         
         const totalAllocated = completedJobs.reduce((sum, j) => sum + (j.allocated_hours || 0), 0);
         const totalUtilized = completedJobs.reduce((sum, j) => sum + (j.total_hours_utilized || j.consumed_hours || 0), 0);
-        const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
+        const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
         
         const efficiencyRaw = totalUtilized > 0 ? (totalAllocated / totalUtilized) * 100 : 0;
         const efficiency = Math.max(0, Math.min(100, efficiencyRaw));
@@ -95,12 +95,12 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
 
     // Daily productivity data
     const dailyData = eachDayOfInterval({ start, end }).map(day => {
-        const dayEntries = filteredEntries.filter(e => e?.date && isSameDay(parseISO(e.date), day));
+        const dayEntries = filteredEntries.filter(e => e?.log_date && isSameDay(parseISO(e.log_date), day));
         
         return {
             date: format(day, 'dd'),
             fullDate: format(day, 'MMM dd'),
-            productiveHours: dayEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0),
+            productiveHours: dayEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0),
             entries: dayEntries.length
         };
     }).filter(d => d.productiveHours > 0);
