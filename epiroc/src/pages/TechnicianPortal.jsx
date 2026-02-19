@@ -521,6 +521,13 @@ export default function TechnicianPortal() {
                                             </div>
                                         )}
 
+                                        {createEntryMutation.isError && (
+                                            <div className="flex items-center gap-2 text-red-700 text-sm bg-red-50 p-3 rounded-lg border border-red-200">
+                                                <AlertTriangle className="w-4 h-4" />
+                                                {createEntryMutation.error?.message || 'Failed to submit hours.'}
+                                            </div>
+                                        )}
+
                                         <Button 
                                             type="submit" 
                                             className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold"
