@@ -57,20 +57,13 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             daily.set(dateKey, prev);
         }
 
-        let availableProductive = 0;
-        for (const [dateKey, v] of daily.entries()) {
-            if ((v.hr || 0) > 0) {
-                availableProductive += getStandardProductiveHoursForDate(dateKey);
-            }
-        }
-
-        const utilizationRaw = availableProductive > 0 ? (productiveHours / availableProductive) * 100 : 0;
-        const utilization = Math.max(0, Math.min(100, utilizationRaw));
-
         // Get total hours utilized from completed jobs
         const totalHoursUtilized = techJobs.reduce((sum, j) => 
             sum + (j.total_hours_utilized || j.consumed_hours || 0), 0
         );
+
+        const utilizationRaw = totalAllocatedHours > 0 ? (totalHoursUtilized / totalAllocatedHours) * 100 : 0;
+        const utilization = Math.max(0, Math.min(100, utilizationRaw));
 
         // Job Efficiency = (Allocated Hours / Hours Utilized) × 100
         const jobEfficiencyRaw = totalHoursUtilized > 0 

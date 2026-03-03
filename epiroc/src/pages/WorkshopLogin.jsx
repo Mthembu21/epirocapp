@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/apiClient';
-import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,13 +10,8 @@ import { createPageUrl } from '@/utils';
 
 export default function WorkshopLogin() {
     const [techForm, setTechForm] = useState({ name: '', employee_id: '' });
-    const [supervisorCode, setSupervisorCode] = useState('');
+    const [supervisorForm, setSupervisorForm] = useState({ email: '', password: '' });
     const [error, setError] = useState('');
-
-    const { data: technicians = [] } = useQuery({
-        queryKey: ['technicians'],
-        queryFn: () => base44.entities.Technician.list()
-    });
 
     const handleTechnicianLogin = async (e) => {
         e.preventDefault();
@@ -40,11 +34,14 @@ export default function WorkshopLogin() {
         setError('');
 
         try {
-            const result = await base44.auth.supervisorLogin(supervisorCode);
-            localStorage.setItem('epiroc_user', JSON.stringify({ ...result.user, code: supervisorCode }));
+            const result = await base44.auth.supervisorLogin(
+                supervisorForm.email.trim(),
+                supervisorForm.password
+            );
+            localStorage.setItem('epiroc_user', JSON.stringify(result.user));
             window.location.href = createPageUrl('Dashboard');
         } catch (err) {
-            setError('Invalid supervisor code.');
+            setError('Invalid supervisor credentials.');
         }
     };
 
@@ -121,13 +118,26 @@ export default function WorkshopLogin() {
                             <TabsContent value="supervisor">
                                 <form onSubmit={handleSupervisorLogin} className="space-y-4">
                                     <div className="space-y-2">
-                                        <Label htmlFor="supervisor-code">Supervisor Access Code</Label>
+                                        <Label htmlFor="supervisor-email">Supervisor Email</Label>
                                         <Input
-                                            id="supervisor-code"
+                                            id="supervisor-email"
+                                            type="email"
+                                            placeholder="name@epiroc.com"
+                                            value={supervisorForm.email}
+                                            onChange={(e) => setSupervisorForm(prev => ({ ...prev, email: e.target.value }))}
+                                            required
+                                            className="border-slate-300"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="supervisor-password">Password</Label>
+                                        <Input
+                                            id="supervisor-password"
                                             type="password"
-                                            placeholder="Enter supervisor code"
-                                            value={supervisorCode}
-                                            onChange={(e) => setSupervisorCode(e.target.value)}
+                                            placeholder="Enter password"
+                                            value={supervisorForm.password}
+                                            onChange={(e) => setSupervisorForm(prev => ({ ...prev, password: e.target.value }))}
                                             required
                                             className="border-slate-300"
                                         />

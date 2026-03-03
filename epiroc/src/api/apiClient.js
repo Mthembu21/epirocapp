@@ -40,10 +40,10 @@ class APIClient {
                 body: JSON.stringify({ name, employee_id })
             }),
         
-        supervisorLogin: (code) => 
+        supervisorLogin: (email, password) => 
             this.request('/auth/supervisor/login', {
                 method: 'POST',
-                body: JSON.stringify({ code })
+                body: JSON.stringify({ email, password })
             }),
         
         me: () => this.request('/auth/me'),

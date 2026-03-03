@@ -40,33 +40,17 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         return 7;
     };
 
-    const dayKey = (dateObj) => dateObj.toISOString().slice(0, 10);
-    const dailyByTech = new Map();
-    for (const e of filteredEntries) {
-        if (!e?.technician_id || !e?.log_date) continue;
-        const d = parseISO(e.log_date);
-        const key = `${e.technician_id}::${dayKey(d)}`;
-        const prev = dailyByTech.get(key) || { productive: 0, hr: 0, dateObj: d };
-        prev.productive += (e.is_idle ? 0 : Number(e.hours_logged || 0));
-        prev.hr += Number(e.hours_logged || 0);
-        dailyByTech.set(key, prev);
-    }
-
-    let availableProductive = 0;
-    let productiveTotal = 0;
-    for (const v of dailyByTech.values()) {
-        productiveTotal += v.productive;
-        if (v.hr > 0) {
-            availableProductive += getStandardProductiveHoursForDate(v.dateObj);
-        }
-    }
-    const utilizationRaw = availableProductive > 0 ? (productiveTotal / availableProductive) * 100 : 0;
-    const utilization = Math.max(0, Math.min(100, utilizationRaw));
-
     const filteredJobs = jobs.filter(j => {
         const techMatch = selectedTechnician === 'all' || j.assigned_technician_id === selectedTechnician;
         return techMatch;
     });
+
+    const allocatedSum = filteredJobs.reduce((sum, j) => sum + Number(j.allocated_hours || 0), 0);
+    const utilizedSum = filteredJobs.reduce((sum, j) => sum + Number(j.total_hours_utilized || j.consumed_hours || 0), 0);
+    const utilizationRaw = allocatedSum > 0 ? (utilizedSum / allocatedSum) * 100 : 0;
+    const utilization = Math.max(0, Math.min(100, utilizationRaw));
+
+    const totalProductiveHours = filteredEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
 
     // Calculate efficiency data per technician
     const technicianEfficiency = technicians.map(tech => {
@@ -190,8 +174,8 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                 <div className="text-sm text-slate-500">Target 85%</div>
                             </div>
                             <div className="text-right text-sm text-slate-600">
-                                <div>Productive: {productiveTotal.toFixed(1)}h</div>
-                                <div>Available: {availableProductive.toFixed(1)}h</div>
+                                <div>Utilized: {utilizedSum.toFixed(1)}h</div>
+                                <div>Allocated: {allocatedSum.toFixed(1)}h</div>
                             </div>
                         </div>
                         <div className="mt-4">

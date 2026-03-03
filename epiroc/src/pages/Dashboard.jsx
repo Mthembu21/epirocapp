@@ -25,6 +25,7 @@ export default function Dashboard() {
     const [techModalOpen, setTechModalOpen] = useState(false);
     const [jobModalOpen, setJobModalOpen] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [currentUser, setCurrentUser] = useState(null);
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -39,22 +40,25 @@ export default function Dashboard() {
                 window.location.href = createPageUrl('WorkshopLogin');
                 return;
             }
+            setCurrentUser(parsed);
             try {
                 await base44.auth.me();
                 setIsAuthenticated(true);
             } catch {
-                // Session expired — re-login as supervisor to restore it
-                try {
-                    await base44.auth.supervisorLogin(parsed.code || 'Epiroc#26');
-                    setIsAuthenticated(true);
-                } catch {
-                    localStorage.removeItem('epiroc_user');
-                    window.location.href = createPageUrl('WorkshopLogin');
-                }
+                // Session expired — redirect to login
+                localStorage.removeItem('epiroc_user');
+                window.location.href = createPageUrl('WorkshopLogin');
             }
         };
         validateSession();
     }, []);
+
+    const supervisorKey = currentUser?.supervisor_key || 'component';
+    const dashboardLabel = supervisorKey === 'rebuild'
+        ? 'REBUILD DASHBOARD'
+        : supervisorKey === 'pdis'
+            ? 'PDIS DASHBOARD'
+            : 'COMPONENT DASHBOARD';
 
     const handleLogout = async () => {
         try { await base44.auth.logout(); } catch {}
@@ -184,38 +188,10 @@ export default function Dashboard() {
         return 7;
     };
 
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-    const monthEntries = timeEntries.filter(e => {
-        if (!e?.log_date) return false;
-        const d = parseISO(e.log_date);
-        return d >= monthStart && d <= monthEnd;
-    });
-
-    const dayKey = (dateObj) => dateObj.toISOString().slice(0, 10);
-    const dailyByTech = new Map();
-    for (const e of monthEntries) {
-        if (!e?.technician_id || !e?.log_date) continue;
-        const d = parseISO(e.log_date);
-        const key = `${e.technician_id}::${dayKey(d)}`;
-        const prev = dailyByTech.get(key) || { productive: 0, hr: 0, dateObj: d };
-        prev.productive += (e.is_idle ? 0 : Number(e.hours_logged || 0));
-        prev.hr += Number(e.hours_logged || 0);
-        dailyByTech.set(key, prev);
-    }
-
-    let availableProductiveThisMonth = 0;
-    let productiveThisMonth = 0;
-    for (const v of dailyByTech.values()) {
-        productiveThisMonth += v.productive;
-        if (v.hr > 0) {
-            availableProductiveThisMonth += getStandardProductiveHoursForDate(v.dateObj);
-        }
-    }
-
-    const labourUtilizationRaw = availableProductiveThisMonth > 0
-        ? (productiveThisMonth / availableProductiveThisMonth) * 100
+    const allocatedTotal = jobs.reduce((sum, j) => sum + Number(j.allocated_hours || 0), 0);
+    const utilizedTotal = jobs.reduce((sum, j) => sum + Number(j.total_hours_utilized || j.consumed_hours || 0), 0);
+    const labourUtilizationRaw = allocatedTotal > 0
+        ? (utilizedTotal / allocatedTotal) * 100
         : 0;
     const labourUtilization = Math.max(0, Math.min(100, labourUtilizationRaw));
 
@@ -226,12 +202,15 @@ export default function Dashboard() {
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center gap-4">
                             <div className="flex items-center gap-3">
-                                <div className="bg-yellow-400 p-2 rounded-lg">
+                                <div className="bg-yellow-400 p-3 rounded-xl shadow-lg">
                                     <Wrench className="w-8 h-8 text-slate-800" />
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-bold text-yellow-400 tracking-tight">EPIROC</h1>
-                                    <p className="text-slate-400 text-xs tracking-widest">SUPERVISOR DASHBOARD</p>
+                                    <p className="text-slate-400 text-xs tracking-widest">{dashboardLabel}</p>
+                                    {currentUser?.email && (
+                                        <p className="text-slate-500 text-xs">{currentUser.email}</p>
+                                    )}
                                 </div>
                             </div>
                         </div>

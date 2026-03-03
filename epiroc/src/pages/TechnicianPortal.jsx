@@ -33,6 +33,7 @@ export default function TechnicianPortal() {
     const [formData, setFormData] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
         job_id: '',
+        subtask_id: '',
         hours_logged: '',
         category: ''
     });
@@ -141,7 +142,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
-            setFormData(prev => ({ ...prev, job_id: '', hours_logged: '', category: '' }));
+            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '' }));
             setReportData({
                 work_completed: '',
                 has_bottleneck: false,
@@ -169,6 +170,28 @@ export default function TechnicianPortal() {
     const selectedJob = myJobs.find(j => j.job_number === formData.job_id);
     const selectedJobRemainingHours = Number(selectedJob?.remaining_hours || 0);
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
+
+    const getAssignedSubtasksForJob = (job) => {
+        const subtasks = job?.subtasks || [];
+        return subtasks.filter((st) => {
+            const assigned = st?.assigned_technicians || [];
+            return assigned.some((a) => String(a?.technician_id) === String(user?.id));
+        });
+    };
+
+    const assignedSubtasks = (!isIdleSelected && selectedJob) ? getAssignedSubtasksForJob(selectedJob) : [];
+    const selectedSubtask = assignedSubtasks.find((st) => String(st?._id) === String(formData.subtask_id)) || null;
+    const selectedSubtaskAssignment = selectedSubtask
+        ? (selectedSubtask.assigned_technicians || []).find((a) => String(a?.technician_id) === String(user?.id))
+        : null;
+    const selectedSubtaskAllocatedHours = Number(selectedSubtaskAssignment?.allocated_hours || 0);
+
+    const groupedAssignedSubtasks = assignedSubtasks.reduce((acc, st) => {
+        const key = st?.category || 'Other';
+        acc[key] = acc[key] || [];
+        acc[key].push(st);
+        return acc;
+    }, {});
     
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -182,11 +205,13 @@ export default function TechnicianPortal() {
         if (!jobNumber) return;
 
         if (!isIdleSelected && selectedJobRemainingHours > 0 && hoursLogged > selectedJobRemainingHours) return;
+        if (!isIdleSelected && !formData.subtask_id) return;
         if (isIdleSelected && !formData.category) return;
 
         const timeLog = {
             technician_id: user.id,
             job_id: jobNumber,
+            subtask_id: isIdleSelected ? null : formData.subtask_id,
             hours_logged: hoursLogged,
             log_date: formData.date,
             is_idle: isIdleSelected,
@@ -359,7 +384,7 @@ export default function TechnicianPortal() {
                                                 <Label>Job / Work Number</Label>
                                                 <Select
                                                     value={formData.job_id}
-                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, category: '' }))}
+                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, subtask_id: '', category: '' }))}
                                                 >
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Select job" />
@@ -394,6 +419,44 @@ export default function TechnicianPortal() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+                                            </div>
+                                        )}
+
+                                        {!isIdleSelected && selectedJob && (
+                                            <div className="space-y-2">
+                                                <Label>Stage</Label>
+                                                <Select
+                                                    value={formData.subtask_id}
+                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, subtask_id: value }))}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select stage" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {Object.entries(groupedAssignedSubtasks).map(([category, items]) => (
+                                                            (items || []).map((st) => (
+                                                                <SelectItem key={st._id} value={String(st._id)}>
+                                                                    {category}: {st.title}
+                                                                </SelectItem>
+                                                            ))
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+
+                                                {selectedSubtask && (
+                                                    <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                                        {selectedSubtask?.category && (
+                                                            <div className="flex justify-between">
+                                                                <span>Category</span>
+                                                                <span className="font-semibold text-slate-800">{selectedSubtask.category}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex justify-between">
+                                                            <span>Allocated for this stage</span>
+                                                            <span className="font-semibold text-slate-800">{selectedSubtaskAllocatedHours.toFixed(1)}h</span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -535,6 +598,7 @@ export default function TechnicianPortal() {
                                                 createEntryMutation.isPending ||
                                                 !formData.job_id ||
                                                 !formData.hours_logged ||
+                                                (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                                 (isIdleSelected && !formData.category) ||
                                                 (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24)
                                             }
