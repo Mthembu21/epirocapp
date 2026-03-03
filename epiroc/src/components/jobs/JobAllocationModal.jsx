@@ -27,8 +27,8 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
             { category: 'Testing', titles: ['Test'] }
         ],
         rebuild: [
-            { category: 'Disassemble', titles: ['Washing', 'Electrical Stripping', 'Mechanical Stripping'] },
-            { category: 'Assemble', titles: ['Boiler Making', 'Paint'] },
+            { category: 'Disassemble', titles: ['Washing', 'Electrical Stripping', 'Mechanical Stripping', 'Boiler-Marking'] },
+            { category: 'Assemble', titles: ['Boiler Making', 'Paint', 'Assemble', 'Mechanical/Fitter', 'Electrical', 'Washing'] },
             { category: 'Testing', titles: ['Testing'] }
         ],
         pdis: [

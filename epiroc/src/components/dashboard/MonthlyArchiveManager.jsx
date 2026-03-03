@@ -12,6 +12,8 @@ const MONTH_START_DATE = '2026-02-02'; // February 2, 2026 (Sunday = day 0)
 export default function MonthlyArchiveManager({ timeEntries, technicians }) {
     const queryClient = useQueryClient();
 
+    const [dismissed, setDismissed] = useState(false);
+
     const { workingDaysCount, shouldArchive } = useMemo(() => {
         // Count working days from start date
         const startDate = parseISO(MONTH_START_DATE);
@@ -77,12 +79,13 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['dailyTimeEntries'] });
-            setShouldArchive(false);
-            setWorkingDaysCount(0);
+            setDismissed(true);
         }
     });
 
-    if (!shouldArchive) {
+    const showArchive = shouldArchive && !dismissed;
+
+    if (!showArchive) {
         return (
             <Card className="border-0 bg-slate-800/60 backdrop-blur">
                 <CardContent className="p-4">
