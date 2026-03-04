@@ -12,11 +12,42 @@ const MONTH_START_DATE = '2026-02-02'; // February 2, 2026 (Sunday = day 0)
 export default function MonthlyArchiveManager({ timeEntries, technicians }) {
     const queryClient = useQueryClient();
 
-    const [dismissed, setDismissed] = useState(false);
+    const tenantKey = useMemo(() => {
+        try {
+            const raw = localStorage.getItem('user');
+            const u = raw ? JSON.parse(raw) : null;
+            return u?.supervisor_key || u?.supervisorKey || 'component';
+        } catch {
+            return 'component';
+        }
+    }, []);
+
+    const periodStartStorageKey = useMemo(() => `monthlyArchive.periodStart.${tenantKey}`, [tenantKey]);
+    const dismissedStorageKey = useMemo(() => `monthlyArchive.dismissedPeriodStart.${tenantKey}`, [tenantKey]);
+
+    const initialPeriodStart = useMemo(() => {
+        try {
+            return localStorage.getItem(periodStartStorageKey) || MONTH_START_DATE;
+        } catch {
+            return MONTH_START_DATE;
+        }
+    }, [periodStartStorageKey]);
+
+    const [periodStartDate, setPeriodStartDate] = useState(initialPeriodStart);
+
+    const initialDismissed = useMemo(() => {
+        try {
+            return (localStorage.getItem(dismissedStorageKey) || '') === initialPeriodStart;
+        } catch {
+            return false;
+        }
+    }, [dismissedStorageKey, initialPeriodStart]);
+
+    const [dismissed, setDismissed] = useState(initialDismissed);
 
     const { workingDaysCount, shouldArchive } = useMemo(() => {
         // Count working days from start date
-        const startDate = parseISO(MONTH_START_DATE);
+        const startDate = parseISO(periodStartDate);
         const today = new Date();
 
         // Count weekdays only (Mon-Fri)
@@ -35,11 +66,11 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
             workingDaysCount: count,
             shouldArchive: count >= WORKING_DAYS_PER_MONTH
         };
-    }, []);
+    }, [periodStartDate]);
 
     const archiveMutation = useMutation({
         mutationFn: async () => {
-            const startDate = parseISO(MONTH_START_DATE);
+            const startDate = parseISO(periodStartDate);
             const today = new Date();
             
             // Calculate totals
@@ -79,7 +110,26 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['dailyTimeEntries'] });
-            setDismissed(true);
+
+            // Start a new period from today (the archive day is the first day of the next 20-day cycle)
+            const nextStart = format(new Date(), 'yyyy-MM-dd');
+            try {
+                localStorage.setItem(periodStartStorageKey, nextStart);
+                localStorage.removeItem(dismissedStorageKey);
+            } catch {
+                // ignore
+            }
+            setPeriodStartDate(nextStart);
+            setDismissed(false);
+        },
+        onError: () => {
+            // If archive fails, show the popup again
+            try {
+                localStorage.removeItem(dismissedStorageKey);
+            } catch {
+                // ignore
+            }
+            setDismissed(false);
         }
     });
 
@@ -116,7 +166,16 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
                     You have reached {workingDaysCount} working days. Archive this month's data and start fresh?
                 </p>
                 <Button
-                    onClick={() => archiveMutation.mutate()}
+                    onClick={() => {
+                        // Dismiss immediately (and persist) as soon as the user presses the button
+                        try {
+                            localStorage.setItem(dismissedStorageKey, periodStartDate);
+                        } catch {
+                            // ignore
+                        }
+                        setDismissed(true);
+                        archiveMutation.mutate();
+                    }}
                     disabled={archiveMutation.isPending}
                     className="w-full bg-slate-900 hover:bg-slate-800 text-white"
                 >
