@@ -220,7 +220,7 @@ export default function Dashboard() {
                             <JobAllocationModal 
                                 technicians={technicians}
                                 existingJobs={jobs}
-                                onSubmit={createJobMutation.mutate}
+                                onSubmit={createJobMutation.mutateAsync}
                                 isOpen={jobModalOpen}
                                 setIsOpen={setJobModalOpen}
                             />

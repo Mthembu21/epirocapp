@@ -57,7 +57,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
         subtasks: defaultSubtasks
     });
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         const tech = technicians.find(t => t.id === formData.assigned_technician_id);
@@ -98,30 +98,34 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
             return t ? { technician_id: t.id, technician_name: t.name } : null;
         }).filter(Boolean);
 
-        onSubmit({
-            ...formData,
-            assigned_technician_name: tech?.name || '',
-            allocated_hours: allocatedTotal,
-            remaining_hours: parseFloat(formData.allocated_hours),
-            consumed_hours: 0,
-            progress_percentage: 0,
-            status: 'pending_confirmation',
-            bottleneck_count: 0,
-            confirmed_by_technician: false,
-            technicians: techniciansPayload,
-            subtasks: normalizedSubtasks
-        });
+        try {
+            await onSubmit({
+                ...formData,
+                assigned_technician_name: tech?.name || '',
+                allocated_hours: allocatedTotal,
+                remaining_hours: parseFloat(formData.allocated_hours),
+                consumed_hours: 0,
+                progress_percentage: 0,
+                status: 'pending_confirmation',
+                bottleneck_count: 0,
+                confirmed_by_technician: false,
+                technicians: techniciansPayload,
+                subtasks: normalizedSubtasks
+            });
 
-        setFormData({
-            job_number: '',
-            description: '',
-            assigned_technician_id: '',
-            allocated_hours: '',
-            start_date: '',
-            target_completion_date: '',
-            subtasks: defaultSubtasks
-        });
-        setIsOpen(false);
+            setFormData({
+                job_number: '',
+                description: '',
+                assigned_technician_id: '',
+                allocated_hours: '',
+                start_date: '',
+                target_completion_date: '',
+                subtasks: defaultSubtasks
+            });
+            setIsOpen(false);
+        } catch (err) {
+            alert(err?.message || 'Failed to create job');
+        }
     };
 
     const groupedSubtasks = (formData.subtasks || []).reduce((acc, st) => {
