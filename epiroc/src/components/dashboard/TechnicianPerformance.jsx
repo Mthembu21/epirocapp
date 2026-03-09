@@ -26,11 +26,13 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
 
     // Calculate performance metrics for each technician
     const performanceData = technicians.map(tech => {
-        // Get completed jobs for this technician
-        const techJobs = jobs.filter(j => 
-            j.assigned_technician_id === tech.id && 
-            j.status === 'completed'
-        );
+        const isTechOnJob = (job) => {
+            if (!job) return false;
+            if ((job.technicians || []).some((t) => String(t?.technician_id) === String(tech.id))) return true;
+            return (job.subtasks || []).some((st) => (st.assigned_technicians || []).some((a) => String(a?.technician_id) === String(tech.id)));
+        };
+
+        const techJobsCompleted = jobs.filter((j) => j.status === 'completed' && isTechOnJob(j));
 
         // Get time entries for this technician in the selected month
         const techEntries = timeEntries.filter(e => 
@@ -38,7 +40,17 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             (month ? e.log_date?.startsWith(month) : true)
         );
 
-        const totalAllocatedHours = techJobs.reduce((sum, j) => sum + (j.allocated_hours || 0), 0);
+        const getAllocatedForTechOnJob = (job) => {
+            // Prefer stage allocations if present, else fall back to job allocated hours.
+            const allocatedFromStages = (job?.subtasks || []).reduce((sum, st) => {
+                const a = (st?.assigned_technicians || []).find((x) => String(x?.technician_id) === String(tech.id));
+                return sum + Number(a?.allocated_hours || 0);
+            }, 0);
+            if (allocatedFromStages > 0) return allocatedFromStages;
+            return Number(job?.allocated_hours || 0);
+        };
+
+        const totalAllocatedHours = techJobsCompleted.reduce((sum, j) => sum + getAllocatedForTechOnJob(j), 0);
         const totalHours = techEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
         const totalOvertimeHours = techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
         const productiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
@@ -58,9 +70,11 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
         }
 
         // Get total hours utilized from completed jobs
-        const totalHoursUtilized = techJobs.reduce((sum, j) => 
-            sum + (j.total_hours_utilized || j.consumed_hours || 0), 0
-        );
+        // Hours utilized for efficiency should be the technician's productive hours on those completed jobs
+        const totalHoursUtilized = techEntries
+            .filter((e) => !e.is_idle)
+            .filter((e) => techJobsCompleted.some((j) => String(j.job_number) === String(e.job_id)))
+            .reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
 
         const utilizationRaw = totalAllocatedHours > 0 ? (totalHoursUtilized / totalAllocatedHours) * 100 : 0;
         const utilization = Math.max(0, Math.min(100, utilizationRaw));
@@ -71,19 +85,13 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
             : 0;
         const jobEfficiency = Math.max(0, Math.min(100, jobEfficiencyRaw));
 
-        const activeJobs = jobs.filter(j => 
-            j.assigned_technician_id === tech.id && 
-            ['active', 'in_progress'].includes(j.status)
-        ).length;
+        const activeJobs = jobs.filter(j => isTechOnJob(j) && ['active', 'in_progress'].includes(j.status)).length;
 
-        const jobsWithBottlenecks = jobs.filter(j => 
-            j.assigned_technician_id === tech.id && 
-            j.bottleneck_count > 0
-        ).length;
+        const jobsWithBottlenecks = jobs.filter(j => isTechOnJob(j) && j.bottleneck_count > 0).length;
 
         return {
             ...tech,
-            completedJobs: techJobs.length,
+            completedJobs: techJobsCompleted.length,
             activeJobs,
             jobsWithBottlenecks,
             totalAllocatedHours,

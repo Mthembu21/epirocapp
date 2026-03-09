@@ -122,7 +122,7 @@ export default function Dashboard() {
     });
 
     const reassignJobMutation = useMutation({
-        mutationFn: async ({ jobId, newTechnicianId, newTechnicianName, previousTechnicianId, previousTechnicianName, reason }) => {
+        mutationFn: async ({ jobId, newTechnicianId, newTechnicianName, previousTechnicianId, previousTechnicianName, reason, subtask_allocations }) => {
             const job = jobs.find(j => j.id === jobId);
             const reassignmentHistory = job?.reassignment_history || [];
             
@@ -136,22 +136,60 @@ export default function Dashboard() {
             });
 
             // Assign an additional technician to the same job (do not create a new job)
-            return base44.entities.Job.assignTechnicianByJobNumber(
+            const addRes = await base44.entities.Job.assignTechnicianByJobNumber(
                 job?.job_number,
                 newTechnicianId,
                 newTechnicianName
             );
+
+            const allocations = Array.isArray(subtask_allocations) ? subtask_allocations : [];
+            if (allocations.length) {
+                const latest = await base44.entities.Job.getByJobNumber(job?.job_number);
+                for (const a of allocations) {
+                    const st = (latest?.subtasks || []).find((s) => String(s?._id || s?.id) === String(a.subtaskId));
+                    if (!st) continue;
+                    const assigned = Array.isArray(st.assigned_technicians) ? st.assigned_technicians : [];
+                    const exists = assigned.some((x) => String(x?.technician_id) === String(newTechnicianId));
+                    const nextAssigned = exists
+                        ? assigned.map((x) => String(x?.technician_id) === String(newTechnicianId)
+                            ? { ...x, allocated_hours: Number(a.allocated_hours || 0) }
+                            : x
+                        )
+                        : [...assigned, { technician_id: newTechnicianId, technician_name: newTechnicianName, allocated_hours: Number(a.allocated_hours || 0) }];
+                    await base44.entities.Job.subtasks.update(job?.job_number, String(st?._id || st?.id), { assigned_technicians: nextAssigned });
+                }
+            }
+
+            return addRes;
         },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });
 
     const addTechnicianMutation = useMutation({
-        mutationFn: async ({ jobId, jobNumber, technicianId, technicianName, allocated_hours }) => {
+        mutationFn: async ({ jobId, jobNumber, technicianId, technicianName, allocated_hours, subtask_allocations }) => {
             const addRes = await base44.entities.Job.assignTechnicianByJobNumber(
                 jobNumber,
                 technicianId,
                 technicianName
             );
+
+            const allocations = Array.isArray(subtask_allocations) ? subtask_allocations : [];
+            if (allocations.length) {
+                const latest = await base44.entities.Job.getByJobNumber(jobNumber);
+                for (const a of allocations) {
+                    const st = (latest?.subtasks || []).find((s) => String(s?._id || s?.id) === String(a.subtaskId));
+                    if (!st) continue;
+                    const assigned = Array.isArray(st.assigned_technicians) ? st.assigned_technicians : [];
+                    const exists = assigned.some((x) => String(x?.technician_id) === String(technicianId));
+                    const nextAssigned = exists
+                        ? assigned.map((x) => String(x?.technician_id) === String(technicianId)
+                            ? { ...x, allocated_hours: Number(a.allocated_hours || 0) }
+                            : x
+                        )
+                        : [...assigned, { technician_id: technicianId, technician_name: technicianName, allocated_hours: Number(a.allocated_hours || 0) }];
+                    await base44.entities.Job.subtasks.update(jobNumber, String(st?._id || st?.id), { assigned_technicians: nextAssigned });
+                }
+            }
 
             const desiredAllocated = allocated_hours === '' || typeof allocated_hours === 'undefined' || allocated_hours === null
                 ? null

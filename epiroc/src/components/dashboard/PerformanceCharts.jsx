@@ -54,12 +54,30 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
 
     // Calculate efficiency data per technician
     const technicianEfficiency = technicians.map(tech => {
-        const techJobs = filteredJobs.filter(j => j.assigned_technician_id === tech.id);
+        const isTechOnJob = (job) => {
+            if (!job) return false;
+            if ((job.technicians || []).some((t) => String(t?.technician_id) === String(tech.id))) return true;
+            return (job.subtasks || []).some((st) => (st.assigned_technicians || []).some((a) => String(a?.technician_id) === String(tech.id)));
+        };
+
+        const techJobs = filteredJobs.filter(j => isTechOnJob(j));
         const completedJobs = techJobs.filter(j => j.status === 'completed');
         const techEntries = filteredEntries.filter(e => e.technician_id === tech.id);
-        
-        const totalAllocated = completedJobs.reduce((sum, j) => sum + (j.allocated_hours || 0), 0);
-        const totalUtilized = completedJobs.reduce((sum, j) => sum + (j.total_hours_utilized || j.consumed_hours || 0), 0);
+
+        const getAllocatedForTechOnJob = (job) => {
+            const allocatedFromStages = (job?.subtasks || []).reduce((sum, st) => {
+                const a = (st?.assigned_technicians || []).find((x) => String(x?.technician_id) === String(tech.id));
+                return sum + Number(a?.allocated_hours || 0);
+            }, 0);
+            if (allocatedFromStages > 0) return allocatedFromStages;
+            return Number(job?.allocated_hours || 0);
+        };
+
+        const totalAllocated = completedJobs.reduce((sum, j) => sum + getAllocatedForTechOnJob(j), 0);
+        const totalUtilized = techEntries
+            .filter((e) => !e.is_idle)
+            .filter((e) => completedJobs.some((j) => String(j.job_number) === String(e.job_id)))
+            .reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
         const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
         
         const efficiencyRaw = totalUtilized > 0 ? (totalAllocated / totalUtilized) * 100 : 0;

@@ -3,12 +3,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserPlus } from 'lucide-react';
 
 export default function JobAddTechnicianModal({ job, technicians, isOpen, onClose, onSubmit, isLoading }) {
     const [selectedTechnician, setSelectedTechnician] = useState('');
     const [allocatedHours, setAllocatedHours] = useState(String(job?.allocated_hours ?? ''));
+    const [selectedSubtasks, setSelectedSubtasks] = useState({});
 
     const assignedIds = useMemo(() => {
         const ids = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
@@ -23,6 +25,7 @@ export default function JobAddTechnicianModal({ job, technicians, isOpen, onClos
     const handleClose = () => {
         setSelectedTechnician('');
         setAllocatedHours(String(job?.allocated_hours ?? ''));
+        setSelectedSubtasks({});
         onClose();
     };
 
@@ -30,12 +33,20 @@ export default function JobAddTechnicianModal({ job, technicians, isOpen, onClos
         if (!selectedTechnician) return;
         const tech = (technicians || []).find((t) => t.id === selectedTechnician);
 
+        const selected = Object.entries(selectedSubtasks)
+            .filter(([, v]) => v && v.enabled)
+            .map(([subtaskId, v]) => ({
+                subtaskId,
+                allocated_hours: Number(v.allocated_hours || 0)
+            }));
+
         onSubmit({
             jobId: job?.id,
             jobNumber: job?.job_number,
             technicianId: selectedTechnician,
             technicianName: tech?.name || '',
-            allocated_hours: allocatedHours
+            allocated_hours: allocatedHours,
+            subtask_allocations: selected
         });
 
         setSelectedTechnician('');
@@ -84,6 +95,56 @@ export default function JobAddTechnicianModal({ job, technicians, isOpen, onClos
                             onChange={(e) => setAllocatedHours(e.target.value)}
                         />
                     </div>
+
+                    {(job?.subtasks || []).length > 0 && (
+                        <div className="space-y-2">
+                            <Label>Assign Stages (Subtasks)</Label>
+                            <div className="space-y-2 max-h-56 overflow-auto rounded-md border border-slate-200 p-2">
+                                {(job.subtasks || []).map((st) => {
+                                    const subtaskId = String(st?._id || st?.id);
+                                    const current = selectedSubtasks[subtaskId] || { enabled: false, allocated_hours: '' };
+                                    return (
+                                        <div key={subtaskId} className="flex items-center gap-2 bg-slate-50 rounded p-2">
+                                            <Checkbox
+                                                checked={!!current.enabled}
+                                                onCheckedChange={(checked) => {
+                                                    setSelectedSubtasks((prev) => ({
+                                                        ...prev,
+                                                        [subtaskId]: {
+                                                            enabled: !!checked,
+                                                            allocated_hours: prev?.[subtaskId]?.allocated_hours ?? ''
+                                                        }
+                                                    }));
+                                                }}
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-slate-800 truncate">{st?.title}</p>
+                                                {st?.category && <p className="text-xs text-slate-500 truncate">{st.category}</p>}
+                                            </div>
+                                            <Input
+                                                type="number"
+                                                step="0.5"
+                                                min="0"
+                                                disabled={!current.enabled}
+                                                value={current.allocated_hours}
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
+                                                    setSelectedSubtasks((prev) => ({
+                                                        ...prev,
+                                                        [subtaskId]: {
+                                                            enabled: true,
+                                                            allocated_hours: v
+                                                        }
+                                                    }));
+                                                }}
+                                                className="w-24"
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <DialogFooter>

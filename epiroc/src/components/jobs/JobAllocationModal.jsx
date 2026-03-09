@@ -22,7 +22,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
 
     const templates = {
         component: [
-            { category: 'Disassemble', titles: ['Stripping', 'Washing'] },
+            { category: 'Disassemble', titles: ['Washing', 'Stripping'] },
             { category: 'Assemble', titles: ['Assembling', 'Paint'] },
             { category: 'Testing', titles: ['Test'] }
         ],

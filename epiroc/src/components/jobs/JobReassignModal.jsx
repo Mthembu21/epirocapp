@@ -3,12 +3,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UserCheck, ArrowRightLeft } from 'lucide-react';
 
 export default function JobReassignModal({ job, technicians, isOpen, onClose, onReassign, isLoading }) {
     const [selectedTechnician, setSelectedTechnician] = useState('');
     const [reason, setReason] = useState('');
+    const [selectedSubtasks, setSelectedSubtasks] = useState({});
 
     const assignedIds = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
     if (job?.assigned_technician_id) assignedIds.add(String(job.assigned_technician_id));
@@ -22,22 +25,32 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
         
         const newTech = technicians.find(t => t.id === selectedTechnician);
         
+        const selected = Object.entries(selectedSubtasks)
+            .filter(([, v]) => v && v.enabled)
+            .map(([subtaskId, v]) => ({
+                subtaskId,
+                allocated_hours: Number(v.allocated_hours || 0)
+            }));
+
         onReassign({
             jobId: job.id,
             newTechnicianId: selectedTechnician,
             newTechnicianName: newTech?.name || '',
             previousTechnicianId: job.assigned_technician_id,
             previousTechnicianName: job.assigned_technician_name,
-            reason
+            reason,
+            subtask_allocations: selected
         });
         
         setSelectedTechnician('');
         setReason('');
+        setSelectedSubtasks({});
     };
 
     const handleClose = () => {
         setSelectedTechnician('');
         setReason('');
+        setSelectedSubtasks({});
         onClose();
     };
 
@@ -95,6 +108,56 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
                             className="h-20"
                         />
                     </div>
+
+                    {(job?.subtasks || []).length > 0 && (
+                        <div className="space-y-2">
+                            <Label>Assign Stages (Subtasks)</Label>
+                            <div className="space-y-2 max-h-56 overflow-auto rounded-md border border-slate-200 p-2">
+                                {(job.subtasks || []).map((st) => {
+                                    const subtaskId = String(st?._id || st?.id);
+                                    const current = selectedSubtasks[subtaskId] || { enabled: false, allocated_hours: '' };
+                                    return (
+                                        <div key={subtaskId} className="flex items-center gap-2 bg-slate-50 rounded p-2">
+                                            <Checkbox
+                                                checked={!!current.enabled}
+                                                onCheckedChange={(checked) => {
+                                                    setSelectedSubtasks((prev) => ({
+                                                        ...prev,
+                                                        [subtaskId]: {
+                                                            enabled: !!checked,
+                                                            allocated_hours: prev?.[subtaskId]?.allocated_hours ?? ''
+                                                        }
+                                                    }));
+                                                }}
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-slate-800 truncate">{st?.title}</p>
+                                                {st?.category && <p className="text-xs text-slate-500 truncate">{st.category}</p>}
+                                            </div>
+                                            <Input
+                                                type="number"
+                                                step="0.5"
+                                                min="0"
+                                                disabled={!current.enabled}
+                                                value={current.allocated_hours}
+                                                onChange={(e) => {
+                                                    const v = e.target.value;
+                                                    setSelectedSubtasks((prev) => ({
+                                                        ...prev,
+                                                        [subtaskId]: {
+                                                            enabled: true,
+                                                            allocated_hours: v
+                                                        }
+                                                    }));
+                                                }}
+                                                className="w-24"
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <DialogFooter>

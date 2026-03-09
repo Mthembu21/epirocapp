@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2, CheckSquare } from 'lucide-react';
+import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -35,7 +35,8 @@ export default function TechnicianPortal() {
         job_id: '',
         subtask_id: '',
         hours_logged: '',
-        category: ''
+        category: '',
+        category_detail: ''
     });
 
     const [subtaskDraftProgress, setSubtaskDraftProgress] = useState({});
@@ -116,19 +117,6 @@ export default function TechnicianPortal() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] })
     });
 
-    const completeJobMutation = useMutation({
-        mutationFn: (jobId) => {
-            const job = myJobs.find(j => j.id === jobId);
-            return base44.entities.Job.update(jobId, {
-                status: 'completed',
-                total_hours_utilized: job.consumed_hours || 0,
-                actual_completion_date: new Date().toISOString().split('T')[0],
-                progress_percentage: 100
-            });
-        },
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] })
-    });
-
     const createEntryMutation = useMutation({
         mutationFn: async (data) => {
             // Send timeEntry and report together — backend handles
@@ -142,7 +130,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
-            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '' }));
+            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '' }));
             setReportData({
                 work_completed: '',
                 has_bottleneck: false,
@@ -170,6 +158,7 @@ export default function TechnicianPortal() {
     const selectedJob = myJobs.find(j => j.job_number === formData.job_id);
     const selectedJobRemainingHours = Number(selectedJob?.remaining_hours || 0);
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
+    const isOtherIdleSelected = isIdleSelected && formData.category === 'Other';
 
     const getAssignedSubtasksForJob = (job) => {
         const subtasks = job?.subtasks || [];
@@ -215,7 +204,8 @@ export default function TechnicianPortal() {
             hours_logged: hoursLogged,
             log_date: formData.date,
             is_idle: isIdleSelected,
-            category: isIdleSelected ? formData.category : null
+            category: isIdleSelected ? formData.category : null,
+            category_detail: isIdleSelected ? (formData.category_detail || '') : ''
         };
 
         const report = (!isIdleSelected && reportData.work_completed) ? {
@@ -250,6 +240,7 @@ export default function TechnicianPortal() {
     const totalHours = myEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
     const totalOvertimeHours = myEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
     const totalProductiveHours = myEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = myEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
     if (!user) return null;
 
@@ -320,7 +311,7 @@ export default function TechnicianPortal() {
                     </Card>
                 )}
 
-                <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
                     <Card className="border-0 bg-gradient-to-br from-blue-500 to-blue-600">
                         <CardContent className="p-4 text-white">
                             <p className="text-sm text-white/80">Total Hours</p>
@@ -340,6 +331,13 @@ export default function TechnicianPortal() {
                             <p className="text-sm text-slate-700">Overtime</p>
                             <p className="text-2xl font-bold">{totalOvertimeHours.toFixed(1)}h</p>
                             <p className="text-xs text-slate-600">Overtime</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-0 bg-gradient-to-br from-slate-500 to-slate-600">
+                        <CardContent className="p-4 text-white">
+                            <p className="text-sm text-white/80">Non-Productive</p>
+                            <p className="text-2xl font-bold">{totalNonProductiveHours.toFixed(1)}h</p>
+                            <p className="text-xs text-white/60">IDLE hours</p>
                         </CardContent>
                     </Card>
                 </div>
@@ -419,6 +417,17 @@ export default function TechnicianPortal() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
+
+                                                {isOtherIdleSelected && (
+                                                    <div className="space-y-2">
+                                                        <Label>Other (describe)</Label>
+                                                        <Input
+                                                            value={formData.category_detail}
+                                                            onChange={(e) => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
+                                                            className="border-slate-300"
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -600,6 +609,7 @@ export default function TechnicianPortal() {
                                                 !formData.hours_logged ||
                                                 (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                                 (isIdleSelected && !formData.category) ||
+                                                (isOtherIdleSelected && !String(formData.category_detail || '').trim()) ||
                                                 (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24)
                                             }
                                         >
@@ -635,24 +645,13 @@ export default function TechnicianPortal() {
                                                        <p className="text-sm text-slate-600">{job.description}</p>
                                                    </div>
                                                    <div className="flex items-center gap-2">
-                                                       <Badge className={
-                                                           job.status === 'at_risk' ? 'bg-red-100 text-red-700' :
-                                                           job.status === 'over_allocated' ? 'bg-orange-100 text-orange-700' :
-                                                           'bg-blue-100 text-blue-700'
-                                                       }>
-                                                           {job.status?.replace(/_/g, ' ')}
-                                                       </Badge>
-                                                       {job.consumed_hours > 0 && (
-                                                           <Button
-                                                               size="sm"
-                                                               onClick={() => completeJobMutation.mutate(job.id)}
-                                                               disabled={completeJobMutation.isPending}
-                                                               className="bg-green-500 hover:bg-green-600 text-white h-8"
-                                                           >
-                                                               <CheckSquare className="w-4 h-4 mr-1" />
-                                                               Complete
-                                                           </Button>
-                                                       )}
+                                                        <Badge className={
+                                                            job.status === 'at_risk' ? 'bg-red-100 text-red-700' :
+                                                            job.status === 'over_allocated' ? 'bg-orange-100 text-orange-700' :
+                                                            'bg-blue-100 text-blue-700'
+                                                        }>
+                                                            {job.status?.replace(/_/g, ' ')}
+                                                        </Badge>
                                                    </div>
                                                </div>
                                                 <div className="mb-2">
