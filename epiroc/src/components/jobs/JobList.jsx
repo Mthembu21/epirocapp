@@ -77,6 +77,7 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, t
                                 const config = statusConfig[job.status] || statusConfig.active;
                                 const StatusIcon = config.icon;
                                 const progress = job.aggregated_progress_percentage ?? job.progress_percentage ?? 0;
+                                const hasRemaining = Number(job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0))) > 1e-6;
                                 const technicianNames = (job.technicians && job.technicians.length > 0)
                                     ? job.technicians.map(t => t.technician_name).filter(Boolean).join(', ')
                                     : (job.assigned_technician_name || '');
@@ -125,7 +126,7 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, t
                                         {showActions && (
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-1">
-                                                    {job.status !== 'completed' && technicians.length > 0 && (
+                                                    {hasRemaining && technicians.length > 0 && (
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
@@ -136,7 +137,7 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, t
                                                             <Plus className="w-4 h-4" />
                                                         </Button>
                                                     )}
-                                                    {job.status !== 'completed' && technicians.length > 0 && (
+                                                    {hasRemaining && technicians.length > 0 && (
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
