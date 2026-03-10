@@ -3,7 +3,7 @@ import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle, Pencil, Trash2, Save, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { parseISO, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -18,6 +18,9 @@ import TechnicianPerformance from '../components/dashboard/TechnicianPerformance
 import PerformanceCharts from '../components/dashboard/PerformanceCharts';
 import HRExportButton from '../components/dashboard/HRExportButton';
 import MonthlyArchiveManager from '../components/dashboard/MonthlyArchiveManager';
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Hours are now calculated per entry, not constants
 
@@ -26,6 +29,8 @@ export default function Dashboard() {
     const [jobModalOpen, setJobModalOpen] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
+    const [editingLogId, setEditingLogId] = useState(null);
+    const [editLogDraft, setEditLogDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -86,6 +91,12 @@ export default function Dashboard() {
         refetchInterval: isAuthenticated ? 10000 : false
     });
 
+    const { data: idleInfo } = useQuery({
+        queryKey: ['idleCategories'],
+        queryFn: () => base44.entities.DailyTimeEntry.idleCategories(),
+        enabled: isAuthenticated
+    });
+
     const { data: jobReports = [] } = useQuery({
         queryKey: ['jobReports'],
         queryFn: () => base44.entities.JobReport.list('-date', 200),
@@ -121,6 +132,24 @@ export default function Dashboard() {
     const deleteJobMutation = useMutation({
         mutationFn: (id) => base44.entities.Job.delete(id),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    });
+
+    const updateTimeLogMutation = useMutation({
+        mutationFn: ({ id, timeLog }) => base44.entities.DailyTimeEntry.update(id, { timeLog }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            setEditingLogId(null);
+            setEditLogDraft({ hours_logged: '', category: '', category_detail: '' });
+        }
+    });
+
+    const deleteTimeLogMutation = useMutation({
+        mutationFn: (id) => base44.entities.DailyTimeEntry.delete(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        }
     });
 
     const reassignJobMutation = useMutation({
@@ -384,6 +413,13 @@ export default function Dashboard() {
                             <Users className="w-4 h-4" />
                             Technicians
                         </TabsTrigger>
+                        <TabsTrigger 
+                            value="timeLogs" 
+                            className="flex items-center gap-2 rounded-lg text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800"
+                        >
+                            <Clock className="w-4 h-4" />
+                            Time Logs
+                        </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="jobs" className="mt-6">
@@ -418,6 +454,167 @@ export default function Dashboard() {
                             technicians={technicians}
                             onDelete={deleteTechnicianMutation.mutate}
                         />
+                    </TabsContent>
+
+                    <TabsContent value="timeLogs" className="mt-6">
+                        <div className="bg-white/95 rounded-xl shadow-lg overflow-hidden">
+                            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-semibold text-slate-800">Time Logs</h3>
+                                    <p className="text-xs text-slate-500">Edit or delete technician logs. This updates job hours and progress.</p>
+                                </div>
+                                <div className="text-xs text-slate-500">{timeLogs.length} logs</div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-slate-50">
+                                            <TableHead>Date</TableHead>
+                                            <TableHead>Technician</TableHead>
+                                            <TableHead>Job</TableHead>
+                                            <TableHead>Type</TableHead>
+                                            <TableHead className="text-right">Hours</TableHead>
+                                            <TableHead className="text-right">Actions</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {timeLogs.map((log) => {
+                                            const isEditing = editingLogId === log.id;
+                                            const isIdle = !!log.is_idle;
+                                            const showOtherDetail = isIdle && (editLogDraft.category === 'Other' || log.category === 'Other');
+                                            return (
+                                                <TableRow key={log.id}>
+                                                    <TableCell>{log.log_date ? parseISO(log.log_date).toLocaleDateString() : '-'}</TableCell>
+                                                    <TableCell>{log.technician_name || log.technician_id}</TableCell>
+                                                    <TableCell className="font-mono text-sm">{log.job_id}</TableCell>
+                                                    <TableCell>
+                                                        {isIdle ? (
+                                                            isEditing ? (
+                                                                <div className="space-y-2 min-w-[180px]">
+                                                                    <Select
+                                                                        value={String(editLogDraft.category ?? '')}
+                                                                        onValueChange={(value) => setEditLogDraft(prev => ({ ...prev, category: value }))}
+                                                                    >
+                                                                        <SelectTrigger className="h-8">
+                                                                            <SelectValue placeholder="Category" />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {(idleInfo?.categories || []).map(cat => (
+                                                                                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                    {showOtherDetail && (
+                                                                        <Input
+                                                                            className="h-8"
+                                                                            value={editLogDraft.category_detail}
+                                                                            onChange={(e) => setEditLogDraft(prev => ({ ...prev, category_detail: e.target.value }))}
+                                                                            placeholder="Other details"
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-sm">Idle: {log.category}{log.category === 'Other' && log.category_detail ? ` (${log.category_detail})` : ''}</span>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-sm">Job</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {isEditing ? (
+                                                            <Input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.25"
+                                                                className="h-8 w-24 ml-auto text-right"
+                                                                value={editLogDraft.hours_logged}
+                                                                onChange={(e) => setEditLogDraft(prev => ({ ...prev, hours_logged: e.target.value }))}
+                                                            />
+                                                        ) : (
+                                                            `${Number(log.hours_logged || 0).toFixed(1)}h`
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {isEditing ? (
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-8 w-8 text-slate-500 hover:text-slate-800"
+                                                                    onClick={() => {
+                                                                        setEditingLogId(null);
+                                                                        setEditLogDraft({ hours_logged: '', category: '', category_detail: '' });
+                                                                    }}
+                                                                    disabled={updateTimeLogMutation.isPending}
+                                                                    title="Cancel"
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-8 w-8 text-emerald-600 hover:text-emerald-800"
+                                                                    onClick={() => {
+                                                                        const hours = Number(editLogDraft.hours_logged);
+                                                                        if (!hours || hours <= 0) return;
+                                                                        updateTimeLogMutation.mutate({
+                                                                            id: log.id,
+                                                                            timeLog: {
+                                                                                hours_logged: hours,
+                                                                                is_idle: log.is_idle,
+                                                                                category: log.is_idle ? editLogDraft.category : log.category,
+                                                                                category_detail: log.is_idle ? editLogDraft.category_detail : log.category_detail,
+                                                                                subtask_id: log.subtask_id
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    disabled={updateTimeLogMutation.isPending}
+                                                                    title="Save"
+                                                                >
+                                                                    <Save className="w-4 h-4" />
+                                                                </Button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-8 w-8 text-slate-500 hover:text-slate-800"
+                                                                    onClick={() => {
+                                                                        setEditingLogId(log.id);
+                                                                        setEditLogDraft({
+                                                                            hours_logged: String(log.hours_logged ?? ''),
+                                                                            category: String(log.category ?? ''),
+                                                                            category_detail: String(log.category_detail ?? '')
+                                                                        });
+                                                                    }}
+                                                                    title="Edit"
+                                                                >
+                                                                    <Pencil className="w-4 h-4" />
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                                                    onClick={() => {
+                                                                        if (!window.confirm('Delete this time log? This will update job hours and progress.')) return;
+                                                                        deleteTimeLogMutation.mutate(log.id);
+                                                                    }}
+                                                                    disabled={deleteTimeLogMutation.isPending}
+                                                                    title="Delete"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </div>
                     </TabsContent>
                 </Tabs>
 

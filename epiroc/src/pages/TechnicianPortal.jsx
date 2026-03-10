@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2, Pencil, Trash2, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -38,7 +38,6 @@ export default function TechnicianPortal() {
         category: '',
         category_detail: ''
     });
-
     const [subtaskDraftProgress, setSubtaskDraftProgress] = useState({});
     const [reportData, setReportData] = useState({
         work_completed: '',
@@ -46,7 +45,28 @@ export default function TechnicianPortal() {
         bottleneck_category: '',
         bottleneck_description: ''
     });
+
+    const [editingEntryId, setEditingEntryId] = useState(null);
+    const [editEntryDraft, setEditEntryDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
     const queryClient = useQueryClient();
+
+    const updateEntryMutation = useMutation({
+        mutationFn: ({ id, timeLog }) => base44.entities.DailyTimeEntry.update(id, { timeLog }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
+            queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+            setEditingEntryId(null);
+            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '' });
+        }
+    });
+
+    const deleteEntryMutation = useMutation({
+        mutationFn: (id) => base44.entities.DailyTimeEntry.delete(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
+            queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+        }
+    });
 
     useEffect(() => {
         const validateSession = async () => {
@@ -775,10 +795,16 @@ export default function TechnicianPortal() {
                                                     <TableHead className="text-right">Hours</TableHead>
                                                     <TableHead className="text-right">Normal</TableHead>
                                                     <TableHead className="text-right">OT</TableHead>
+                                                    <TableHead className="text-right">Actions</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {myEntries.map((entry) => (
+                                                {myEntries.map((entry) => {
+                                                    const isEditing = editingEntryId === entry.id;
+                                                    const isIdle = !!entry.is_idle;
+                                                    const showOtherDetail = isIdle && (editEntryDraft.category === 'Other' || entry.category === 'Other');
+
+                                                    return (
                                                     <TableRow key={entry.id}>
                                                         <TableCell>
                                                             <div>
@@ -786,12 +812,134 @@ export default function TechnicianPortal() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="font-mono text-sm">{entry.job_id}</TableCell>
-                                                        <TableCell>{getEntryCategoryLabel(entry)}</TableCell>
-                                                        <TableCell className="text-right text-slate-800">{(entry.hours_logged || 0).toFixed(1)}h</TableCell>
+                                                        <TableCell>
+                                                            {isEditing ? (
+                                                                <div className="space-y-2 min-w-[180px]">
+                                                                    {isIdle ? (
+                                                                        <>
+                                                                            <Select
+                                                                                value={String(editEntryDraft.category ?? '')}
+                                                                                onValueChange={(value) => setEditEntryDraft(prev => ({ ...prev, category: value }))}
+                                                                            >
+                                                                                <SelectTrigger className="h-8">
+                                                                                    <SelectValue placeholder="Category" />
+                                                                                </SelectTrigger>
+                                                                                <SelectContent>
+                                                                                    {(idleInfo?.categories || []).map(cat => (
+                                                                                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                                                                                    ))}
+                                                                                </SelectContent>
+                                                                            </Select>
+                                                                            {showOtherDetail && (
+                                                                                <Input
+                                                                                    className="h-8"
+                                                                                    value={editEntryDraft.category_detail}
+                                                                                    onChange={(e) => setEditEntryDraft(prev => ({ ...prev, category_detail: e.target.value }))}
+                                                                                    placeholder="Other details"
+                                                                                />
+                                                                            )}
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="text-sm text-slate-700">{getEntryCategoryLabel(entry)}</span>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                getEntryCategoryLabel(entry)
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-right text-slate-800">
+                                                            {isEditing ? (
+                                                                <Input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.25"
+                                                                    className="h-8 w-24 ml-auto text-right"
+                                                                    value={editEntryDraft.hours_logged}
+                                                                    onChange={(e) => setEditEntryDraft(prev => ({ ...prev, hours_logged: e.target.value }))}
+                                                                />
+                                                            ) : (
+                                                                `${(entry.hours_logged || 0).toFixed(1)}h`
+                                                            )}
+                                                        </TableCell>
                                                         <TableCell className="text-right text-blue-600">{(entry.normal_hours || 0).toFixed(1)}h</TableCell>
                                                         <TableCell className="text-right font-semibold text-yellow-600">{(entry.overtime_hours || 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right">
+                                                            {isEditing ? (
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-8 w-8 text-slate-500 hover:text-slate-800"
+                                                                        onClick={() => {
+                                                                            setEditingEntryId(null);
+                                                                            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '' });
+                                                                        }}
+                                                                        disabled={updateEntryMutation.isPending}
+                                                                        title="Cancel"
+                                                                    >
+                                                                        <X className="w-4 h-4" />
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-8 w-8 text-emerald-600 hover:text-emerald-800"
+                                                                        onClick={() => {
+                                                                            const hours = Number(editEntryDraft.hours_logged);
+                                                                            if (!hours || hours <= 0) return;
+                                                                            updateEntryMutation.mutate({
+                                                                                id: entry.id,
+                                                                                timeLog: {
+                                                                                    hours_logged: hours,
+                                                                                    is_idle: entry.is_idle,
+                                                                                    category: entry.is_idle ? editEntryDraft.category : entry.category,
+                                                                                    category_detail: entry.is_idle ? editEntryDraft.category_detail : entry.category_detail,
+                                                                                    subtask_id: entry.subtask_id
+                                                                                }
+                                                                            });
+                                                                        }}
+                                                                        disabled={updateEntryMutation.isPending}
+                                                                        title="Save"
+                                                                    >
+                                                                        <Save className="w-4 h-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-8 w-8 text-slate-500 hover:text-slate-800"
+                                                                        onClick={() => {
+                                                                            setEditingEntryId(entry.id);
+                                                                            setEditEntryDraft({
+                                                                                hours_logged: String(entry.hours_logged ?? ''),
+                                                                                category: String(entry.category ?? ''),
+                                                                                category_detail: String(entry.category_detail ?? '')
+                                                                            });
+                                                                        }}
+                                                                        title="Edit"
+                                                                    >
+                                                                        <Pencil className="w-4 h-4" />
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                                                        onClick={() => {
+                                                                            if (!window.confirm('Delete this entry? This will update job hours.')) return;
+                                                                            deleteEntryMutation.mutate(entry.id);
+                                                                        }}
+                                                                        disabled={deleteEntryMutation.isPending}
+                                                                        title="Delete"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            )}
+                                                        </TableCell>
                                                     </TableRow>
-                                                ))}
+                                                    );
+                                                })}
                                             </TableBody>
                                         </Table>
                                     </div>
