@@ -166,8 +166,10 @@ export default function Dashboard() {
                 reason: reason || ''
             });
 
+            await base44.entities.Job.update(jobId, { reassignment_history: reassignmentHistory });
+
             // Assign an additional technician to the same job (do not create a new job)
-            const addRes = await base44.entities.Job.assignTechnicianByJobNumber(
+            await base44.entities.Job.assignTechnicianByJobNumber(
                 job?.job_number,
                 newTechnicianId,
                 newTechnicianName
@@ -191,14 +193,15 @@ export default function Dashboard() {
                 }
             }
 
-            return addRes;
+            const latestAfter = await base44.entities.Job.getByJobNumber(job?.job_number);
+            return latestAfter;
         },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });
 
     const addTechnicianMutation = useMutation({
         mutationFn: async ({ jobId, jobNumber, technicianId, technicianName, allocated_hours, subtask_allocations }) => {
-            const addRes = await base44.entities.Job.assignTechnicianByJobNumber(
+            await base44.entities.Job.assignTechnicianByJobNumber(
                 jobNumber,
                 technicianId,
                 technicianName
@@ -234,7 +237,8 @@ export default function Dashboard() {
                 }
             }
 
-            return addRes;
+            const latestAfter = await base44.entities.Job.getByJobNumber(jobNumber);
+            return latestAfter;
         },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });

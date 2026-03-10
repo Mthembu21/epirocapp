@@ -38,7 +38,11 @@ export default function AtRiskJobs({ jobs, jobReports }) {
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <p className="font-semibold text-slate-800">{job.job_number}</p>
-                                        <p className="text-sm text-slate-600">{job.assigned_technician_name}</p>
+                                        <p className="text-sm text-slate-600">
+                                            {(job.technicians && job.technicians.length > 0)
+                                                ? job.technicians.map(t => t.technician_name).filter(Boolean).join(', ')
+                                                : (job.assigned_technician_name || '')}
+                                        </p>
                                     </div>
                                     <div className="flex gap-2">
                                         {job.status === 'over_allocated' && (
@@ -58,7 +62,7 @@ export default function AtRiskJobs({ jobs, jobReports }) {
                                 <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                                     <div>
                                         <p className="text-slate-500">Progress</p>
-                                        <p className="font-medium">{(job.progress_percentage || 0).toFixed(0)}%</p>
+                                        <p className="font-medium">{(job.aggregated_progress_percentage ?? job.progress_percentage ?? 0).toFixed(0)}%</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Consumed</p>

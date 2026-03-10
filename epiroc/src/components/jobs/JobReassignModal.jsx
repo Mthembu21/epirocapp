@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,8 +13,17 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
     const [reason, setReason] = useState('');
     const [selectedSubtasks, setSelectedSubtasks] = useState({});
 
-    const assignedIds = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
-    if (job?.assigned_technician_id) assignedIds.add(String(job.assigned_technician_id));
+    const assignedIds = useMemo(() => {
+        const ids = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
+        if (job?.assigned_technician_id) ids.add(String(job.assigned_technician_id));
+
+        for (const st of (job?.subtasks || [])) {
+            for (const a of (st?.assigned_technicians || [])) {
+                if (a?.technician_id) ids.add(String(a.technician_id));
+            }
+        }
+        return ids;
+    }, [job]);
 
     const availableTechnicians = technicians.filter(
         t => !assignedIds.has(String(t.id)) && t.status === 'active'
@@ -73,7 +82,11 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
 
                     <div className="bg-blue-50 rounded-lg p-3">
                         <p className="text-sm text-blue-600">Currently Assigned To</p>
-                        <p className="font-semibold text-blue-800">{job?.assigned_technician_name}</p>
+                        <p className="font-semibold text-blue-800">
+                            {(job?.technicians && job.technicians.length > 0)
+                                ? job.technicians.map(t => t.technician_name).filter(Boolean).join(', ')
+                                : (job?.assigned_technician_name || '')}
+                        </p>
                         <p className="text-xs text-blue-600 mt-1">
                             Progress: {(job?.aggregated_progress_percentage ?? job?.progress_percentage ?? 0).toFixed(0)}% | 
                             Consumed: {(job?.consumed_hours || 0).toFixed(1)}h

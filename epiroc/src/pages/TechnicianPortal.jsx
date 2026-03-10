@@ -38,7 +38,6 @@ export default function TechnicianPortal() {
         category: '',
         category_detail: ''
     });
-    const [subtaskDraftProgress, setSubtaskDraftProgress] = useState({});
     const [reportData, setReportData] = useState({
         work_completed: '',
         has_bottleneck: false,
@@ -696,16 +695,13 @@ export default function TechnicianPortal() {
                                                     </div>
                                                 </div>
 
-                                                {(job.subtasks || []).length > 0 && (
+                                                    {(job.subtasks || []).length > 0 && (
                                                     <div className="mt-3 space-y-2">
                                                         <p className="text-sm font-medium text-slate-700">Subtasks</p>
                                                         <div className="space-y-2">
                                                             {(job.subtasks || []).map((st) => {
                                                                 const subtaskId = st.id || st._id;
                                                                 const myProgress = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(user.id))?.progress_percentage || 0;
-                                                                const draftKey = `${job.job_number}:${subtaskId}`;
-                                                                const draftValue = subtaskDraftProgress[draftKey];
-                                                                const shownValue = typeof draftValue === 'number' ? draftValue : myProgress;
                                                                 return (
                                                                     <div key={subtaskId} className="bg-slate-50 rounded p-3">
                                                                         <div className="flex items-center justify-between gap-2">
@@ -713,34 +709,9 @@ export default function TechnicianPortal() {
                                                                                 <p className="text-sm font-semibold text-slate-800 truncate">{st.title}</p>
                                                                                 <p className="text-xs text-slate-500">My progress: {Number(myProgress).toFixed(0)}%</p>
                                                                             </div>
-                                                                            <Input
-                                                                                type="number"
-                                                                                min="0"
-                                                                                max="100"
-                                                                                step="1"
-                                                                                value={shownValue}
-                                                                                onChange={(e) => {
-                                                                                    const next = Number(e.target.value);
-                                                                                    setSubtaskDraftProgress(prev => ({ ...prev, [draftKey]: next }));
-                                                                                }}
-                                                                                onBlur={() => {
-                                                                                    const next = subtaskDraftProgress[draftKey];
-                                                                                    if (typeof next !== 'number') return;
-                                                                                    base44.entities.Job.subtasks.setProgress(job.job_number, subtaskId, {
-                                                                                        technician_id: user.id,
-                                                                                        progress_percentage: next
-                                                                                    }).then(() => {
-                                                                                        queryClient.invalidateQueries({ queryKey: ['myJobs'] });
-                                                                                    }).catch(() => {}).finally(() => {
-                                                                                        setSubtaskDraftProgress(prev => {
-                                                                                            const copy = { ...prev };
-                                                                                            delete copy[draftKey];
-                                                                                            return copy;
-                                                                                        });
-                                                                                    });
-                                                                                }}
-                                                                                className="w-24"
-                                                                            />
+                                                                            <div className="w-24 text-right text-sm font-semibold text-slate-700">
+                                                                                {Number(myProgress).toFixed(0)}%
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 );
