@@ -10,18 +10,34 @@ export default function HRExportButton({ timeEntries, technicians }) {
     const exportHRData = () => {
         const wb = XLSX.utils.book_new();
 
+        const getDayStr = (d) => {
+            try {
+                return format(new Date(d), 'EEE');
+            } catch {
+                return '';
+            }
+        };
+
+        const normalizeDateStr = (d) => {
+            if (!d) return '';
+            // TimeLog uses log_date; sometimes serialized as ISO string
+            const dt = new Date(d);
+            if (Number.isNaN(dt.getTime())) return String(d);
+            return format(dt, 'yyyy-MM-dd');
+        };
+
         // Sheet 1: Attendance Records
         const attendanceData = timeEntries.map(entry => ({
-            'Date': entry.date,
-            'Day': entry.day_of_week,
+            'Date': normalizeDateStr(entry.log_date),
+            'Day': getDayStr(entry.log_date),
             'Technician': entry.technician_name,
-            'Start Time': entry.start_time,
-            'End Time': entry.end_time,
-            'HR Hours': entry.hr_hours || HR_HOURS_PER_DAY,
-            'Overtime Hours': entry.overtime_hours || 0,
-            'Overtime Rate': entry.overtime_rate || 1.5,
-            'Weighted Overtime': entry.weighted_overtime || 0,
-            'Total Payable Hours': (entry.hr_hours || HR_HOURS_PER_DAY) + (entry.weighted_overtime || 0)
+            'Start Time': '',
+            'End Time': '',
+            'HR Hours': Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY,
+            'Overtime Hours': Number(entry.overtime_hours || 0),
+            'Overtime Rate': 1.5,
+            'Weighted Overtime': Number(entry.overtime_hours || 0),
+            'Total Payable Hours': (Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY) + Number(entry.overtime_hours || 0)
         }));
         
         const attendanceSheet = XLSX.utils.json_to_sheet(attendanceData);
@@ -30,9 +46,9 @@ export default function HRExportButton({ timeEntries, technicians }) {
         // Sheet 2: Payroll Summary by Technician
         const techSummary = technicians.map(tech => {
             const techEntries = timeEntries.filter(e => e.technician_id === tech.id);
-            const totalHRHours = techEntries.reduce((sum, e) => sum + (e.hr_hours || HR_HOURS_PER_DAY), 0);
-            const totalOvertimeHours = techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-            const totalWeightedOT = techEntries.reduce((sum, e) => sum + (e.weighted_overtime || 0), 0);
+            const totalHRHours = techEntries.reduce((sum, e) => sum + (Number(e.hours_logged || 0) || HR_HOURS_PER_DAY), 0);
+            const totalOvertimeHours = techEntries.reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0);
+            const totalWeightedOT = totalOvertimeHours;
             const daysWorked = techEntries.length;
 
             return {
@@ -53,7 +69,8 @@ export default function HRExportButton({ timeEntries, technicians }) {
         // Sheet 3: Monthly Summary
         const monthlyData = {};
         timeEntries.forEach(entry => {
-            const month = entry.date?.substring(0, 7); // YYYY-MM
+            const d = normalizeDateStr(entry.log_date);
+            const month = d ? d.substring(0, 7) : '';
             if (!monthlyData[month]) {
                 monthlyData[month] = {
                     totalHRHours: 0,
@@ -62,9 +79,9 @@ export default function HRExportButton({ timeEntries, technicians }) {
                     daysWorked: 0
                 };
             }
-            monthlyData[month].totalHRHours += entry.hr_hours || HR_HOURS_PER_DAY;
-            monthlyData[month].totalOvertimeHours += entry.overtime_hours || 0;
-            monthlyData[month].totalWeightedOT += entry.weighted_overtime || 0;
+            monthlyData[month].totalHRHours += (Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY);
+            monthlyData[month].totalOvertimeHours += Number(entry.overtime_hours || 0);
+            monthlyData[month].totalWeightedOT += Number(entry.overtime_hours || 0);
             monthlyData[month].daysWorked += 1;
         });
 

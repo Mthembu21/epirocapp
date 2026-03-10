@@ -13,10 +13,10 @@ export default function TechnicianSummary({ technicians, entries }) {
     // Calculate totals per technician
     const technicianStats = technicians.map(tech => {
         const techEntries = entries.filter(e => e.technician_id === tech.id);
-        const totalHours = techEntries.reduce((sum, e) => sum + (e.total_hours || 0), 0);
+        const totalHours = techEntries.reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
         const normalHours = techEntries.reduce((sum, e) => sum + (e.normal_hours || 0), 0);
         const overtimeHours = techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-        const weightedOT = techEntries.reduce((sum, e) => sum + (e.weighted_overtime || 0), 0);
+        const weightedOT = overtimeHours;
 
         return {
             ...tech,
@@ -40,7 +40,14 @@ export default function TechnicianSummary({ technicians, entries }) {
 
     if (searchDate) {
         filteredStats = filteredStats.filter(tech => {
-            const hasEntryOnDate = tech.entries.some(e => e.date === searchDate);
+            const hasEntryOnDate = tech.entries.some(e => {
+                if (!e.log_date) return false;
+                try {
+                    return format(new Date(e.log_date), 'yyyy-MM-dd') === searchDate;
+                } catch {
+                    return false;
+                }
+            });
             return hasEntryOnDate;
         });
     }
@@ -48,7 +55,14 @@ export default function TechnicianSummary({ technicians, entries }) {
     // Get entries for selected date
     const getEntriesForDate = (tech) => {
         if (!searchDate) return null;
-        return tech.entries.find(e => e.date === searchDate);
+        return tech.entries.find(e => {
+            if (!e.log_date) return false;
+            try {
+                return format(new Date(e.log_date), 'yyyy-MM-dd') === searchDate;
+            } catch {
+                return false;
+            }
+        });
     };
 
     return (
@@ -148,12 +162,12 @@ export default function TechnicianSummary({ technicians, entries }) {
                                                         <div className="flex items-center gap-2">
                                                             <Clock className="w-4 h-4 text-green-500" />
                                                             <span className="text-sm">
-                                                                {dateEntry.start_time} - {dateEntry.end_time}
-                                                                <span className="text-slate-500 ml-2">({dateEntry.total_hours}h)</span>
+                                                                {(Number(dateEntry.hours_logged || 0)).toFixed(1)}h
+                                                                <span className="text-slate-500 ml-2">(Normal {(Number(dateEntry.normal_hours || 0)).toFixed(1)}h, OT {(Number(dateEntry.overtime_hours || 0)).toFixed(1)}h)</span>
                                                             </span>
                                                         </div>
                                                     ) : (
-                                                        <span className="text-slate-400 text-sm">Not working</span>
+                                                        <span className="text-slate-400 text-sm">No work logged</span>
                                                     )}
                                                 </TableCell>
                                             )}

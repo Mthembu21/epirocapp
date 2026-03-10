@@ -10,21 +10,36 @@ export default function ExportButton({ entries, filename = "timesheet_export" })
             return;
         }
 
+        const normalizeDateStr = (d) => {
+            if (!d) return '';
+            const dt = new Date(d);
+            if (Number.isNaN(dt.getTime())) return String(d);
+            return format(dt, 'yyyy-MM-dd');
+        };
+
+        const getDayStr = (d) => {
+            try {
+                return format(new Date(d), 'EEEE');
+            } catch {
+                return '';
+            }
+        };
+
         const workbook = XLSX.utils.book_new();
 
         // Sheet 1: All Entries
         const entriesData = entries.map(entry => ({
             'Technician': entry.technician_name,
-            'Date': entry.date,
-            'Day': entry.day_of_week,
-            'Job Number': entry.job_number || '',
-            'Start Time': entry.start_time,
-            'End Time': entry.end_time,
-            'HR Hours': entry.hr_hours || 8.5,
-            'Productive Hours': entry.productive_hours || 7.5,
-            'Overtime Hours': entry.overtime_hours || 0,
-            'OT Rate': entry.overtime_rate || 1.5,
-            'Weighted Overtime': entry.weighted_overtime || 0,
+            'Date': normalizeDateStr(entry.log_date),
+            'Day': getDayStr(entry.log_date),
+            'Job Number': entry.job_id || '',
+            'Start Time': '',
+            'End Time': '',
+            'HR Hours': Number(entry.hours_logged || 0) || 0,
+            'Productive Hours': entry.is_idle ? 0 : (Number(entry.hours_logged || 0) || 0),
+            'Overtime Hours': Number(entry.overtime_hours || 0),
+            'OT Rate': 1.5,
+            'Weighted Overtime': Number(entry.overtime_hours || 0),
             'Notes': entry.notes || ''
         }));
 
@@ -45,10 +60,10 @@ export default function ExportButton({ entries, filename = "timesheet_export" })
                 };
             }
             techSummary[entry.technician_name].totalEntries++;
-            techSummary[entry.technician_name].hrHours += entry.hr_hours || 8.5;
-            techSummary[entry.technician_name].productiveHours += entry.productive_hours || 7.5;
-            techSummary[entry.technician_name].overtimeHours += entry.overtime_hours || 0;
-            techSummary[entry.technician_name].weightedOvertime += entry.weighted_overtime || 0;
+            techSummary[entry.technician_name].hrHours += Number(entry.hours_logged || 0) || 0;
+            techSummary[entry.technician_name].productiveHours += entry.is_idle ? 0 : (Number(entry.hours_logged || 0) || 0);
+            techSummary[entry.technician_name].overtimeHours += Number(entry.overtime_hours || 0);
+            techSummary[entry.technician_name].weightedOvertime += Number(entry.overtime_hours || 0);
         });
 
         const summaryData = Object.values(techSummary).map(tech => ({

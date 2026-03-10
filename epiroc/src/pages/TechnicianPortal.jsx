@@ -150,8 +150,8 @@ export default function TechnicianPortal() {
     const totalOvertimeForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.overtime_hours) || 0), 0);
 
     const requiredNormalForDay = selectedDateObj
-        ? (getDay(selectedDateObj) === 5 ? 7 : 8)
-        : 8;
+        ? (getDay(selectedDateObj) === 5 ? 7.5 : 8.5)
+        : 8.5;
 
     const belowRequiredNormalForDay = totalLoggedHoursForDate > 0 && totalLoggedHoursForDate < requiredNormalForDay;
 
@@ -193,7 +193,6 @@ export default function TechnicianPortal() {
         const jobNumber = isIdleSelected ? IDLE_JOB_ID : (selectedJob?.job_number || '');
         if (!jobNumber) return;
 
-        if (!isIdleSelected && selectedJobRemainingHours > 0 && hoursLogged > selectedJobRemainingHours) return;
         if (!isIdleSelected && !formData.subtask_id) return;
         if (isIdleSelected && !formData.category) return;
 
@@ -235,6 +234,21 @@ export default function TechnicianPortal() {
             case 'Saturday': return 'bg-amber-100 text-amber-700 border-amber-200';
             default: return 'bg-slate-100 text-slate-700 border-slate-200';
         }
+    };
+
+    const getEntryCategoryLabel = (entry) => {
+        if (!entry) return '-';
+        if (entry.is_idle) {
+            const base = entry.category || '-';
+            if (base === 'Other' && String(entry.category_detail || '').trim()) {
+                return `Other: ${String(entry.category_detail).trim()}`;
+            }
+            return base;
+        }
+
+        const job = (myJobs || []).find((j) => String(j.job_number) === String(entry.job_id));
+        const st = (job?.subtasks || []).find((s) => String(s?._id || s?.id) === String(entry.subtask_id));
+        return st?.category || st?.title || entry.subtask_title || '-';
     };
 
     const totalHours = myEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
@@ -772,7 +786,7 @@ export default function TechnicianPortal() {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="font-mono text-sm">{entry.job_id}</TableCell>
-                                                        <TableCell>{entry.is_idle ? entry.category : '-'}</TableCell>
+                                                        <TableCell>{getEntryCategoryLabel(entry)}</TableCell>
                                                         <TableCell className="text-right text-slate-800">{(entry.hours_logged || 0).toFixed(1)}h</TableCell>
                                                         <TableCell className="text-right text-blue-600">{(entry.normal_hours || 0).toFixed(1)}h</TableCell>
                                                         <TableCell className="text-right font-semibold text-yellow-600">{(entry.overtime_hours || 0).toFixed(1)}h</TableCell>

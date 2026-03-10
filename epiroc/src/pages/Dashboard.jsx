@@ -75,13 +75,15 @@ export default function Dashboard() {
     const { data: jobs = [] } = useQuery({
         queryKey: ['jobs'],
         queryFn: () => base44.entities.Job.list('-created_date', 200),
-        enabled: isAuthenticated
+        enabled: isAuthenticated,
+        refetchInterval: isAuthenticated ? 10000 : false
     });
 
-    const { data: timeEntries = [] } = useQuery({
-        queryKey: ['dailyTimeEntries'],
-        queryFn: () => base44.entities.DailyTimeEntry.list('-date', 500),
-        enabled: isAuthenticated
+    const { data: timeLogs = [] } = useQuery({
+        queryKey: ['timeLogs'],
+        queryFn: () => base44.entities.DailyTimeEntry.list('-log_date', 500),
+        enabled: isAuthenticated,
+        refetchInterval: isAuthenticated ? 10000 : false
     });
 
     const { data: jobReports = [] } = useQuery({
@@ -98,7 +100,7 @@ export default function Dashboard() {
     const deleteTechnicianMutation = useMutation({
         mutationFn: async (id) => {
             // Delete all time entries for this technician
-            const techEntries = timeEntries.filter(e => e.technician_id === id);
+            const techEntries = timeLogs.filter(e => e.technician_id === id);
             for (const entry of techEntries) {
                 await base44.entities.DailyTimeEntry.delete(entry.id);
             }
@@ -107,7 +109,7 @@ export default function Dashboard() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['technicians'] });
-            queryClient.invalidateQueries({ queryKey: ['dailyTimeEntries'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
         }
     });
 
@@ -212,10 +214,10 @@ export default function Dashboard() {
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
     
-    const totalHours = timeEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
-    const totalOvertimeHours = timeEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-    const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
-    const totalNonProductiveHours = timeEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+    const totalHours = timeLogs.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+    const totalOvertimeHours = timeLogs.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+    const totalProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
     const productivityRaw = totalHours > 0 ? (totalProductiveHours / totalHours) * 100 : 0;
     const productivity = Math.max(0, Math.min(100, productivityRaw));
@@ -253,8 +255,8 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3 flex-wrap">
-                            <HRExportButton timeEntries={timeEntries} technicians={technicians} />
-                            <ExportButton entries={timeEntries} technicians={technicians} filename="epiroc_timesheet" />
+                            <HRExportButton timeEntries={timeLogs} technicians={technicians} />
+                            <ExportButton entries={timeLogs} technicians={technicians} filename="epiroc_timesheet" />
                             <JobAllocationModal 
                                 technicians={technicians}
                                 existingJobs={jobs}
@@ -277,7 +279,7 @@ export default function Dashboard() {
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div className="mb-6">
-                    <MonthlyArchiveManager timeEntries={timeEntries} technicians={technicians} />
+                    <MonthlyArchiveManager timeEntries={timeLogs} technicians={technicians} />
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
@@ -401,12 +403,12 @@ export default function Dashboard() {
                             <PerformanceCharts 
                                 technicians={technicians}
                                 jobs={jobs}
-                                timeEntries={timeEntries}
+                                timeEntries={timeLogs}
                             />
                             <TechnicianPerformance 
                                 technicians={technicians}
                                 jobs={jobs}
-                                timeEntries={timeEntries}
+                                timeEntries={timeLogs}
                             />
                         </div>
                     </TabsContent>

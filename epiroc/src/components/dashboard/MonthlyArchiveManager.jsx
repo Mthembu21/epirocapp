@@ -74,9 +74,9 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
             const today = new Date();
             
             // Calculate totals
-            const totalHRHours = timeEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0);
-            const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0);
-            const totalWeightedOT = timeEntries.reduce((sum, e) => sum + (e.weighted_overtime || 0), 0);
+            const totalHRHours = timeEntries.reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
+            const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : Number(e.hours_logged || 0)), 0);
+            const totalWeightedOT = timeEntries.reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0);
             
             // Calculate per technician
             const techniciansSummary = technicians.map(tech => {
@@ -84,9 +84,9 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
                 return {
                     technician_id: tech.id,
                     technician_name: tech.name,
-                    hr_hours: techEntries.reduce((sum, e) => sum + (e.hr_hours || 0), 0),
-                    productive_hours: techEntries.reduce((sum, e) => sum + (e.productive_hours || 0), 0),
-                    weighted_overtime: techEntries.reduce((sum, e) => sum + (e.weighted_overtime || 0), 0)
+                    hr_hours: techEntries.reduce((sum, e) => sum + Number(e.hours_logged || 0), 0),
+                    productive_hours: techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : Number(e.hours_logged || 0)), 0),
+                    weighted_overtime: techEntries.reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0)
                 };
             });
             
@@ -102,14 +102,9 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
                 technicians_summary: techniciansSummary,
                 archived_date: new Date().toISOString()
             });
-            
-            // Delete all time entries to reset the system
-            for (const entry of timeEntries) {
-                await base44.entities.DailyTimeEntry.delete(entry.id);
-            }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['dailyTimeEntries'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
 
             // Start a new period from today (the archive day is the first day of the next 20-day cycle)
             const nextStart = format(new Date(), 'yyyy-MM-dd');
