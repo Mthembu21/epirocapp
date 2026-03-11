@@ -252,6 +252,13 @@ export default function Dashboard() {
     const totalProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
     const totalNonProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
+    const technicianNameById = (technicians || []).reduce((acc, t) => {
+        const id = String(t?.id || t?._id || t?.technician_id || '');
+        if (!id) return acc;
+        acc[id] = t?.name || t?.technician_name || acc[id];
+        return acc;
+    }, {});
+
     const productivityRaw = totalHours > 0 ? (totalProductiveHours / totalHours) * 100 : 0;
     const productivity = Math.max(0, Math.min(100, productivityRaw));
 
@@ -486,10 +493,13 @@ export default function Dashboard() {
                                             const isEditing = editingLogId === log.id;
                                             const isIdle = !!log.is_idle;
                                             const showOtherDetail = isIdle && (editLogDraft.category === 'Other' || log.category === 'Other');
+                                            const techName = log.technician_name
+                                                || technicianNameById[String(log.technician_id)]
+                                                || log.technician_id;
                                             return (
                                                 <TableRow key={log.id}>
                                                     <TableCell>{log.log_date ? parseISO(log.log_date).toLocaleDateString() : '-'}</TableCell>
-                                                    <TableCell>{log.technician_name || log.technician_id}</TableCell>
+                                                    <TableCell>{techName}</TableCell>
                                                     <TableCell className="font-mono text-sm">{log.job_id}</TableCell>
                                                     <TableCell>
                                                         {isIdle ? (
