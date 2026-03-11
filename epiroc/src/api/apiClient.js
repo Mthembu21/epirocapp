@@ -14,16 +14,43 @@ class APIClient {
     }
 
     async request(endpoint, options = {}) {
-        const response = await fetch(`${API_URL}${endpoint}`, {
-            ...options,
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers,
-            },
-        });
+        const doFetch = async () => {
+            return fetch(`${API_URL}${endpoint}`, {
+                ...options,
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers,
+                },
+            });
+        };
+
+        const response = await doFetch();
 
         if (!response.ok) {
+            if (response.status === 401 && !options.__retried) {
+                try {
+                    const storedUser = localStorage.getItem('epiroc_user');
+                    const parsed = storedUser ? JSON.parse(storedUser) : null;
+                    if (parsed?.type === 'technician' && parsed?.name && parsed?.employee_id) {
+                        await fetch(`${API_URL}/auth/technician/login`, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: parsed.name, employee_id: parsed.employee_id })
+                        });
+
+                        const retryResponse = await doFetch();
+                        if (retryResponse.ok) {
+                            const json = await retryResponse.json();
+                            return this.normalizeIds(json);
+                        }
+                    }
+                } catch {
+                    // fall through to normal error handling
+                }
+            }
+
             const error = await response.json().catch(() => ({ error: 'Request failed' }));
             throw new Error(error.error || 'Request failed');
         }

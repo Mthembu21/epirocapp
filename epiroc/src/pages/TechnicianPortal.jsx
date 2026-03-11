@@ -188,7 +188,8 @@ export default function TechnicianPortal() {
     };
 
     const assignedSubtasks = (!isIdleSelected && selectedJob) ? getAssignedSubtasksForJob(selectedJob) : [];
-    const selectedSubtask = assignedSubtasks.find((st) => String(st?._id) === String(formData.subtask_id)) || null;
+    const getSubtaskKey = (st) => String(st?._id || st?.id || '');
+    const selectedSubtask = assignedSubtasks.find((st) => getSubtaskKey(st) === String(formData.subtask_id)) || null;
     const selectedSubtaskAssignment = selectedSubtask
         ? (selectedSubtask.assigned_technicians || []).find((a) => String(a?.technician_id) === String(user?.id))
         : null;
@@ -477,7 +478,7 @@ export default function TechnicianPortal() {
                                                     <SelectContent>
                                                         {Object.entries(groupedAssignedSubtasks).map(([category, items]) => (
                                                             (items || []).map((st) => (
-                                                                <SelectItem key={st._id} value={String(st._id)}>
+                                                                <SelectItem key={getSubtaskKey(st)} value={getSubtaskKey(st)}>
                                                                     {category}: {st.title}
                                                                 </SelectItem>
                                                             ))
