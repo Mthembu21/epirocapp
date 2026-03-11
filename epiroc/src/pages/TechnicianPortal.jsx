@@ -175,7 +175,9 @@ export default function TechnicianPortal() {
     const belowRequiredNormalForDay = totalLoggedHoursForDate > 0 && totalLoggedHoursForDate < requiredNormalForDay;
 
     const selectedJob = myJobs.find(j => j.job_number === formData.job_id);
-    const selectedJobRemainingHours = Number(selectedJob?.remaining_hours || 0);
+    const selectedJobRemainingHours = Number(
+        selectedJob?.remaining_hours ?? (Number(selectedJob?.allocated_hours || 0) - Number(selectedJob?.consumed_hours || 0))
+    );
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
     const isOtherIdleSelected = isIdleSelected && formData.category === 'Other';
 
@@ -423,10 +425,10 @@ export default function TechnicianPortal() {
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {activeJobs
-                                                            .filter(j => (Number(j.remaining_hours ?? (j.allocated_hours || 0)) || 0) > 0)
+                                                            .filter(j => Number(j.remaining_hours ?? (Number(j.allocated_hours || 0) - Number(j.consumed_hours || 0))) > 0)
                                                             .map(job => (
                                                                 <SelectItem key={job.id} value={job.job_number}>
-                                                                    {job.job_number} - {(job.remaining_hours ?? (job.allocated_hours || 0)).toFixed(1)}h remaining
+                                                                    {job.job_number} - {(Number(job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0)))).toFixed(1)}h remaining
                                                                 </SelectItem>
                                                             ))}
                                                         <SelectItem value={IDLE_JOB_ID}>{IDLE_JOB_ID}</SelectItem>
@@ -692,7 +694,7 @@ export default function TechnicianPortal() {
                                                     <Progress value={job.aggregated_progress_percentage ?? job.progress_percentage ?? 0} className="h-2" />
                                                     <div className="flex justify-between text-xs text-slate-500 mt-1">
                                                         <span>{(job.aggregated_progress_percentage ?? job.progress_percentage ?? 0).toFixed(0)}% complete</span>
-                                                        <span>{(job.remaining_hours || job.allocated_hours).toFixed(1)}h remaining</span>
+                                                        <span>{(job.remaining_hours ?? (job.allocated_hours - job.consumed_hours) ?? 0).toFixed(1)}h remaining</span>
                                                     </div>
                                                 </div>
 
@@ -731,7 +733,7 @@ export default function TechnicianPortal() {
                                                     </div>
                                                     <div className="bg-slate-50 rounded p-2 text-center">
                                                         <p className="text-slate-500 text-xs">Remaining</p>
-                                                        <p className="font-medium text-green-600">{(job.remaining_hours || job.allocated_hours).toFixed(1)}h</p>
+                                                        <p className="font-medium text-green-600">{(Number(job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0)))).toFixed(1)}h</p>
                                                     </div>
                                                 </div>
                                             </div>

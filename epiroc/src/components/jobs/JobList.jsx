@@ -89,6 +89,10 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, t
                                         })
                                         .join(' | ')
                                     : '';
+
+                                const remainingDisplay = Number(
+                                    job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0))
+                                );
                                 
                                 return (
                                     <TableRow key={job.id}>
@@ -119,7 +123,7 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, t
                                         </TableCell>
                                         <TableCell className="text-right font-medium">{job.allocated_hours}h</TableCell>
                                         <TableCell className="text-right text-blue-600">{(job.consumed_hours || 0).toFixed(1)}h</TableCell>
-                                        <TableCell className="text-right text-green-600">{(job.remaining_hours || job.allocated_hours).toFixed(1)}h</TableCell>
+                                        <TableCell className="text-right text-green-600">{remainingDisplay.toFixed(1)}h</TableCell>
                                         <TableCell className="text-right text-purple-600 font-medium">
                                             {job.status === 'completed' ? `${(job.total_hours_utilized || job.consumed_hours || 0).toFixed(1)}h` : '-'}
                                         </TableCell>

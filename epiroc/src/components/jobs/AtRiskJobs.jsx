@@ -32,6 +32,9 @@ export default function AtRiskJobs({ jobs, jobReports }) {
                         ) || [];
                         
                         const latestBottleneck = jobBottlenecks[0];
+                        const remainingDisplay = Number(
+                            job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0))
+                        );
 
                         return (
                             <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm">
@@ -70,7 +73,7 @@ export default function AtRiskJobs({ jobs, jobReports }) {
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Remaining</p>
-                                        <p className="font-medium text-green-600">{(job.remaining_hours || 0).toFixed(1)}h</p>
+                                        <p className="font-medium text-green-600">{remainingDisplay.toFixed(1)}h</p>
                                     </div>
                                 </div>
 
