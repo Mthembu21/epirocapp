@@ -32,8 +32,9 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
             { category: 'Testing', titles: ['Testing'] }
         ],
         pdis: [
-            { category: 'Assemble', titles: ['Assemble/PDI', 'Washing', 'Painting'] },
-            { category: 'Testing', titles: ['Testing'] }
+            { category: 'Assemble', titles: ['Assemble/PDI', 'Washing', 'Painting', 'Boilermaking'] },
+            { category: 'Testing', titles: ['Testing'] },
+            { category: 'Stripping', titles: ['Stripping'] }
         ]
     };
 
