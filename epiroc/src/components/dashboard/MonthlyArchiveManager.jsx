@@ -4,17 +4,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Archive, Calendar, AlertCircle } from 'lucide-react';
-import { format, parseISO, addDays } from 'date-fns';
+import { format, parseISO, addDays, isValid } from 'date-fns';
 
 const WORKING_DAYS_PER_MONTH = 20;
-const MONTH_START_DATE = '2026-02-02'; // February 2, 2026 (Sunday = day 0)
 
 export default function MonthlyArchiveManager({ timeEntries, technicians }) {
     const queryClient = useQueryClient();
 
     const tenantKey = useMemo(() => {
         try {
-            const raw = localStorage.getItem('user');
+            const raw = localStorage.getItem('epiroc_user');
             const u = raw ? JSON.parse(raw) : null;
             return u?.supervisor_key || u?.supervisorKey || 'component';
         } catch {
@@ -27,9 +26,11 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
 
     const initialPeriodStart = useMemo(() => {
         try {
-            return localStorage.getItem(periodStartStorageKey) || MONTH_START_DATE;
+            const stored = localStorage.getItem(periodStartStorageKey);
+            if (stored) return stored;
+            return format(new Date(), 'yyyy-MM-dd');
         } catch {
-            return MONTH_START_DATE;
+            return format(new Date(), 'yyyy-MM-dd');
         }
     }, [periodStartStorageKey]);
 
@@ -45,9 +46,24 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
 
     const [dismissed, setDismissed] = useState(initialDismissed);
 
+    const normalizedPeriodStart = useMemo(() => {
+        const d = parseISO(periodStartDate);
+        return isValid(d) ? d : new Date();
+    }, [periodStartDate]);
+
+    const periodEntries = useMemo(() => {
+        const start = normalizedPeriodStart;
+        return (timeEntries || []).filter((e) => {
+            if (!e?.log_date) return false;
+            const d = parseISO(e.log_date);
+            if (!isValid(d)) return false;
+            return d >= start;
+        });
+    }, [timeEntries, normalizedPeriodStart]);
+
     const { workingDaysCount, shouldArchive } = useMemo(() => {
         // Count working days from start date
-        const startDate = parseISO(periodStartDate);
+        const startDate = normalizedPeriodStart;
         const today = new Date();
 
         // Count weekdays only (Mon-Fri)
@@ -66,21 +82,21 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
             workingDaysCount: count,
             shouldArchive: count >= WORKING_DAYS_PER_MONTH
         };
-    }, [periodStartDate]);
+    }, [normalizedPeriodStart]);
 
     const archiveMutation = useMutation({
         mutationFn: async () => {
-            const startDate = parseISO(periodStartDate);
+            const startDate = normalizedPeriodStart;
             const today = new Date();
             
             // Calculate totals
-            const totalHRHours = timeEntries.reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
-            const totalProductiveHours = timeEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : Number(e.hours_logged || 0)), 0);
-            const totalWeightedOT = timeEntries.reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0);
+            const totalHRHours = periodEntries.reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
+            const totalProductiveHours = periodEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : Number(e.hours_logged || 0)), 0);
+            const totalWeightedOT = periodEntries.reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0);
             
             // Calculate per technician
             const techniciansSummary = technicians.map(tech => {
-                const techEntries = timeEntries.filter(e => e.technician_id === tech.id);
+                const techEntries = periodEntries.filter(e => e.technician_id === tech.id);
                 return {
                     technician_id: tech.id,
                     technician_name: tech.name,
