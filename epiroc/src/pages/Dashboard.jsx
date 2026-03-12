@@ -21,6 +21,7 @@ import MonthlyArchiveManager from '../components/dashboard/MonthlyArchiveManager
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Hours are now calculated per entry, not constants
 
@@ -31,6 +32,7 @@ export default function Dashboard() {
     const [currentUser, setCurrentUser] = useState(null);
     const [editingLogId, setEditingLogId] = useState(null);
     const [editLogDraft, setEditLogDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
+    const [selectedJobDetails, setSelectedJobDetails] = useState(null);
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -259,6 +261,20 @@ export default function Dashboard() {
         return acc;
     }, {});
 
+    const selectedJobIssues = selectedJobDetails
+        ? (jobReports || []).filter((r) => String(r?.job_id) === String(selectedJobDetails?.id) && r?.has_bottleneck)
+        : [];
+
+    const selectedJobWorkLogs = selectedJobDetails
+        ? (timeLogs || []).filter((l) => !l?.is_idle && String(l?.job_id) === String(selectedJobDetails?.job_number))
+        : [];
+
+    const getSubtaskTitle = (subtaskId) => {
+        if (!selectedJobDetails || !subtaskId) return '';
+        const st = (selectedJobDetails.subtasks || []).find((s) => String(s?._id || s?.id) === String(subtaskId));
+        return st?.title || '';
+    };
+
     const productivityRaw = totalHours > 0 ? (totalProductiveHours / totalHours) * 100 : 0;
     const productivity = Math.max(0, Math.min(100, productivityRaw));
 
@@ -397,7 +413,7 @@ export default function Dashboard() {
 
                 {atRiskJobs.length > 0 && (
                     <div className="mb-8">
-                        <AtRiskJobs jobs={jobs} jobReports={jobReports} />
+                        <AtRiskJobs jobs={jobs} jobReports={jobReports} onSelectJob={setSelectedJobDetails} />
                     </div>
                 )}
 
@@ -631,6 +647,102 @@ export default function Dashboard() {
                         </div>
                     </TabsContent>
                 </Tabs>
+
+                <Dialog open={!!selectedJobDetails} onOpenChange={(open) => { if (!open) setSelectedJobDetails(null); }}>
+                    <DialogContent className="sm:max-w-3xl">
+                        <DialogHeader>
+                            <DialogTitle className="text-slate-800">
+                                Job Details: {selectedJobDetails?.job_number}
+                            </DialogTitle>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <div className="text-sm text-slate-600">
+                                {selectedJobDetails?.description}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3 text-sm">
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-slate-500">Progress</div>
+                                    <div className="font-semibold">
+                                        {Number(selectedJobDetails?.aggregated_progress_percentage ?? selectedJobDetails?.progress_percentage ?? 0).toFixed(0)}%
+                                    </div>
+                                </div>
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-slate-500">Consumed</div>
+                                    <div className="font-semibold text-blue-700">{Number(selectedJobDetails?.consumed_hours || 0).toFixed(1)}h</div>
+                                </div>
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-slate-500">Remaining</div>
+                                    <div className="font-semibold text-green-700">
+                                        {Number(selectedJobDetails?.remaining_hours ?? (Number(selectedJobDetails?.allocated_hours || 0) - Number(selectedJobDetails?.consumed_hours || 0))).toFixed(1)}h
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="font-semibold text-slate-800">Issues</div>
+                                {selectedJobIssues.length === 0 ? (
+                                    <div className="text-sm text-slate-500">No issues reported for this job.</div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {selectedJobIssues.map((r) => (
+                                            <div key={r.id || r._id} className="rounded border border-red-200 bg-red-50 p-3">
+                                                <div className="text-sm font-semibold text-red-800">
+                                                    {String(r.bottleneck_category || 'issue').replace(/_/g, ' ')}
+                                                </div>
+                                                <div className="text-sm text-red-700">{r.bottleneck_description || ''}</div>
+                                                <div className="text-xs text-red-600 mt-1">
+                                                    {r.date ? parseISO(r.date).toLocaleDateString() : ''}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="font-semibold text-slate-800">Technician Logged Work</div>
+                                {selectedJobWorkLogs.length === 0 ? (
+                                    <div className="text-sm text-slate-500">No job time logs found.</div>
+                                ) : (
+                                    <div className="overflow-x-auto border rounded">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="bg-slate-50">
+                                                    <TableHead>Date</TableHead>
+                                                    <TableHead>Technician</TableHead>
+                                                    <TableHead>Stage</TableHead>
+                                                    <TableHead className="text-right">Hours</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {selectedJobWorkLogs
+                                                    .slice()
+                                                    .sort((a, b) => String(b.log_date || '').localeCompare(String(a.log_date || '')))
+                                                    .map((l) => {
+                                                        const techName = l.technician_name || technicianNameById[String(l.technician_id)] || l.technician_id;
+                                                        const stageTitle = getSubtaskTitle(l.subtask_id) || l.subtask_id || '-';
+                                                        return (
+                                                            <TableRow key={l.id}>
+                                                                <TableCell>{l.log_date ? parseISO(l.log_date).toLocaleDateString() : '-'}</TableCell>
+                                                                <TableCell>{techName}</TableCell>
+                                                                <TableCell>{stageTitle}</TableCell>
+                                                                <TableCell className="text-right">{Number(l.hours_logged || 0).toFixed(1)}h</TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
+                                <div className="text-xs text-slate-500">
+                                    Job logs show what was done per stage (subtask) and hours logged.
+                                </div>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
 
                 <div className="mt-8 bg-slate-800/60 backdrop-blur rounded-xl p-6 border border-slate-700">
                     <h3 className="font-semibold text-yellow-400 mb-3">Hour Calculation Rules</h3>

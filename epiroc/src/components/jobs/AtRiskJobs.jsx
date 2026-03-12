@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Clock, TrendingDown } from 'lucide-react';
 
-export default function AtRiskJobs({ jobs, jobReports }) {
+export default function AtRiskJobs({ jobs, jobReports, onSelectJob }) {
     // Filter at-risk and over-allocated jobs
     const riskyJobs = jobs.filter(j => 
         j.status === 'at_risk' || 
@@ -35,9 +35,22 @@ export default function AtRiskJobs({ jobs, jobReports }) {
                         const remainingDisplay = Number(
                             job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0))
                         );
+                        const canSelect = typeof onSelectJob === 'function';
 
                         return (
-                            <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm">
+                            <div
+                                key={job.id}
+                                className={
+                                    `bg-white rounded-lg p-4 shadow-sm ${canSelect ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`
+                                }
+                                role={canSelect ? 'button' : undefined}
+                                tabIndex={canSelect ? 0 : undefined}
+                                onClick={canSelect ? () => onSelectJob(job) : undefined}
+                                onKeyDown={canSelect ? (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') onSelectJob(job);
+                                } : undefined}
+                                aria-label={canSelect ? `View details for job ${job.job_number}` : undefined}
+                            >
                                 <div className="flex items-start justify-between">
                                     <div>
                                         <p className="font-semibold text-slate-800">{job.job_number}</p>
