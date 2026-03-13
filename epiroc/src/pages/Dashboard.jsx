@@ -163,6 +163,7 @@ export default function Dashboard() {
                 from_technician_id: previousTechnicianId,
                 from_technician_name: previousTechnicianName,
                 to_technician_id: newTechnicianId,
+  
                 to_technician_name: newTechnicianName,
                 reassigned_date: new Date().toISOString(),
                 reason: reason || ''
@@ -501,6 +502,7 @@ export default function Dashboard() {
                                             <TableHead>Job</TableHead>
                                             <TableHead>Type</TableHead>
                                             <TableHead className="text-right">Hours</TableHead>
+                                            <TableHead className="text-right">OT</TableHead>
                                             <TableHead className="text-right">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -563,6 +565,9 @@ export default function Dashboard() {
                                                         ) : (
                                                             `${Number(log.hours_logged || 0).toFixed(1)}h`
                                                         )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        {`${Number(log.overtime_hours || 0).toFixed(1)}h`}
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {isEditing ? (
@@ -714,6 +719,7 @@ export default function Dashboard() {
                                                     <TableHead>Technician</TableHead>
                                                     <TableHead>Stage</TableHead>
                                                     <TableHead className="text-right">Hours</TableHead>
+                                                    <TableHead className="text-right">OT</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -729,6 +735,7 @@ export default function Dashboard() {
                                                                 <TableCell>{techName}</TableCell>
                                                                 <TableCell>{stageTitle}</TableCell>
                                                                 <TableCell className="text-right">{Number(l.hours_logged || 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right">{Number(l.overtime_hours || 0).toFixed(1)}h</TableCell>
                                                             </TableRow>
                                                         );
                                                     })}
