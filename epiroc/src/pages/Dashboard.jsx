@@ -49,7 +49,11 @@ export default function Dashboard() {
             }
             setCurrentUser(parsed);
             try {
-                await base44.auth.me();
+                const me = await base44.auth.me();
+                if (me?.user) {
+                    setCurrentUser(me.user);
+                    localStorage.setItem('epiroc_user', JSON.stringify(me.user));
+                }
                 setIsAuthenticated(true);
             } catch {
                 // Session expired — redirect to login
@@ -61,6 +65,31 @@ export default function Dashboard() {
     }, []);
 
     const supervisorKey = currentUser?.supervisor_key || 'component';
+    const supervisorRole = currentUser?.role || 'supervisor';
+    const supervisorAccess = Array.isArray(currentUser?.access) ? currentUser.access : [];
+
+    const workshopButtons = [
+        { key: 'component', label: 'Components', accessKey: 'components' },
+        { key: 'pdis', label: 'PDI', accessKey: 'pdi' },
+        { key: 'rebuild', label: 'Rebuild', accessKey: 'rebuild' }
+    ].filter((w) => supervisorAccess.includes(w.accessKey));
+
+    const handleSwitchWorkshop = async (nextKey) => {
+        if (!nextKey || nextKey === currentUser?.supervisor_key) return;
+        try {
+            const result = await base44.auth.switchTenant(nextKey);
+            if (result?.user) {
+                setCurrentUser(result.user);
+                localStorage.setItem('epiroc_user', JSON.stringify(result.user));
+            }
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobReports'] });
+            queryClient.invalidateQueries({ queryKey: ['technicians'] });
+        } catch (e) {
+            alert(e?.message || 'Could not switch workshop');
+        }
+    };
     const dashboardLabel = supervisorKey === 'rebuild'
         ? 'REBUILD DASHBOARD'
         : supervisorKey === 'pdis'
@@ -315,6 +344,31 @@ export default function Dashboard() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3 flex-wrap">
+                            {supervisorRole === 'manager' && supervisorAccess.includes('workshop_overview') && (
+                                <Button
+                                    variant="outline"
+                                    className="border-yellow-400/40 text-yellow-200 hover:bg-yellow-400/10"
+                                    onClick={() => { window.location.href = createPageUrl('WorkshopOverview'); }}
+                                >
+                                    Workshop Overview
+                                </Button>
+                            )}
+
+                            {workshopButtons.map((w) => (
+                                <Button
+                                    key={w.key}
+                                    variant={supervisorKey === w.key ? 'default' : 'outline'}
+                                    className={
+                                        supervisorKey === w.key
+                                            ? 'bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold'
+                                            : 'border-slate-600 text-slate-200 hover:bg-slate-700/40'
+                                    }
+                                    onClick={() => handleSwitchWorkshop(w.key)}
+                                >
+                                    {w.label}
+                                </Button>
+                            ))}
+
                             <HRExportButton timeEntries={timeLogs} technicians={technicians} />
                             <ExportButton entries={timeLogs} technicians={technicians} filename="epiroc_timesheet" />
                             <JobAllocationModal 

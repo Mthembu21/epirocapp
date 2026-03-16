@@ -39,7 +39,12 @@ export default function WorkshopLogin() {
                 supervisorForm.password
             );
             localStorage.setItem('epiroc_user', JSON.stringify(result.user));
-            window.location.href = createPageUrl('Dashboard');
+            const role = result?.user?.role || 'supervisor';
+            if (role === 'manager') {
+                window.location.href = createPageUrl('WorkshopOverview');
+            } else {
+                window.location.href = createPageUrl('Dashboard');
+            }
         } catch (err) {
             setError('Invalid supervisor credentials.');
         }

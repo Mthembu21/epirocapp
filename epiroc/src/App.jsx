@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import WorkshopLogin from './pages/WorkshopLogin';
 import Dashboard from './pages/Dashboard';
 import TechnicianPortal from './pages/TechnicianPortal';
+import WorkshopOverview from './pages/WorkshopOverview';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,6 +19,7 @@ function App() {
           <Route path="/" element={<WorkshopLogin />} />
           <Route path="/WorkshopLogin" element={<WorkshopLogin />} />
           <Route path="/Dashboard" element={<Dashboard />} />
+          <Route path="/WorkshopOverview" element={<WorkshopOverview />} />
           <Route path="/TechnicianPortal" element={<TechnicianPortal />} />
         </Routes>
       </HashRouter>

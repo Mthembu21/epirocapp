@@ -72,6 +72,12 @@ class APIClient {
                 method: 'POST',
                 body: JSON.stringify({ email, password })
             }),
+
+        switchTenant: (supervisor_key) =>
+            this.request('/auth/switch-tenant', {
+                method: 'POST',
+                body: JSON.stringify({ supervisor_key })
+            }),
         
         me: () => this.request('/auth/me'),
         
@@ -177,6 +183,10 @@ class APIClient {
                 method: 'POST',
                 body: JSON.stringify(data)
             })
+        },
+
+        Overview: {
+            workshop: () => this.request('/overview/workshop')
         }
     };
 }
