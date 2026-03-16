@@ -246,7 +246,10 @@ export default function Dashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });
 
-    const activeJobs = jobs.filter(j => ['active', 'in_progress'].includes(j.status));
+    const activeJobs = jobs.filter(j =>
+        ['active', 'in_progress', 'at_risk'].includes(j.status)
+        || Number(j.bottleneck_count || 0) >= 2
+    );
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
     
