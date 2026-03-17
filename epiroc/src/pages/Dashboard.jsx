@@ -817,6 +817,47 @@ export default function Dashboard() {
                                 );
                             })()}
 
+                            {(selectedJobDetails?.subtasks || []).length > 0 && (
+                                <div className="space-y-2">
+                                    <div className="font-semibold text-slate-800">Stages (Remaining Hours)</div>
+                                    <div className="overflow-x-auto border rounded">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="bg-slate-50">
+                                                    <TableHead>Stage</TableHead>
+                                                    <TableHead className="text-right">Allocated</TableHead>
+                                                    <TableHead className="text-right">Logged</TableHead>
+                                                    <TableHead className="text-right">Remaining</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {(selectedJobDetails.subtasks || []).map((st) => {
+                                                    const allocatedHrs = Number(st?.allocated_hours || 0);
+                                                    const consumedHrs = Number(st?.consumed_hours || 0);
+                                                    const remainingHrs = Number(
+                                                        typeof st?.remaining_hours !== 'undefined' && st?.remaining_hours !== null
+                                                            ? st.remaining_hours
+                                                            : Math.max(0, allocatedHrs - consumedHrs)
+                                                    );
+                                                    const label = `${st?.category ? `${st.category}: ` : ''}${st?.title || ''}`.trim() || '-';
+                                                    return (
+                                                        <TableRow key={String(st?._id || st?.id || label)}>
+                                                            <TableCell className="min-w-[220px]">{label}</TableCell>
+                                                            <TableCell className="text-right">{allocatedHrs.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-blue-700">{consumedHrs.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right font-semibold text-green-700">{remainingHrs.toFixed(1)}h</TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                        Remaining is calculated as stage allocated hours minus booked hours on that stage.
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="space-y-2">
                                 <div className="font-semibold text-slate-800">Issues</div>
                                 {selectedJobIssues.length === 0 ? (

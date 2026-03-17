@@ -530,6 +530,10 @@ export default function TechnicianPortal() {
                                                             <span>Allocated for this stage</span>
                                                             <span className="font-semibold text-slate-800">{selectedSubtaskAllocatedHours.toFixed(1)}h</span>
                                                         </div>
+                                                        <div className="flex justify-between">
+                                                            <span>Stage remaining</span>
+                                                            <span className="font-semibold text-slate-800">{Number(selectedSubtask?.remaining_hours || 0).toFixed(1)}h</span>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -750,6 +754,13 @@ export default function TechnicianPortal() {
                                                             {(job.subtasks || []).map((st) => {
                                                                 const subtaskId = st.id || st._id;
                                                                 const myProgress = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(user.id))?.progress_percentage || 0;
+                                                                const stageAllocated = Number(st.allocated_hours || 0);
+                                                                const stageConsumed = Number(st.consumed_hours || 0);
+                                                                const stageRemaining = Number(
+                                                                    typeof st.remaining_hours !== 'undefined' && st.remaining_hours !== null
+                                                                        ? st.remaining_hours
+                                                                        : Math.max(0, stageAllocated - stageConsumed)
+                                                                );
                                                                 return (
                                                                     <div key={subtaskId} className="bg-slate-50 rounded p-3">
                                                                         <div className="flex items-center justify-between gap-2">
@@ -759,6 +770,20 @@ export default function TechnicianPortal() {
                                                                             </div>
                                                                             <div className="w-24 text-right text-sm font-semibold text-slate-700">
                                                                                 {Number(myProgress).toFixed(0)}%
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                                                                            <div className="rounded bg-white border border-slate-200 p-2 text-center">
+                                                                                <div className="text-slate-500">Allocated</div>
+                                                                                <div className="font-semibold text-slate-800">{stageAllocated.toFixed(1)}h</div>
+                                                                            </div>
+                                                                            <div className="rounded bg-white border border-slate-200 p-2 text-center">
+                                                                                <div className="text-slate-500">Logged</div>
+                                                                                <div className="font-semibold text-blue-700">{stageConsumed.toFixed(1)}h</div>
+                                                                            </div>
+                                                                            <div className="rounded bg-white border border-slate-200 p-2 text-center">
+                                                                                <div className="text-slate-500">Remaining</div>
+                                                                                <div className="font-semibold text-green-700">{stageRemaining.toFixed(1)}h</div>
                                                                             </div>
                                                                         </div>
                                                                     </div>

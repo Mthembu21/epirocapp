@@ -101,6 +101,10 @@ class APIClient {
                 method: 'POST',
                 body: JSON.stringify(data)
             }),
+            update: (id, data) => this.request(`/technicians/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            }),
             delete: (id) => this.request(`/technicians/${id}`, { method: 'DELETE' })
         },
 
@@ -143,6 +147,10 @@ class APIClient {
             },
             create: (data) => this.request('/jobs', {
                 method: 'POST',
+                body: JSON.stringify(data)
+            }),
+            updateByJobNumber: (jobNumber, data) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}`, {
+                method: 'PUT',
                 body: JSON.stringify(data)
             }),
             update: (id, data) => this.request(`/jobs/${id}`, {
