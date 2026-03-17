@@ -33,6 +33,8 @@ export default function Dashboard() {
     const [editingLogId, setEditingLogId] = useState(null);
     const [editLogDraft, setEditLogDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
     const [selectedJobDetails, setSelectedJobDetails] = useState(null);
+    const [isEditingJob, setIsEditingJob] = useState(false);
+    const [jobEditDraft, setJobEditDraft] = useState({ job_number: '', description: '', allocated_hours: '', status: '' });
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -139,6 +141,11 @@ export default function Dashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['technicians'] })
     });
 
+    const updateTechnicianMutation = useMutation({
+        mutationFn: ({ id, data }) => base44.entities.Technician.update(id, data),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['technicians'] })
+    });
+
     const deleteTechnicianMutation = useMutation({
         mutationFn: async (id) => {
             // Delete all time entries for this technician
@@ -190,6 +197,14 @@ export default function Dashboard() {
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
             queryClient.invalidateQueries({ queryKey: ['jobReports'] });
             queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+        }
+    });
+
+    const updateJobByNumberMutation = useMutation({
+        mutationFn: async ({ jobNumber, data }) => base44.entities.Job.updateByJobNumber(jobNumber, data),
+        onSuccess: (updatedJob) => {
+            setSelectedJobDetails(updatedJob);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
         }
     });
 
@@ -548,6 +563,8 @@ export default function Dashboard() {
                         <TechnicianList 
                             technicians={technicians}
                             onDelete={deleteTechnicianMutation.mutate}
+                            onUpdate={updateTechnicianMutation.mutate}
+                            isUpdating={updateTechnicianMutation.isPending}
                         />
                     </TabsContent>
 
@@ -740,7 +757,13 @@ export default function Dashboard() {
                     </TabsContent>
                 </Tabs>
 
-                <Dialog open={!!selectedJobDetails} onOpenChange={(open) => { if (!open) setSelectedJobDetails(null); }}>
+                <Dialog open={!!selectedJobDetails} onOpenChange={(open) => {
+                    if (!open) {
+                        setSelectedJobDetails(null);
+                        setIsEditingJob(false);
+                        setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                    }
+                }}>
                     <DialogContent className="sm:max-w-3xl">
                         <DialogHeader>
                             <DialogTitle className="text-slate-800">
@@ -749,9 +772,150 @@ export default function Dashboard() {
                         </DialogHeader>
 
                         <div className="space-y-4">
-                            <div className="text-sm text-slate-600">
-                                {selectedJobDetails?.description}
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="text-sm text-slate-600">
+                                    {isEditingJob ? (
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                    <div className="text-xs text-slate-500">Job Number</div>
+                                                    <Input
+                                                        value={jobEditDraft.job_number}
+                                                        onChange={(e) => setJobEditDraft((p) => ({ ...p, job_number: e.target.value }))}
+                                                        className="h-8"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="text-xs text-slate-500">Allocated Hours</div>
+                                                    <Input
+                                                        type="number"
+                                                        step="0.5"
+                                                        min="0"
+                                                        value={jobEditDraft.allocated_hours}
+                                                        onChange={(e) => setJobEditDraft((p) => ({ ...p, allocated_hours: e.target.value }))}
+                                                        className="h-8"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <div className="text-xs text-slate-500">Status</div>
+                                                <Select
+                                                    value={jobEditDraft.status}
+                                                    onValueChange={(value) => setJobEditDraft((p) => ({ ...p, status: value }))}
+                                                >
+                                                    <SelectTrigger className="h-8">
+                                                        <SelectValue placeholder="Status" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="pending_confirmation">pending confirmation</SelectItem>
+                                                        <SelectItem value="active">active</SelectItem>
+                                                        <SelectItem value="in_progress">in progress</SelectItem>
+                                                        <SelectItem value="completed">completed</SelectItem>
+                                                        <SelectItem value="at_risk">at risk</SelectItem>
+                                                        <SelectItem value="overrun">overrun</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <div className="text-xs text-slate-500">Description</div>
+                                                <Input
+                                                    value={jobEditDraft.description}
+                                                    onChange={(e) => setJobEditDraft((p) => ({ ...p, description: e.target.value }))}
+                                                    className="h-8"
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        selectedJobDetails?.description
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    {isEditingJob ? (
+                                        <>
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => {
+                                                    setIsEditingJob(false);
+                                                    setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                                                }}
+                                                disabled={updateJobByNumberMutation.isPending}
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                onClick={() => {
+                                                    const nextNumber = String(jobEditDraft.job_number || '').trim();
+                                                    if (!nextNumber) return;
+                                                    const nextAllocated = Number(jobEditDraft.allocated_hours);
+                                                    updateJobByNumberMutation.mutate({
+                                                        jobNumber: selectedJobDetails?.job_number,
+                                                        data: {
+                                                            job_number: nextNumber,
+                                                            description: String(jobEditDraft.description || '').trim(),
+                                                            status: jobEditDraft.status,
+                                                            allocated_hours: Number.isNaN(nextAllocated) ? undefined : nextAllocated
+                                                        }
+                                                    });
+                                                }}
+                                                disabled={updateJobByNumberMutation.isPending}
+                                                className="bg-yellow-400 hover:bg-yellow-500 text-slate-800"
+                                            >
+                                                {updateJobByNumberMutation.isPending ? 'Saving...' : 'Save'}
+                                            </Button>
+                                        </>
+                                    ) : (
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setIsEditingJob(true);
+                                                setJobEditDraft({
+                                                    job_number: selectedJobDetails?.job_number || '',
+                                                    description: selectedJobDetails?.description || '',
+                                                    allocated_hours: String(selectedJobDetails?.allocated_hours ?? ''),
+                                                    status: selectedJobDetails?.status || 'in_progress'
+                                                });
+                                            }}
+                                        >
+                                            Edit Job
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
+
+                            {(selectedJobDetails?.technicians || []).length > 0 && (
+                                <div className="space-y-2">
+                                    <div className="font-semibold text-slate-800">Assigned Technicians</div>
+                                    <div className="space-y-2">
+                                        {(selectedJobDetails.technicians || []).map((t) => (
+                                            <div key={String(t?.technician_id)} className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                                                <div className="text-sm text-slate-800">
+                                                    {t?.technician_name || t?.technician_id}
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                                    title="Remove technician"
+                                                    onClick={() => {
+                                                        if (!window.confirm('Remove this technician from the job?')) return;
+                                                        const nextTechs = (selectedJobDetails.technicians || []).filter(
+                                                            (x) => String(x?.technician_id) !== String(t?.technician_id)
+                                                        );
+                                                        updateJobByNumberMutation.mutate({
+                                                            jobNumber: selectedJobDetails?.job_number,
+                                                            data: { technicians: nextTechs }
+                                                        });
+                                                    }}
+                                                    disabled={updateJobByNumberMutation.isPending}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-3 gap-4 mb-6">
                                 <div className="bg-slate-50 rounded p-3">
