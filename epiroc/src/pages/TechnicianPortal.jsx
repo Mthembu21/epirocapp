@@ -100,13 +100,17 @@ export default function TechnicianPortal() {
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', user?.id],
         queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.id }),
-        enabled: !!user?.id
+        enabled: !!user?.id,
+        staleTime: 0,
+        refetchInterval: 30000
     });
 
     const { data: myEntries = [] } = useQuery({
         queryKey: ['myTimeEntries', user?.id],
         queryFn: () => base44.entities.DailyTimeEntry.filter({ technician_id: user.id }),
-        enabled: !!user?.id
+        enabled: !!user?.id,
+        staleTime: 0,
+        refetchInterval: 30000
     });
 
     const { data: idleInfo } = useQuery({

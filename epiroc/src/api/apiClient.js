@@ -169,6 +169,24 @@ class APIClient {
                 return this.request('/time-entries');
             },
             idleCategories: () => this.request('/time-entries/idle-categories'),
+            approvals: {
+                pending: (params = {}) => {
+                    const q = new URLSearchParams();
+                    if (params.start_date) q.set('start_date', params.start_date);
+                    if (params.end_date) q.set('end_date', params.end_date);
+                    if (params.technician_id) q.set('technician_id', params.technician_id);
+                    const qs = q.toString();
+                    return this.request(`/time-entries/approvals/pending${qs ? `?${qs}` : ''}`);
+                },
+                approve: (id, { approved_hours, note } = {}) => this.request(`/time-entries/${id}/approve`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ approved_hours, note })
+                }),
+                decline: (id, { note } = {}) => this.request(`/time-entries/${id}/decline`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ note })
+                })
+            },
             create: (data) => this.request('/time-entries', {
                 method: 'POST',
                 body: JSON.stringify(data)

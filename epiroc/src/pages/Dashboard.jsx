@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle, Pencil, Trash2, Save, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
-import { parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 
 import StatsCard from '../components/timesheet/StatsCard';
 import ExportButton from '../components/timesheet/ExportButton';
@@ -35,6 +35,8 @@ export default function Dashboard() {
     const [selectedJobDetails, setSelectedJobDetails] = useState(null);
     const [isEditingJob, setIsEditingJob] = useState(false);
     const [jobEditDraft, setJobEditDraft] = useState({ job_number: '', description: '', allocated_hours: '', status: '' });
+    const [jobAddTechnicianId, setJobAddTechnicianId] = useState('');
+    const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -136,6 +138,16 @@ export default function Dashboard() {
         enabled: isAuthenticated
     });
 
+    const isForeman = currentUser?.type === 'supervisor' && ['foreman', 'manager'].includes(currentUser?.role);
+    const approvalTenant = currentUser?.supervisor_key === 'pdis' || currentUser?.supervisor_key === 'rebuild';
+
+    const { data: pendingApprovals = [] } = useQuery({
+        queryKey: ['pendingApprovals', currentUser?.supervisor_key],
+        queryFn: () => base44.entities.DailyTimeEntry.approvals.pending(),
+        enabled: isAuthenticated && isForeman && approvalTenant,
+        refetchInterval: (isAuthenticated && isForeman && approvalTenant) ? 10000 : false
+    });
+
     const createTechnicianMutation = useMutation({
         mutationFn: (data) => base44.entities.Technician.create(data),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['technicians'] })
@@ -190,6 +202,24 @@ export default function Dashboard() {
         }
     });
 
+    const approveTimeLogMutation = useMutation({
+        mutationFn: ({ id, approved_hours, note }) => base44.entities.DailyTimeEntry.approvals.approve(id, { approved_hours, note }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] });
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+        }
+    });
+
+    const declineTimeLogMutation = useMutation({
+        mutationFn: ({ id, note }) => base44.entities.DailyTimeEntry.approvals.decline(id, { note }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] });
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+        }
+    });
+
     const recoverTechnicalComplexityMutation = useMutation({
         mutationFn: async (jobNumber) => base44.entities.Job.recoverTechnicalComplexity(jobNumber),
         onSuccess: (updatedJob) => {
@@ -202,11 +232,15 @@ export default function Dashboard() {
 
     const updateJobByNumberMutation = useMutation({
         mutationFn: async ({ jobNumber, data }) => base44.entities.Job.updateByJobNumber(jobNumber, data),
-        onSuccess: (updatedJob) => {
+        onSuccess: (updatedJob, variables) => {
             setSelectedJobDetails(updatedJob);
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
-            setIsEditingJob(false);
-            setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+
+            if (!variables?.keepEditing) {
+                setIsEditingJob(false);
+                setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                setJobAddTechnicianId('');
+            }
         },
         onError: (e) => {
             alert(e?.message || 'Failed to update job');
@@ -546,6 +580,16 @@ export default function Dashboard() {
                             <Clock className="w-4 h-4" />
                             Time Logs
                         </TabsTrigger>
+
+                        {isForeman && approvalTenant && (
+                            <TabsTrigger
+                                value="approvals"
+                                className="flex items-center gap-2 rounded-lg text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800"
+                            >
+                                <Clock className="w-4 h-4" />
+                                Approvals
+                            </TabsTrigger>
+                        )}
                     </TabsList>
 
                     <TabsContent value="jobs" className="mt-6">
@@ -772,6 +816,88 @@ export default function Dashboard() {
                             </div>
                         </div>
                     </TabsContent>
+
+                    {isForeman && approvalTenant && (
+                        <TabsContent value="approvals" className="space-y-6">
+                            <Card className="border-0 shadow-lg bg-white/95">
+                                <CardHeader className="pb-4 border-b border-slate-100">
+                                    <CardTitle className="text-slate-800">Pending Approvals ({pendingApprovals.length})</CardTitle>
+                                </CardHeader>
+                                <CardContent className="p-0">
+                                    <div className="overflow-x-auto">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="bg-slate-50">
+                                                    <TableHead>Date</TableHead>
+                                                    <TableHead>Technician</TableHead>
+                                                    <TableHead>Type</TableHead>
+                                                    <TableHead>Job</TableHead>
+                                                    <TableHead>Stage</TableHead>
+                                                    <TableHead className="text-right">Submitted</TableHead>
+                                                    <TableHead className="text-right">Approve</TableHead>
+                                                    <TableHead className="text-right">Actions</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {pendingApprovals.map((log) => {
+                                                    const submitted = Number(log?.hours_logged || 0);
+                                                    const draft = approvalHoursDraft[log.id] ?? String(submitted);
+                                                    const isIdle = !!log?.is_idle;
+                                                    const typeLabel = isIdle ? (log?.category || 'Idle') : 'Job';
+                                                    return (
+                                                        <TableRow key={log.id}>
+                                                            <TableCell>{log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : ''}</TableCell>
+                                                            <TableCell>{log?.technician_name || log?.technician_id}</TableCell>
+                                                            <TableCell>{typeLabel}</TableCell>
+                                                            <TableCell className="font-mono">{log?.job_id}</TableCell>
+                                                            <TableCell>{log?.subtask_title || '-'}</TableCell>
+                                                            <TableCell className="text-right">{submitted.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right">
+                                                                <Input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.5"
+                                                                    value={draft}
+                                                                    onChange={(e) => setApprovalHoursDraft((p) => ({ ...p, [log.id]: e.target.value }))}
+                                                                    className="h-8 w-24 text-right"
+                                                                />
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        className="h-8"
+                                                                        disabled={approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
+                                                                        onClick={() => {
+                                                                            const val = Number(approvalHoursDraft[log.id] ?? submitted);
+                                                                            approveTimeLogMutation.mutate({ id: log.id, approved_hours: Number.isNaN(val) ? 0 : val });
+                                                                        }}
+                                                                    >
+                                                                        Approve
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        className="h-8 text-red-600 border-red-200 hover:bg-red-50"
+                                                                        disabled={approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
+                                                                        onClick={() => {
+                                                                            if (!window.confirm('Decline this time entry?')) return;
+                                                                            declineTimeLogMutation.mutate({ id: log.id });
+                                                                        }}
+                                                                    >
+                                                                        Decline
+                                                                    </Button>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+                    )}
                 </Tabs>
 
                 <Dialog open={!!selectedJobDetails} onOpenChange={(open) => {
@@ -931,7 +1057,8 @@ export default function Dashboard() {
                                                         );
                                                         updateJobByNumberMutation.mutate({
                                                             jobNumber: selectedJobDetails?.job_number,
-                                                            data: { technicians: nextTechs }
+                                                            data: { technicians: nextTechs },
+                                                            keepEditing: true
                                                         });
                                                     }}
                                                     disabled={updateJobByNumberMutation.isPending}
@@ -940,6 +1067,59 @@ export default function Dashboard() {
                                                 </Button>
                                             </div>
                                         ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {isEditingJob && (
+                                <div className="space-y-2">
+                                    <div className="font-semibold text-slate-800">Add Technician</div>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <Select value={jobAddTechnicianId} onValueChange={setJobAddTechnicianId}>
+                                            <SelectTrigger className="h-8 sm:w-[280px]">
+                                                <SelectValue placeholder="Select technician" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {(technicians || [])
+                                                    .filter((t) => {
+                                                        const id = String(t?.id || t?._id || '');
+                                                        if (!id) return false;
+                                                        const already = (selectedJobDetails?.technicians || []).some((x) => String(x?.technician_id) === id);
+                                                        return !already;
+                                                    })
+                                                    .map((t) => (
+                                                        <SelectItem key={String(t?.id || t?._id)} value={String(t?.id || t?._id)}>
+                                                            {t?.name || t?.technician_name || 'Technician'}
+                                                        </SelectItem>
+                                                    ))}
+                                            </SelectContent>
+                                        </Select>
+
+                                        <Button
+                                            variant="outline"
+                                            className="h-8"
+                                            disabled={!jobAddTechnicianId || updateJobByNumberMutation.isPending}
+                                            onClick={() => {
+                                                const techId = String(jobAddTechnicianId || '');
+                                                if (!techId) return;
+                                                const tech = (technicians || []).find((t) => String(t?.id || t?._id) === techId);
+                                                const nextTechs = [
+                                                    ...(selectedJobDetails?.technicians || []),
+                                                    {
+                                                        technician_id: techId,
+                                                        technician_name: tech?.name || tech?.technician_name || ''
+                                                    }
+                                                ];
+                                                updateJobByNumberMutation.mutate({
+                                                    jobNumber: selectedJobDetails?.job_number,
+                                                    data: { technicians: nextTechs },
+                                                    keepEditing: true
+                                                });
+                                                setJobAddTechnicianId('');
+                                            }}
+                                        >
+                                            Add
+                                        </Button>
                                     </div>
                                 </div>
                             )}
