@@ -183,6 +183,16 @@ export default function Dashboard() {
         }
     });
 
+    const recoverTechnicalComplexityMutation = useMutation({
+        mutationFn: async (jobNumber) => base44.entities.Job.recoverTechnicalComplexity(jobNumber),
+        onSuccess: (updatedJob) => {
+            setSelectedJobDetails(updatedJob);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['jobReports'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+        }
+    });
+
     const reassignJobMutation = useMutation({
         mutationFn: async ({ jobId, newTechnicianId, newTechnicianName, previousTechnicianId, previousTechnicianName, reason, subtask_allocations }) => {
             const job = jobs.find(j => j.id === jobId);
@@ -558,8 +568,11 @@ export default function Dashboard() {
                                             <TableHead>Technician</TableHead>
                                             <TableHead>Job</TableHead>
                                             <TableHead>Type</TableHead>
+                                            <TableHead>Holiday</TableHead>
+                                            <TableHead className="text-right">Multiplier</TableHead>
                                             <TableHead className="text-right">Hours</TableHead>
                                             <TableHead className="text-right">OT</TableHead>
+                                            <TableHead className="text-right">Payable</TableHead>
                                             <TableHead className="text-right">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -571,6 +584,8 @@ export default function Dashboard() {
                                             const techName = log.technician_name
                                                 || technicianNameById[String(log.technician_id)]
                                                 || log.technician_id;
+                                            const multiplier = Number(log.overtime_multiplier || 1);
+                                            const payable = Number(log.payable_hours || (Number(log.hours_logged || 0) * multiplier));
                                             return (
                                                 <TableRow key={log.id}>
                                                     <TableCell>{log.log_date ? parseISO(log.log_date).toLocaleDateString() : '-'}</TableCell>
@@ -609,6 +624,18 @@ export default function Dashboard() {
                                                             <span className="text-sm">Job</span>
                                                         )}
                                                     </TableCell>
+                                                    <TableCell>
+                                                        {log.is_public_holiday ? (
+                                                            <span className="text-xs font-semibold text-amber-700">
+                                                                {log.public_holiday_name || 'Public Holiday'}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400">-</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right text-slate-700">
+                                                        {multiplier.toFixed(1)}×
+                                                    </TableCell>
                                                     <TableCell className="text-right">
                                                         {isEditing ? (
                                                             <Input
@@ -625,6 +652,9 @@ export default function Dashboard() {
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {`${Number(log.overtime_hours || 0).toFixed(1)}h`}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-semibold text-slate-800">
+                                                        {payable.toFixed(1)}h
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {isEditing ? (
@@ -723,12 +753,10 @@ export default function Dashboard() {
                                 {selectedJobDetails?.description}
                             </div>
 
-                            <div className="grid grid-cols-3 gap-3 text-sm">
+                            <div className="grid grid-cols-3 gap-4 mb-6">
                                 <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-slate-500">Progress</div>
-                                    <div className="font-semibold">
-                                        {Number(selectedJobDetails?.aggregated_progress_percentage ?? selectedJobDetails?.progress_percentage ?? 0).toFixed(0)}%
-                                    </div>
+                                    <div className="text-slate-500">Allocated</div>
+                                    <div className="font-semibold">{Number(selectedJobDetails?.allocated_hours || 0).toFixed(1)}h</div>
                                 </div>
                                 <div className="bg-slate-50 rounded p-3">
                                     <div className="text-slate-500">Consumed</div>
@@ -741,6 +769,53 @@ export default function Dashboard() {
                                     </div>
                                 </div>
                             </div>
+
+                            <div className="grid grid-cols-3 gap-4 mb-6">
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-slate-500">Technical Complexity</div>
+                                    <div className="font-semibold text-amber-700">{Number(selectedJobDetails?.technical_complexity_hours || 0).toFixed(1)}h</div>
+                                </div>
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-slate-500">Recovered</div>
+                                    <div className="font-semibold text-slate-700">{Number(selectedJobDetails?.recovered_technical_complexity_hours || 0).toFixed(1)}h</div>
+                                </div>
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-slate-500">Updated Total</div>
+                                    <div className="font-semibold">
+                                        {(
+                                            Number(selectedJobDetails?.allocated_hours || 0) +
+                                            Number(selectedJobDetails?.recovered_technical_complexity_hours || 0)
+                                        ).toFixed(1)}h
+                                    </div>
+                                </div>
+                            </div>
+
+                            {(() => {
+                                const allocated = Number(selectedJobDetails?.allocated_hours || 0);
+                                const consumed = Number(selectedJobDetails?.consumed_hours || 0);
+                                const remaining = Number(selectedJobDetails?.remaining_hours ?? Math.max(0, allocated - consumed));
+                                const totalTC = Number(selectedJobDetails?.technical_complexity_hours || 0);
+                                const recovered = Number(selectedJobDetails?.recovered_technical_complexity_hours || 0);
+                                const unrecovered = Math.max(0, totalTC - recovered);
+                                const canRecover = remaining <= 1e-9 && unrecovered > 1e-9;
+
+                                if (!canRecover) return null;
+                                return (
+                                    <div className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 p-4">
+                                        <div className="text-sm text-amber-900">
+                                            <div className="font-semibold">Recover Technical Complexity Hours</div>
+                                            <div className="text-amber-800">Adds {unrecovered.toFixed(1)}h back to allocated job hours.</div>
+                                        </div>
+                                        <Button
+                                            onClick={() => recoverTechnicalComplexityMutation.mutate(selectedJobDetails?.job_number)}
+                                            disabled={recoverTechnicalComplexityMutation.isPending}
+                                            className="bg-amber-500 hover:bg-amber-600 text-white"
+                                        >
+                                            {recoverTechnicalComplexityMutation.isPending ? 'Recovering...' : 'Recover Hours'}
+                                        </Button>
+                                    </div>
+                                );
+                            })()}
 
                             <div className="space-y-2">
                                 <div className="font-semibold text-slate-800">Issues</div>

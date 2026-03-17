@@ -42,7 +42,8 @@ export default function TechnicianPortal() {
         work_completed: '',
         has_bottleneck: false,
         bottleneck_category: '',
-        bottleneck_description: ''
+        bottleneck_description: '',
+        bottleneck_time_lost_hours: ''
     });
 
     const [editingEntryId, setEditingEntryId] = useState(null);
@@ -154,7 +155,8 @@ export default function TechnicianPortal() {
                 work_completed: '',
                 has_bottleneck: false,
                 bottleneck_category: '',
-                bottleneck_description: ''
+                bottleneck_description: '',
+                bottleneck_time_lost_hours: ''
             });
         }
     });
@@ -229,17 +231,45 @@ export default function TechnicianPortal() {
             category_detail: isIdleSelected ? (formData.category_detail || '') : ''
         };
 
-        const report = (!isIdleSelected && reportData.work_completed) ? {
+        const shouldSendReport =
+            !isIdleSelected &&
+            (String(reportData.work_completed || '').trim() || reportData.has_bottleneck);
+
+        const report = shouldSendReport ? {
             job_id: jobNumber,
             job_number: jobNumber,
             technician_id: user.id,
             technician_name: user.name,
             date: formData.date,
-            work_completed: reportData.work_completed,
+            work_completed: String(reportData.work_completed || ''),
             has_bottleneck: reportData.has_bottleneck,
             bottleneck_category: reportData.has_bottleneck ? reportData.bottleneck_category : null,
-            bottleneck_description: reportData.has_bottleneck ? reportData.bottleneck_description : null
+            bottleneck_description: reportData.has_bottleneck ? reportData.bottleneck_description : null,
+            bottleneck_time_lost_hours: reportData.has_bottleneck && reportData.bottleneck_category === 'technical_complexity'
+                ? Number(reportData.bottleneck_time_lost_hours)
+                : 0
         } : null;
+
+        if (report?.has_bottleneck) {
+            const cat = String(reportData.bottleneck_category || '').trim();
+            const desc = String(reportData.bottleneck_description || '').trim();
+            if (!cat) {
+                setError('Please select a bottleneck category.');
+                return;
+            }
+            if (!desc) {
+                setError('Please enter a bottleneck description.');
+                return;
+            }
+        }
+
+        if (report?.has_bottleneck && report?.bottleneck_category === 'technical_complexity') {
+            const timeLost = Number(reportData.bottleneck_time_lost_hours);
+            if (Number.isNaN(timeLost) || timeLost <= 0) {
+                setError('Please enter time lost due to technical complexity (hours) greater than 0.');
+                return;
+            }
+        }
 
         createEntryMutation.mutate({ timeLog, report });
     };
@@ -609,6 +639,21 @@ export default function TechnicianPortal() {
                                                                 className="h-16 border-slate-300"
                                                             />
                                                         </div>
+
+                                                        {reportData.bottleneck_category === 'technical_complexity' && (
+                                                            <div className="space-y-2">
+                                                                <Label>Time lost (hours)</Label>
+                                                                <Input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.1"
+                                                                    placeholder="e.g. 1.5"
+                                                                    value={reportData.bottleneck_time_lost_hours}
+                                                                    onChange={(e) => setReportData(prev => ({ ...prev, bottleneck_time_lost_hours: e.target.value }))}
+                                                                    className="border-slate-300"
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -766,9 +811,12 @@ export default function TechnicianPortal() {
                                                     <TableHead>Date</TableHead>
                                                     <TableHead>Job</TableHead>
                                                     <TableHead>Category</TableHead>
+                                                    <TableHead>Holiday</TableHead>
+                                                    <TableHead className="text-right">Multiplier</TableHead>
                                                     <TableHead className="text-right">Hours</TableHead>
                                                     <TableHead className="text-right">Normal</TableHead>
                                                     <TableHead className="text-right">OT</TableHead>
+                                                    <TableHead className="text-right">Payable</TableHead>
                                                     <TableHead className="text-right">Actions</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -777,6 +825,8 @@ export default function TechnicianPortal() {
                                                     const isEditing = editingEntryId === entry.id;
                                                     const isIdle = !!entry.is_idle;
                                                     const showOtherDetail = isIdle && (editEntryDraft.category === 'Other' || entry.category === 'Other');
+                                                    const multiplier = Number(entry.overtime_multiplier || 1);
+                                                    const payable = Number(entry.payable_hours || (Number(entry.hours_logged || 0) * multiplier));
 
                                                     return (
                                                     <TableRow key={entry.id}>
@@ -821,6 +871,18 @@ export default function TechnicianPortal() {
                                                                 getEntryCategoryLabel(entry)
                                                             )}
                                                         </TableCell>
+                                                        <TableCell>
+                                                            {entry.is_public_holiday ? (
+                                                                <span className="text-xs font-semibold text-amber-700">
+                                                                    {entry.public_holiday_name || 'Public Holiday'}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-xs text-slate-400">-</span>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-right text-slate-700">
+                                                            {multiplier.toFixed(1)}×
+                                                        </TableCell>
                                                         <TableCell className="text-right text-slate-800">
                                                             {isEditing ? (
                                                                 <Input
@@ -837,6 +899,7 @@ export default function TechnicianPortal() {
                                                         </TableCell>
                                                         <TableCell className="text-right text-blue-600">{(entry.normal_hours || 0).toFixed(1)}h</TableCell>
                                                         <TableCell className="text-right font-semibold text-yellow-600">{(entry.overtime_hours || 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right font-semibold text-slate-800">{payable.toFixed(1)}h</TableCell>
                                                         <TableCell className="text-right">
                                                             {isEditing ? (
                                                                 <div className="flex items-center justify-end gap-1">

@@ -113,6 +113,9 @@ class APIClient {
                 return this.request('/jobs');
             },
             getByJobNumber: (jobNumber) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}`),
+            recoverTechnicalComplexity: (jobNumber) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/recover-technical-complexity`, {
+                method: 'POST'
+            }),
             assignTechnicianByJobNumber: (jobNumber, technician_id, technician_name) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/assign-technician`, {
                 method: 'PUT',
                 body: JSON.stringify({ technician_id, technician_name })
