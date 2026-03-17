@@ -21,7 +21,7 @@ import MonthlyArchiveManager from '../components/dashboard/MonthlyArchiveManager
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Hours are now calculated per entry, not constants
 
@@ -205,6 +205,11 @@ export default function Dashboard() {
         onSuccess: (updatedJob) => {
             setSelectedJobDetails(updatedJob);
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            setIsEditingJob(false);
+            setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+        },
+        onError: (e) => {
+            alert(e?.message || 'Failed to update job');
         }
     });
 
@@ -781,6 +786,9 @@ export default function Dashboard() {
                             <DialogTitle className="text-slate-800">
                                 Job Details: {selectedJobDetails?.job_number}
                             </DialogTitle>
+                            <DialogDescription className="sr-only">
+                                View job details and edit job information.
+                            </DialogDescription>
                         </DialogHeader>
 
                         <div className="space-y-4 overflow-y-auto pr-1 max-h-[calc(85vh-6rem)]">
@@ -859,15 +867,22 @@ export default function Dashboard() {
                                                 onClick={() => {
                                                     const nextNumber = String(jobEditDraft.job_number || '').trim();
                                                     if (!nextNumber) return;
-                                                    const nextAllocated = Number(jobEditDraft.allocated_hours);
+                                                    const rawAllocated = String(jobEditDraft.allocated_hours ?? '').trim();
+                                                    const nextAllocated = rawAllocated === '' ? null : Number(rawAllocated);
+                                                    const nextStatus = String(jobEditDraft.status || '').trim();
+                                                    const payload = {
+                                                        job_number: nextNumber,
+                                                        description: String(jobEditDraft.description || '').trim()
+                                                    };
+
+                                                    if (nextStatus) payload.status = nextStatus;
+                                                    if (nextAllocated !== null && !Number.isNaN(nextAllocated)) {
+                                                        payload.allocated_hours = nextAllocated;
+                                                    }
+
                                                     updateJobByNumberMutation.mutate({
                                                         jobNumber: selectedJobDetails?.job_number,
-                                                        data: {
-                                                            job_number: nextNumber,
-                                                            description: String(jobEditDraft.description || '').trim(),
-                                                            status: jobEditDraft.status,
-                                                            allocated_hours: Number.isNaN(nextAllocated) ? undefined : nextAllocated
-                                                        }
+                                                        data: payload
                                                     });
                                                 }}
                                                 disabled={updateJobByNumberMutation.isPending}
