@@ -18,7 +18,7 @@ const statusConfig = {
     over_allocated: { label: 'Over-Allocated', color: 'bg-orange-100 text-orange-700', icon: XCircle }
 };
 
-export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false }) {
+export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, onSelectJob, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false }) {
     const [reassignJob, setReassignJob] = useState(null);
     const [addTechJob, setAddTechJob] = useState(null);
 
@@ -96,7 +96,19 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, t
                                 
                                 return (
                                     <TableRow key={job.id}>
-                                        <TableCell className="font-mono font-semibold">{job.job_number}</TableCell>
+                                        <TableCell className="font-mono font-semibold">
+                                            {onSelectJob ? (
+                                                <Button
+                                                    variant="link"
+                                                    className="p-0 h-auto font-mono font-semibold text-slate-800"
+                                                    onClick={() => onSelectJob(job)}
+                                                >
+                                                    {job.job_number}
+                                                </Button>
+                                            ) : (
+                                                job.job_number
+                                            )}
+                                        </TableCell>
                                         <TableCell className="max-w-[200px] truncate">{job.description}</TableCell>
                                         <TableCell className="max-w-[200px] truncate" title={technicianNames}>{technicianNames}</TableCell>
                                         <TableCell>

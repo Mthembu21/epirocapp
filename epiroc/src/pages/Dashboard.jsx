@@ -208,6 +208,17 @@ export default function Dashboard() {
         }
     });
 
+    const openJobDetails = async (job) => {
+        try {
+            const jobNumber = job?.job_number;
+            if (!jobNumber) return;
+            const latest = await base44.entities.Job.getByJobNumber(jobNumber);
+            setSelectedJobDetails(latest);
+        } catch (e) {
+            alert(e?.message || 'Could not load job details');
+        }
+    };
+
     const reassignJobMutation = useMutation({
         mutationFn: async ({ jobId, newTechnicianId, newTechnicianName, previousTechnicianId, previousTechnicianName, reason, subtask_allocations }) => {
             const job = jobs.find(j => j.id === jobId);
@@ -539,6 +550,7 @@ export default function Dashboard() {
                             onDelete={deleteJobMutation.mutate}
                             onReassign={reassignJobMutation.mutate}
                             onAddTechnician={addTechnicianMutation.mutate}
+                            onSelectJob={openJobDetails}
                             isReassigning={reassignJobMutation.isPending}
                             isAddingTechnician={addTechnicianMutation.isPending}
                         />
@@ -764,14 +776,14 @@ export default function Dashboard() {
                         setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
                     }
                 }}>
-                    <DialogContent className="sm:max-w-3xl">
+                    <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden">
                         <DialogHeader>
                             <DialogTitle className="text-slate-800">
                                 Job Details: {selectedJobDetails?.job_number}
                             </DialogTitle>
                         </DialogHeader>
 
-                        <div className="space-y-4">
+                        <div className="space-y-4 overflow-y-auto pr-1 max-h-[calc(85vh-6rem)]">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="text-sm text-slate-600">
                                     {isEditingJob ? (
