@@ -134,11 +134,16 @@ export default function TechnicianPortal() {
     });
 
     const confirmJobMutation = useMutation({
-        mutationFn: (jobId) => {
-            const job = myJobs.find(j => j.id === jobId);
-            return base44.entities.Job.confirmByJobNumber(job?.job_number, user?.id);
+        mutationFn: (jobNumber) => {
+            if (!jobNumber) {
+                throw new Error('Missing job number for confirmation');
+            }
+            return base44.entities.Job.confirmByJobNumber(jobNumber, user?.id);
         },
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] })
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] }),
+        onError: (e) => {
+            alert(e?.message || 'Could not accept job');
+        }
     });
 
     const createEntryMutation = useMutation({
@@ -362,7 +367,7 @@ export default function TechnicianPortal() {
                                         <div>
                                             <p className="font-semibold text-slate-800">{job.job_number}</p>
                                             <p className="text-sm text-slate-600">{job.description}</p>
-                                            <div className="flex gap-4 mt-2 text-sm">
+                                            <div className="flex gap-4 mt-2 text-sm">job_number
                                                 <span className="text-blue-600">Allocated: {job.allocated_hours}h</span>
                                             </div>
                                         </div>
