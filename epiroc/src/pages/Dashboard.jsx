@@ -37,6 +37,7 @@ export default function Dashboard() {
     const [isEditingJob, setIsEditingJob] = useState(false);
     const [jobEditDraft, setJobEditDraft] = useState({ job_number: '', description: '', allocated_hours: '', status: '' });
     const [jobAddTechnicianId, setJobAddTechnicianId] = useState('');
+    const [selectedJobTechnicianId, setSelectedJobTechnicianId] = useState('');
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const queryClient = useQueryClient();
 
@@ -906,6 +907,7 @@ export default function Dashboard() {
                         setSelectedJobDetails(null);
                         setIsEditingJob(false);
                         setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                        setSelectedJobTechnicianId('');
                     }
                 }}>
                     <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden">
@@ -1043,9 +1045,13 @@ export default function Dashboard() {
                                     <div className="space-y-2">
                                         {(selectedJobDetails.technicians || []).map((t) => (
                                             <div key={String(t?.technician_id)} className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                                                <div className="text-sm text-slate-800">
+                                                <button
+                                                    type="button"
+                                                    className="text-sm text-slate-800 text-left hover:underline"
+                                                    onClick={() => setSelectedJobTechnicianId(String(t?.technician_id || ''))}
+                                                >
                                                     {t?.technician_name || t?.technician_id}
-                                                </div>
+                                                </button>
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
@@ -1068,6 +1074,56 @@ export default function Dashboard() {
                                                 </Button>
                                             </div>
                                         ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {!!selectedJobTechnicianId && (selectedJobDetails?.subtasks || []).length > 0 && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="font-semibold text-slate-800">Technician Stages</div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setSelectedJobTechnicianId('')}
+                                            className="h-8"
+                                        >
+                                            Clear
+                                        </Button>
+                                    </div>
+                                    <div className="overflow-x-auto border rounded">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="bg-slate-50">
+                                                    <TableHead>Stage</TableHead>
+                                                    <TableHead className="text-right">Allocated</TableHead>
+                                                    <TableHead className="text-right">Progress</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {(selectedJobDetails.subtasks || [])
+                                                    .filter((st) => {
+                                                        const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
+                                                        return assigned.some((a) => String(a?.technician_id) === String(selectedJobTechnicianId));
+                                                    })
+                                                    .map((st) => {
+                                                        const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
+                                                        const a = assigned.find((x) => String(x?.technician_id) === String(selectedJobTechnicianId));
+                                                        const alloc = Number(a?.allocated_hours || 0);
+                                                        const prog = Array.isArray(st?.progress_by_technician)
+                                                            ? st.progress_by_technician.find((p) => String(p?.technician_id) === String(selectedJobTechnicianId))
+                                                            : null;
+                                                        const pct = Number(prog?.progress_percentage || 0);
+                                                        return (
+                                                            <TableRow key={String(st?._id || st?.id)}>
+                                                                <TableCell>{st?.title || '-'}</TableCell>
+                                                                <TableCell className="text-right">{alloc.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right">{pct.toFixed(0)}%</TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                            </TableBody>
+                                        </Table>
                                     </div>
                                 </div>
                             )}
