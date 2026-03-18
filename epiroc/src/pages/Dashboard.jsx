@@ -38,6 +38,7 @@ export default function Dashboard() {
     const [jobEditDraft, setJobEditDraft] = useState({ job_number: '', description: '', allocated_hours: '', status: '' });
     const [jobAddTechnicianId, setJobAddTechnicianId] = useState('');
     const [selectedJobTechnicianId, setSelectedJobTechnicianId] = useState('');
+    const [techStageAllocDraft, setTechStageAllocDraft] = useState({});
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const queryClient = useQueryClient();
 
@@ -112,6 +113,18 @@ export default function Dashboard() {
         queryKey: ['technicians'],
         queryFn: () => base44.entities.Technician.list(),
         enabled: isAuthenticated
+    });
+
+    const updateSubtaskMutation = useMutation({
+        mutationFn: async ({ jobNumber, subtaskId, data }) => base44.entities.Job.subtasks.update(jobNumber, subtaskId, data),
+        onSuccess: async (_updatedSubtask, vars) => {
+            const latest = await base44.entities.Job.getByJobNumber(vars.jobNumber);
+            setSelectedJobDetails(latest);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        },
+        onError: (e) => {
+            alert(e?.message || 'Failed to update stage allocation');
+        }
     });
 
     const { data: jobs = [] } = useQuery({
@@ -908,6 +921,7 @@ export default function Dashboard() {
                         setIsEditingJob(false);
                         setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
                         setSelectedJobTechnicianId('');
+                        setTechStageAllocDraft({});
                     }
                 }}>
                     <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden">
@@ -1062,6 +1076,10 @@ export default function Dashboard() {
                                                         const nextTechs = (selectedJobDetails.technicians || []).filter(
                                                             (x) => String(x?.technician_id) !== String(t?.technician_id)
                                                         );
+                                                        if (String(selectedJobTechnicianId) === String(t?.technician_id)) {
+                                                            setSelectedJobTechnicianId('');
+                                                            setTechStageAllocDraft({});
+                                                        }
                                                         updateJobByNumberMutation.mutate({
                                                             jobNumber: selectedJobDetails?.job_number,
                                                             data: { technicians: nextTechs },
@@ -1110,6 +1128,10 @@ export default function Dashboard() {
                                                         const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
                                                         const a = assigned.find((x) => String(x?.technician_id) === String(selectedJobTechnicianId));
                                                         const alloc = Number(a?.allocated_hours || 0);
+                                                        const stId = String(st?._id || st?.id);
+                                                        const draftKey = `${stId}:${String(selectedJobTechnicianId)}`;
+                                                        const draftValRaw = techStageAllocDraft?.[draftKey];
+                                                        const draftVal = typeof draftValRaw === 'string' ? draftValRaw : '';
                                                         const prog = Array.isArray(st?.progress_by_technician)
                                                             ? st.progress_by_technician.find((p) => String(p?.technician_id) === String(selectedJobTechnicianId))
                                                             : null;
@@ -1117,7 +1139,49 @@ export default function Dashboard() {
                                                         return (
                                                             <TableRow key={String(st?._id || st?.id)}>
                                                                 <TableCell>{st?.title || '-'}</TableCell>
-                                                                <TableCell className="text-right">{alloc.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right">
+                                                                    {isEditingJob ? (
+                                                                        <div className="flex items-center justify-end gap-2">
+                                                                            <Input
+                                                                                type="number"
+                                                                                step="0.5"
+                                                                                min="0"
+                                                                                value={draftVal}
+                                                                                placeholder={alloc.toFixed(1)}
+                                                                                onChange={(e) => {
+                                                                                    const v = e.target.value;
+                                                                                    setTechStageAllocDraft((p) => ({ ...p, [draftKey]: v }));
+                                                                                }}
+                                                                                className="h-8 w-24 text-right"
+                                                                            />
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                className="h-8"
+                                                                                disabled={updateSubtaskMutation.isPending}
+                                                                                onClick={() => {
+                                                                                    const raw = String(techStageAllocDraft?.[draftKey] ?? '').trim();
+                                                                                    if (raw === '') return;
+                                                                                    const nextAlloc = Number(raw);
+                                                                                    if (Number.isNaN(nextAlloc) || nextAlloc < 0) return;
+                                                                                    const nextAssigned = assigned.map((x) =>
+                                                                                        String(x?.technician_id) === String(selectedJobTechnicianId)
+                                                                                            ? { ...x, allocated_hours: nextAlloc }
+                                                                                            : x
+                                                                                    );
+                                                                                    updateSubtaskMutation.mutate({
+                                                                                        jobNumber: selectedJobDetails?.job_number,
+                                                                                        subtaskId: stId,
+                                                                                        data: { assigned_technicians: nextAssigned }
+                                                                                    });
+                                                                                }}
+                                                                            >
+                                                                                Save
+                                                                            </Button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        `${alloc.toFixed(1)}h`
+                                                                    )}
+                                                                </TableCell>
                                                                 <TableCell className="text-right">{pct.toFixed(0)}%</TableCell>
                                                             </TableRow>
                                                         );
