@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 
-export default function StatsCard({ title, value, subtitle, icon: Icon, color = "yellow" }) {
+export default function StatsCard({ title, value, subtitle, icon: Icon, color = "yellow", onClick }) {
     const colorClasses = {
         yellow: "from-yellow-400 to-yellow-500",
         green: "from-green-500 to-green-600",
@@ -12,7 +12,15 @@ export default function StatsCard({ title, value, subtitle, icon: Icon, color = 
     };
 
     return (
-        <Card className="border-0 shadow-lg overflow-hidden">
+        <Card
+            className={
+                `border-0 shadow-lg overflow-hidden ${onClick ? 'cursor-pointer hover:opacity-95' : ''}`
+            }
+            onClick={onClick}
+            role={onClick ? 'button' : undefined}
+            tabIndex={onClick ? 0 : undefined}
+            onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); } : undefined}
+        >
             <CardContent className="p-0">
                 <div className={`bg-gradient-to-br ${colorClasses[color]} p-5 text-white`}>
                     <div className="flex items-start justify-between">

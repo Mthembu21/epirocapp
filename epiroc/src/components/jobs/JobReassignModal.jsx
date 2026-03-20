@@ -13,21 +13,9 @@ export default function JobReassignModal({ job, technicians, isOpen, onClose, on
     const [reason, setReason] = useState('');
     const [selectedSubtasks, setSelectedSubtasks] = useState({});
 
-    const assignedIds = useMemo(() => {
-        const ids = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
-        if (job?.assigned_technician_id) ids.add(String(job.assigned_technician_id));
-
-        for (const st of (job?.subtasks || [])) {
-            for (const a of (st?.assigned_technicians || [])) {
-                if (a?.technician_id) ids.add(String(a.technician_id));
-            }
-        }
-        return ids;
-    }, [job]);
-
-    const availableTechnicians = technicians.filter(
-        t => !assignedIds.has(String(t.id)) && t.status === 'active'
-    );
+    const availableTechnicians = useMemo(() => {
+        return (technicians || []).filter((t) => t.status === 'active');
+    }, [technicians]);
 
     const handleSubmit = () => {
         if (!selectedTechnician) return;

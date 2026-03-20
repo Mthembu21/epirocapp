@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, parseISO, getDay, isSameDay } from 'date-fns';
+import { format, parseISO, getDay, isSameDay, addDays, isAfter } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,7 @@ export default function TechnicianPortal() {
     const [user, setUser] = useState(null);
     const [formData, setFormData] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
+        end_date: '',
         job_id: '',
         subtask_id: '',
         hours_logged: '',
@@ -119,18 +120,45 @@ export default function TechnicianPortal() {
         enabled: !!user?.id
     });
 
+    const manualCompleteStageMutation = useMutation({
+        mutationFn: async ({ jobNumber, subtaskId }) => {
+            return base44.entities.Job.subtasks.complete(jobNumber, subtaskId, { technician_id: user?.id });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+        },
+        onError: (e) => {
+            alert(e?.message || 'Failed to mark stage complete');
+        }
+    });
+
     const getMyAssignment = (job) => {
         const assignments = job?.technicians || [];
         return assignments.find(t => String(t.technician_id) === String(user?.id)) || null;
     };
 
+    const hasIncompleteAssignedWork = (job) => {
+        const subtasks = Array.isArray(job?.subtasks) ? job.subtasks : [];
+        for (const st of subtasks) {
+            const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
+            const isAssignedToMe = assigned.some((a) => String(a?.technician_id) === String(user?.id));
+            if (!isAssignedToMe) continue;
+
+            const myProgress = (st?.progress_by_technician || []).find((p) => String(p?.technician_id) === String(user?.id));
+            const pct = Number(myProgress?.progress_percentage || 0);
+            const completed = Boolean(myProgress?.completed) || pct >= 100 - 1e-9;
+            if (!completed) return true;
+        }
+        return false;
+    };
+
     const pendingJobs = myJobs.filter(j => {
         const mine = getMyAssignment(j);
-        return !!mine && !mine.confirmed_by_technician && j.status !== 'completed';
+        return !!mine && !mine.confirmed_by_technician && j.status !== 'completed' && hasIncompleteAssignedWork(j);
     });
     const activeJobs = myJobs.filter(j => {
         const mine = getMyAssignment(j);
-        return !!mine && mine.confirmed_by_technician && j.status !== 'completed';
+        return !!mine && mine.confirmed_by_technician && j.status !== 'completed' && hasIncompleteAssignedWork(j);
     });
 
     const confirmJobMutation = useMutation({
@@ -148,8 +176,20 @@ export default function TechnicianPortal() {
 
     const createEntryMutation = useMutation({
         mutationFn: async (data) => {
-            // Send timeEntry and report together — backend handles
-            // job report creation, bottleneck tracking, and job hour updates
+            const batch = Array.isArray(data?.batch) ? data.batch : null;
+            if (batch && batch.length) {
+                let last = null;
+                for (const item of batch) {
+                    // Send timeEntry and report together — backend handles
+                    // job report creation, bottleneck tracking, and job hour updates
+                    last = await base44.entities.DailyTimeEntry.create({
+                        timeLog: item.timeLog,
+                        report: item.report || null
+                    });
+                }
+                return last;
+            }
+
             const entry = await base44.entities.DailyTimeEntry.create({
                 timeLog: data.timeLog,
                 report: data.report || null
@@ -159,7 +199,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
-            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '' }));
+            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '', end_date: '' }));
             setReportData({
                 work_completed: '',
                 has_bottleneck: false,
@@ -191,6 +231,7 @@ export default function TechnicianPortal() {
     );
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
     const isOtherIdleSelected = isIdleSelected && formData.category === 'Other';
+    const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
 
     const getAssignedSubtasksForJob = (job) => {
         const subtasks = job?.subtasks || [];
@@ -200,7 +241,13 @@ export default function TechnicianPortal() {
         });
     };
 
-    const assignedSubtasks = (!isIdleSelected && selectedJob) ? getAssignedSubtasksForJob(selectedJob) : [];
+    const assignedSubtasksRaw = (!isIdleSelected && selectedJob) ? getAssignedSubtasksForJob(selectedJob) : [];
+    const assignedSubtasks = assignedSubtasksRaw.filter((st) => {
+        const myProgress = (st?.progress_by_technician || []).find((p) => String(p?.technician_id) === String(user?.id));
+        const pct = Number(myProgress?.progress_percentage || 0);
+        const completed = Boolean(myProgress?.completed) || pct >= 100 - 1e-9;
+        return !completed;
+    });
     const getSubtaskKey = (st) => String(st?._id || st?.id || '');
     const selectedSubtask = assignedSubtasks.find((st) => getSubtaskKey(st) === String(formData.subtask_id)) || null;
     const selectedSubtaskAssignment = selectedSubtask
@@ -219,9 +266,11 @@ export default function TechnicianPortal() {
         e.preventDefault();
         if (!user || !formData.job_id) return;
 
-        const hoursLogged = Number(formData.hours_logged);
-        if (!hoursLogged || hoursLogged <= 0) return;
-        if (totalLoggedHoursForDate + hoursLogged > 24) return;
+        if (!isIdleSelected) {
+            const hoursLogged = Number(formData.hours_logged);
+            if (!hoursLogged || hoursLogged <= 0) return;
+            if (totalLoggedHoursForDate + hoursLogged > 24) return;
+        }
 
         const jobNumber = isIdleSelected ? IDLE_JOB_ID : (selectedJob?.job_number || '');
         if (!jobNumber) return;
@@ -229,6 +278,43 @@ export default function TechnicianPortal() {
         if (!isIdleSelected && !formData.subtask_id) return;
         if (isIdleSelected && !formData.category) return;
 
+        if (isLeaveSelected) {
+            const start = parseISO(formData.date);
+            const end = String(formData.end_date || '').trim()
+                ? parseISO(formData.end_date)
+                : start;
+            if (isAfter(start, end)) {
+                alert('End date must be on or after start date');
+                return;
+            }
+
+            const batch = [];
+            for (let d = start; !isAfter(d, end); d = addDays(d, 1)) {
+                const day = getDay(d);
+                if (day === 0 || day === 6) continue;
+
+                const hours = day === 5 ? 7 : 8;
+                batch.push({
+                    timeLog: {
+                        technician_id: user.id,
+                        job_id: IDLE_JOB_ID,
+                        subtask_id: null,
+                        hours_logged: hours,
+                        log_date: format(d, 'yyyy-MM-dd'),
+                        is_idle: true,
+                        category: formData.category,
+                        category_detail: formData.category_detail || ''
+                    },
+                    report: null
+                });
+            }
+
+            if (!batch.length) return;
+            createEntryMutation.mutate({ batch });
+            return;
+        }
+
+        const hoursLogged = Number(formData.hours_logged);
         const timeLog = {
             technician_id: user.id,
             job_id: jobNumber,
@@ -443,45 +529,44 @@ export default function TechnicianPortal() {
                             </CardHeader>
                             <CardContent className="pt-6">
                                 <form onSubmit={handleSubmit} className="space-y-6">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Date</Label>
+                                            <Input
+                                                type="date"
+                                                value={formData.date}
+                                                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                                                className="border-slate-300"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Job / Work Number</Label>
+                                            <Select
+                                                value={formData.job_id}
+                                                onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, subtask_id: '', category: '', category_detail: '', end_date: '' }))}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select job" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {activeJobs.map((job) => (
+                                                        <SelectItem key={job.id} value={job.job_number}>
+                                                            {job.job_number}
+                                                        </SelectItem>
+                                                    ))}
+                                                    <SelectItem value={IDLE_JOB_ID}>{IDLE_JOB_ID}</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+
+                                    {isIdleSelected && (
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <div className="space-y-2">
-                                                <Label>Date</Label>
-                                                <Input
-                                                    type="date"
-                                                    value={formData.date}
-                                                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                                                    className="border-slate-300"
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Job / Work Number</Label>
-                                                <Select
-                                                    value={formData.job_id}
-                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, subtask_id: '', category: '' }))}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Select job" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {activeJobs
-                                                            .filter(j => Number(j.remaining_hours ?? (Number(j.allocated_hours || 0) - Number(j.consumed_hours || 0))) > 0)
-                                                            .map(job => (
-                                                                <SelectItem key={job.id} value={job.job_number}>
-                                                                    {job.job_number} - {(Number(job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0)))).toFixed(1)}h remaining
-                                                                </SelectItem>
-                                                            ))}
-                                                        <SelectItem value={IDLE_JOB_ID}>{IDLE_JOB_ID}</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        </div>
-
-                                        {isIdleSelected && (
-                                            <div className="space-y-2">
-                                                <Label>Idle Category</Label>
+                                                <Label>Category</Label>
                                                 <Select
                                                     value={formData.category}
-                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, category: value, category_detail: '', end_date: '' }))}
                                                 >
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Select category" />
@@ -492,19 +577,32 @@ export default function TechnicianPortal() {
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
-
-                                                {isOtherIdleSelected && (
-                                                    <div className="space-y-2">
-                                                        <Label>Other (describe)</Label>
-                                                        <Input
-                                                            value={formData.category_detail}
-                                                            onChange={(e) => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
-                                                            className="border-slate-300"
-                                                        />
-                                                    </div>
-                                                )}
                                             </div>
-                                        )}
+                                            {isOtherIdleSelected && (
+                                                <div className="space-y-2">
+                                                    <Label>Other (describe)</Label>
+                                                    <Input
+                                                        value={formData.category_detail}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
+                                                        className="border-slate-300"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {isLeaveSelected && (
+                                                <div className="space-y-2">
+                                                    <Label>End date</Label>
+                                                    <Input
+                                                        type="date"
+                                                        value={formData.end_date}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                                                        className="border-slate-300"
+                                                    />
+                                                    <p className="text-xs text-slate-500">Weekdays only. Hours are auto-calculated (8h Mon–Thu, 7h Fri).</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                         {!isIdleSelected && selectedJob && (
                                             <div className="space-y-2">
@@ -557,6 +655,7 @@ export default function TechnicianPortal() {
                                                     step="0.25"
                                                     value={formData.hours_logged}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, hours_logged: e.target.value }))}
+                                                    disabled={isLeaveSelected}
                                                     className="border-slate-300"
                                                 />
                                             </div>
@@ -700,11 +799,11 @@ export default function TechnicianPortal() {
                                             disabled={
                                                 createEntryMutation.isPending ||
                                                 !formData.job_id ||
-                                                !formData.hours_logged ||
+                                                (!isLeaveSelected && !formData.hours_logged) ||
                                                 (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                                 (isIdleSelected && !formData.category) ||
                                                 (isOtherIdleSelected && !String(formData.category_detail || '').trim()) ||
-                                                (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24)
+                                                (!isLeaveSelected && (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24))
                                             }
                                         >
                                             <Save className="w-4 h-4 mr-2" />
@@ -756,20 +855,34 @@ export default function TechnicianPortal() {
                                                     </div>
                                                 </div>
 
-                                                    {(job.subtasks || []).length > 0 && (
+                                                {(job.subtasks || []).length > 0 && (
                                                     <div className="mt-3 space-y-2">
                                                         <p className="text-sm font-medium text-slate-700">Subtasks</p>
                                                         <div className="space-y-2">
                                                             {(job.subtasks || []).map((st) => {
                                                                 const subtaskId = st.id || st._id;
-                                                                const myProgress = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(user.id))?.progress_percentage || 0;
-                                                                const stageAllocated = Number(st.allocated_hours || 0);
+
+                                                                const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
+                                                                const myAssignedRow = assigned.find((a) => String(a?.technician_id) === String(user?.id)) || null;
+                                                                if (!myAssignedRow) return null;
+
+                                                                const myProgressObj = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(user.id)) || null;
+                                                                const myProgress = Number(myProgressObj?.progress_percentage || 0);
+                                                                const isStageCompleted = Boolean(myProgressObj?.completed) || myProgress >= 100 - 1e-9;
+                                                                if (isStageCompleted) return null;
+
+                                                                const stageAllocated = Number(
+                                                                    typeof myAssignedRow?.allocated_hours !== 'undefined' && myAssignedRow?.allocated_hours !== null
+                                                                        ? myAssignedRow.allocated_hours
+                                                                        : (st.allocated_hours || 0)
+                                                                );
                                                                 const stageConsumed = Number(st.consumed_hours || 0);
                                                                 const stageRemaining = Number(
                                                                     typeof st.remaining_hours !== 'undefined' && st.remaining_hours !== null
                                                                         ? st.remaining_hours
                                                                         : Math.max(0, stageAllocated - stageConsumed)
                                                                 );
+
                                                                 return (
                                                                     <div key={subtaskId} className="bg-slate-50 rounded p-3">
                                                                         <div className="flex items-center justify-between gap-2">
@@ -781,6 +894,25 @@ export default function TechnicianPortal() {
                                                                                 {Number(myProgress).toFixed(0)}%
                                                                             </div>
                                                                         </div>
+
+                                                                        <div className="mt-2 flex justify-end">
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                className="h-8"
+                                                                                disabled={manualCompleteStageMutation.isPending}
+                                                                                onClick={() => {
+                                                                                    if (!job?.job_number) return;
+                                                                                    if (!window.confirm('Mark this stage as completed?')) return;
+                                                                                    manualCompleteStageMutation.mutate({
+                                                                                        jobNumber: job.job_number,
+                                                                                        subtaskId: String(subtaskId)
+                                                                                    });
+                                                                                }}
+                                                                            >
+                                                                                Mark Completed
+                                                                            </Button>
+                                                                        </div>
+
                                                                         <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                                                                             <div className="rounded bg-white border border-slate-200 p-2 text-center">
                                                                                 <div className="text-slate-500">Allocated</div>
@@ -838,10 +970,10 @@ export default function TechnicianPortal() {
                                         <p>No entries yet</p>
                                     </div>
                                 ) : (
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
                                         <Table>
                                             <TableHeader>
-                                                <TableRow className="bg-slate-100">
+                                                <TableRow className="bg-slate-100 sticky top-0 z-10">
                                                     <TableHead>Date</TableHead>
                                                     <TableHead>Job</TableHead>
                                                     <TableHead>Category</TableHead>

@@ -40,6 +40,7 @@ export default function Dashboard() {
     const [selectedJobTechnicianId, setSelectedJobTechnicianId] = useState('');
     const [techStageAllocDraft, setTechStageAllocDraft] = useState({});
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
+    const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -131,7 +132,7 @@ export default function Dashboard() {
         queryKey: ['jobs'],
         queryFn: () => base44.entities.Job.list('-created_date', 200),
         enabled: isAuthenticated,
-        refetchInterval: isAuthenticated ? 10000 : false
+        refetchInterval: isAuthenticated ? 5000 : false
     });
 
     const { data: timeLogs = [] } = useQuery({
@@ -366,16 +367,11 @@ export default function Dashboard() {
     });
 
     const activeJobs = jobs.filter(j =>
-        ['active', 'in_progress', 'at_risk'].includes(j.status)
+        ['pending_confirmation', 'active', 'in_progress', 'at_risk'].includes(j.status)
         || Number(j.bottleneck_count || 0) >= 2
     );
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
-    
-    const totalHours = timeLogs.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
-    const totalOvertimeHours = timeLogs.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-    const totalProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
-    const totalNonProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
     const technicianNameById = (technicians || []).reduce((acc, t) => {
         const id = String(t?.id || t?._id || t?.technician_id || '');
@@ -384,8 +380,63 @@ export default function Dashboard() {
         return acc;
     }, {});
 
+    const completedStageRows = React.useMemo(() => {
+        const rows = [];
+        for (const j of (completedJobs || [])) {
+            const jobNumber = j?.job_number || '';
+            const jobCompletedAt = j?.actual_completion_date ? new Date(j.actual_completion_date) : null;
+
+            for (const st of (j?.subtasks || [])) {
+                const stageTitle = st?.title || '';
+                const progressEntries = Array.isArray(st?.progress_by_technician) ? st.progress_by_technician : [];
+                for (const p of progressEntries) {
+                    const pct = Number(p?.progress_percentage || 0);
+                    const completed = Boolean(p?.completed) || pct >= 100 - 1e-9;
+                    if (!completed) continue;
+
+                    const completionTime = p?.completed_at ? new Date(p.completed_at) : jobCompletedAt;
+                    rows.push({
+                        job_number: jobNumber,
+                        technician_id: p?.technician_id,
+                        stage: stageTitle,
+                        completed_at: completionTime
+                    });
+                }
+            }
+
+            if (!rows.some((r) => String(r.job_number) === String(jobNumber)) && jobCompletedAt) {
+                const techNames = (j?.technicians || []).map((t) => t?.technician_name).filter(Boolean).join(', ');
+                rows.push({
+                    job_number: jobNumber,
+                    technician_id: techNames || null,
+                    stage: '- ',
+                    completed_at: jobCompletedAt
+                });
+            }
+        }
+
+        return rows
+            .filter((r) => r.job_number)
+            .sort((a, b) => {
+                const at = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+                const bt = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+                return bt - at;
+            });
+    }, [completedJobs, technicians]);
+    
+    const totalHours = timeLogs.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+    const totalOvertimeHours = timeLogs.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+    const totalProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+
     const selectedJobIssues = selectedJobDetails
-        ? (jobReports || []).filter((r) => String(r?.job_id) === String(selectedJobDetails?.id) && r?.has_bottleneck)
+        ? (jobReports || []).filter((r) => {
+            if (!r?.has_bottleneck) return false;
+            const rid = String(r?.job_id || '');
+            const jobId = String(selectedJobDetails?.id || '');
+            const jobNumber = String(selectedJobDetails?.job_number || '');
+            return (rid && jobId && rid === jobId) || (rid && jobNumber && rid === jobNumber);
+        })
         : [];
 
     const selectedJobWorkLogs = selectedJobDetails
@@ -514,6 +565,7 @@ export default function Dashboard() {
                         subtitle="This period"
                         icon={TrendingUp}
                         color="green"
+                        onClick={() => setCompletedDialogOpen(true)}
                     />
                     <StatsCard
                         title="Total Hours"
@@ -609,7 +661,7 @@ export default function Dashboard() {
 
                     <TabsContent value="jobs" className="mt-6">
                         <JobList 
-                            jobs={jobs}
+                            jobs={activeJobs}
                             technicians={technicians}
                             onDelete={deleteJobMutation.mutate}
                             onReassign={reassignJobMutation.mutate}
@@ -619,6 +671,56 @@ export default function Dashboard() {
                             isAddingTechnician={addTechnicianMutation.isPending}
                         />
                     </TabsContent>
+
+                    <Dialog open={completedDialogOpen} onOpenChange={setCompletedDialogOpen}>
+                        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-hidden">
+                            <DialogHeader>
+                                <DialogTitle className="text-slate-800">Completed Jobs</DialogTitle>
+                                <DialogDescription className="sr-only">
+                                    Completed job and stage list.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                <div className="max-h-[65vh] overflow-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                <TableHead>Job #</TableHead>
+                                                <TableHead>Technician</TableHead>
+                                                <TableHead>Stage</TableHead>
+                                                <TableHead>Completion Time</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {completedStageRows.length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={4} className="text-center text-slate-500 py-10">
+                                                        No completed jobs found
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                completedStageRows.map((r, idx) => {
+                                                    const techLabel = technicianNameById[String(r.technician_id)]
+                                                        || (typeof r.technician_id === 'string' ? r.technician_id : '')
+                                                        || '-';
+                                                    const timeLabel = r.completed_at ? new Date(r.completed_at).toLocaleString() : '-';
+                                                    return (
+                                                        <TableRow key={`${r.job_number}-${idx}`}>
+                                                            <TableCell className="font-mono font-semibold">{r.job_number}</TableCell>
+                                                            <TableCell>{techLabel}</TableCell>
+                                                            <TableCell>{r.stage || '-'}</TableCell>
+                                                            <TableCell>{timeLabel}</TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
 
                     <TabsContent value="performance" className="mt-6">
                         <div className="space-y-6">
@@ -1347,6 +1449,25 @@ export default function Dashboard() {
                                     <div className="text-xs text-slate-500">
                                         Remaining is calculated as stage allocated hours minus booked hours on that stage.
                                     </div>
+                                </div>
+                            )}
+
+                            {selectedJobDetails?.status === 'at_risk' && (
+                                <div className="rounded border border-amber-200 bg-amber-50 p-4">
+                                    <div className="flex items-center gap-2 font-semibold text-amber-900">
+                                        <AlertTriangle className="w-4 h-4" />
+                                        At Risk Reason
+                                    </div>
+                                    <div className="mt-2 text-sm text-amber-900">
+                                        {selectedJobDetails?.risk_reason
+                                            ? String(selectedJobDetails.risk_reason).replace(/_/g, ' ')
+                                            : 'at risk'}
+                                    </div>
+                                    {!!String(selectedJobDetails?.risk_reason_details || '').trim() && (
+                                        <div className="mt-1 text-sm text-amber-800">
+                                            {selectedJobDetails.risk_reason_details}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

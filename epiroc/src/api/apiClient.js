@@ -140,6 +140,10 @@ class APIClient {
                 delete: (jobNumber, subtaskId) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks/${subtaskId}`, {
                     method: 'DELETE'
                 }),
+                complete: (jobNumber, subtaskId, { technician_id } = {}) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks/${subtaskId}/complete`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ technician_id })
+                }),
                 setProgress: (jobNumber, subtaskId, data) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks/${subtaskId}/progress`, {
                     method: 'PUT',
                     body: JSON.stringify(data)

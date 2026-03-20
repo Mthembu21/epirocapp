@@ -21,6 +21,7 @@ const statusConfig = {
 export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, onSelectJob, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false }) {
     const [reassignJob, setReassignJob] = useState(null);
     const [addTechJob, setAddTechJob] = useState(null);
+    const [search, setSearch] = useState('');
 
     const handleReassign = (data) => {
         if (onReassign) {
@@ -47,19 +48,34 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
         );
     }
 
+    const q = String(search || '').trim().toLowerCase();
+    const filteredJobs = q
+        ? jobs.filter((j) => String(j?.job_number || '').toLowerCase().includes(q))
+        : jobs;
+
     return (
         <Card className="border-0 shadow-lg bg-white/95">
             <CardHeader className="pb-4 border-b border-slate-100">
-                <CardTitle className="flex items-center gap-2 text-slate-800">
-                    <Briefcase className="w-5 h-5 text-yellow-500" />
-                    Jobs ({jobs.length})
-                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <CardTitle className="flex items-center gap-2 text-slate-800">
+                        <Briefcase className="w-5 h-5 text-yellow-500" />
+                        Jobs ({filteredJobs.length})
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                        <input
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search job #"
+                            className="h-9 w-full sm:w-56 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                        />
+                    </div>
+                </div>
             </CardHeader>
             <CardContent className="p-0">
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
                     <Table>
                         <TableHeader>
-                            <TableRow className="bg-slate-50">
+                            <TableRow className="bg-slate-50 sticky top-0 z-10">
                                 <TableHead>Job #</TableHead>
                                 <TableHead>Description</TableHead>
                                 <TableHead>Technician</TableHead>
@@ -73,7 +89,7 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {jobs.map((job) => {
+                            {filteredJobs.map((job) => {
                                 const config = statusConfig[job.status] || statusConfig.active;
                                 const StatusIcon = config.icon;
                                 const progress = job.aggregated_progress_percentage ?? job.progress_percentage ?? 0;

@@ -12,21 +12,9 @@ export default function JobAddTechnicianModal({ job, technicians, isOpen, onClos
     const [allocatedHours, setAllocatedHours] = useState(String(job?.allocated_hours ?? ''));
     const [selectedSubtasks, setSelectedSubtasks] = useState({});
 
-    const assignedIds = useMemo(() => {
-        const ids = new Set((job?.technicians || []).map((t) => String(t?.technician_id)));
-        if (job?.assigned_technician_id) ids.add(String(job.assigned_technician_id));
-
-        for (const st of (job?.subtasks || [])) {
-            for (const a of (st?.assigned_technicians || [])) {
-                if (a?.technician_id) ids.add(String(a.technician_id));
-            }
-        }
-        return ids;
-    }, [job]);
-
     const availableTechnicians = useMemo(() => {
-        return (technicians || []).filter((t) => !assignedIds.has(String(t.id)) && t.status === 'active');
-    }, [technicians, assignedIds]);
+        return (technicians || []).filter((t) => t.status === 'active');
+    }, [technicians]);
 
     const handleClose = () => {
         setSelectedTechnician('');

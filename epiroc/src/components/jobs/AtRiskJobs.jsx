@@ -27,9 +27,13 @@ export default function AtRiskJobs({ jobs, jobReports, onSelectJob }) {
                 <div className="space-y-3">
                     {riskyJobs.map(job => {
                         // Get recent bottlenecks for this job
-                        const jobBottlenecks = jobReports?.filter(r => 
-                            r.job_id === job.id && r.has_bottleneck
-                        ) || [];
+                        const jobBottlenecks = jobReports?.filter(r => {
+                            if (!r?.has_bottleneck) return false;
+                            const rid = String(r?.job_id || '');
+                            const jobId = String(job?.id || '');
+                            const jobNumber = String(job?.job_number || '');
+                            return (rid && jobId && rid === jobId) || (rid && jobNumber && rid === jobNumber);
+                        }) || [];
                         
                         const latestBottleneck = jobBottlenecks[0];
                         const remainingDisplay = Number(
