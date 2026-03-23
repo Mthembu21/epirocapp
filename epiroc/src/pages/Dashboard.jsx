@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle, Pencil, Trash2, Save, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
-import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
 import StatsCard from '../components/timesheet/StatsCard';
 import ExportButton from '../components/timesheet/ExportButton';
@@ -41,6 +41,7 @@ export default function Dashboard() {
     const [techStageAllocDraft, setTechStageAllocDraft] = useState({});
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
+    const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const queryClient = useQueryClient();
 
     React.useEffect(() => {
@@ -424,10 +425,18 @@ export default function Dashboard() {
             });
     }, [completedJobs, technicians]);
     
-    const totalHours = timeLogs.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
-    const totalOvertimeHours = timeLogs.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-    const totalProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
-    const totalNonProductiveHours = timeLogs.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+    const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
+    const monthEnd = endOfMonth(parseISO(`${selectedMonth}-01`));
+    const timeLogsForMonth = (timeLogs || []).filter((e) => {
+        if (!e?.log_date) return false;
+        const d = parseISO(e.log_date);
+        return isWithinInterval(d, { start: monthStart, end: monthEnd });
+    });
+
+    const totalHours = timeLogsForMonth.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+    const totalOvertimeHours = timeLogsForMonth.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+    const totalProductiveHours = timeLogsForMonth.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = timeLogsForMonth.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
     const selectedJobIssues = selectedJobDetails
         ? (jobReports || []).filter((r) => {
@@ -510,8 +519,8 @@ export default function Dashboard() {
                                 </Button>
                             ))}
 
-                            <HRExportButton timeEntries={timeLogs} technicians={technicians} />
-                            <ExportButton entries={timeLogs} technicians={technicians} filename="epiroc_timesheet" />
+                            <HRExportButton timeEntries={timeLogsForMonth} technicians={technicians} />
+                            <ExportButton entries={timeLogsForMonth} technicians={technicians} filename="epiroc_timesheet" />
                             <JobAllocationModal 
                                 technicians={technicians}
                                 existingJobs={jobs}
@@ -533,8 +542,20 @@ export default function Dashboard() {
             </header>
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="mb-6">
+                <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <MonthlyArchiveManager timeEntries={timeLogs} technicians={technicians} />
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="month"
+                            value={selectedMonth}
+                            onChange={(e) => {
+                                const next = e.target.value;
+                                if (!next) return;
+                                setSelectedMonth(next);
+                            }}
+                            className="w-44 bg-white"
+                        />
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
@@ -727,12 +748,12 @@ export default function Dashboard() {
                             <PerformanceCharts 
                                 technicians={technicians}
                                 jobs={jobs}
-                                timeEntries={timeLogs}
+                                timeEntries={timeLogsForMonth}
                             />
                             <TechnicianPerformance 
                                 technicians={technicians}
                                 jobs={jobs}
-                                timeEntries={timeLogs}
+                                timeEntries={timeLogsForMonth}
                             />
                         </div>
                     </TabsContent>
@@ -753,7 +774,7 @@ export default function Dashboard() {
                                     <h3 className="font-semibold text-slate-800">Time Logs</h3>
                                     <p className="text-xs text-slate-500">Edit or delete technician logs. This updates job hours and progress.</p>
                                 </div>
-                                <div className="text-xs text-slate-500">{timeLogs.length} logs</div>
+                                <div className="text-xs text-slate-500">{timeLogsForMonth.length} logs</div>
                             </div>
                             <div className="overflow-x-auto">
                                 <Table>
@@ -772,7 +793,7 @@ export default function Dashboard() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {timeLogs.map((log) => {
+                                        {timeLogsForMonth.map((log) => {
                                             const isEditing = editingLogId === log.id;
                                             const isIdle = !!log.is_idle;
                                             const showOtherDetail = isIdle && (editLogDraft.category === 'Other' || log.category === 'Other');

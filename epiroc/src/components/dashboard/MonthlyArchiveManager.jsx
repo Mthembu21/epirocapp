@@ -4,9 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Archive, Calendar, AlertCircle } from 'lucide-react';
-import { format, parseISO, addDays, isValid } from 'date-fns';
-
-const WORKING_DAYS_PER_MONTH = 20;
+import { format, parseISO, addDays, isValid, endOfMonth } from 'date-fns';
 
 export default function MonthlyArchiveManager({ timeEntries, technicians }) {
     const queryClient = useQueryClient();
@@ -61,26 +59,26 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
         });
     }, [timeEntries, normalizedPeriodStart]);
 
-    const { workingDaysCount, shouldArchive } = useMemo(() => {
-        // Count working days from start date
+    const { calendarDaysCount, calendarDaysInMonth, shouldArchive } = useMemo(() => {
         const startDate = normalizedPeriodStart;
         const today = new Date();
+        const monthEnd = endOfMonth(startDate);
 
-        // Count weekdays only (Mon-Fri)
+        const end = today < monthEnd ? today : monthEnd;
+
         let count = 0;
         let currentDate = startDate;
-
-        while (currentDate <= today) {
-            const dayOfWeek = currentDate.getDay();
-            if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Monday to Friday
-                count++;
-            }
+        while (currentDate <= end) {
+            count++;
             currentDate = addDays(currentDate, 1);
         }
 
+        const dim = monthEnd.getDate();
+
         return {
-            workingDaysCount: count,
-            shouldArchive: count >= WORKING_DAYS_PER_MONTH
+            calendarDaysCount: count,
+            calendarDaysInMonth: dim,
+            shouldArchive: today >= monthEnd
         };
     }, [normalizedPeriodStart]);
 
@@ -111,7 +109,7 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
                 month_year: format(startDate, 'MMMM yyyy'),
                 start_date: format(startDate, 'yyyy-MM-dd'),
                 end_date: format(today, 'yyyy-MM-dd'),
-                working_days: workingDaysCount,
+                working_days: calendarDaysCount,
                 total_hr_hours: totalHRHours,
                 total_productive_hours: totalProductiveHours,
                 total_weighted_overtime: totalWeightedOT,
@@ -155,7 +153,7 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
                         <div>
                             <p className="text-sm font-medium">Working Days This Period</p>
                             <p className="text-xs text-slate-400">
-                                {workingDaysCount} of {WORKING_DAYS_PER_MONTH} days (Mon-Fri)
+                                {calendarDaysCount} of {calendarDaysInMonth} days
                             </p>
                         </div>
                     </div>
@@ -174,7 +172,7 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
             </CardHeader>
             <CardContent>
                 <p className="text-slate-800 text-sm mb-4">
-                    You have reached {workingDaysCount} working days. Archive this month's data and start fresh?
+                    You have reached the end of the month. Archive this month's data and start fresh?
                 </p>
                 <Button
                     onClick={() => {

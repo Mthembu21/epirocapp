@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, parseISO, getDay, isSameDay, addDays, isAfter } from 'date-fns';
+import { format, parseISO, getDay, isSameDay, addDays, isAfter, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,7 @@ const bottleneckCategories = [
 
 export default function TechnicianPortal() {
     const [user, setUser] = useState(null);
+    const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [formData, setFormData] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
         end_date: '',
@@ -212,16 +213,24 @@ export default function TechnicianPortal() {
 
 
 
+    const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
+    const monthEnd = endOfMonth(parseISO(`${selectedMonth}-01`));
+    const myEntriesForMonth = myEntries.filter((e) => {
+        if (!e?.log_date) return false;
+        const d = parseISO(e.log_date);
+        return isWithinInterval(d, { start: monthStart, end: monthEnd });
+    });
+
     const selectedDateObj = formData.date ? parseISO(formData.date) : null;
     const entriesForDate = selectedDateObj
-        ? myEntries.filter(entry => entry?.log_date && isSameDay(parseISO(entry.log_date), selectedDateObj))
+        ? myEntriesForMonth.filter(entry => entry?.log_date && isSameDay(parseISO(entry.log_date), selectedDateObj))
         : [];
     const totalLoggedHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.hours_logged) || 0), 0);
     const totalOvertimeForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.overtime_hours) || 0), 0);
 
     const requiredNormalForDay = selectedDateObj
-        ? (getDay(selectedDateObj) === 5 ? 7.5 : 8.5)
-        : 8.5;
+        ? (getDay(selectedDateObj) === 5 ? 7 : 8)
+        : 8;
 
     const belowRequiredNormalForDay = totalLoggedHoursForDate > 0 && totalLoggedHoursForDate < requiredNormalForDay;
 
@@ -398,10 +407,10 @@ export default function TechnicianPortal() {
         return st?.category || st?.title || entry.subtask_title || '-';
     };
 
-    const totalHours = myEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
-    const totalOvertimeHours = myEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-    const totalProductiveHours = myEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
-    const totalNonProductiveHours = myEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+    const totalHours = myEntriesForMonth.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+    const totalOvertimeHours = myEntriesForMonth.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+    const totalProductiveHours = myEntriesForMonth.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = myEntriesForMonth.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
     if (!user) return null;
 
@@ -501,6 +510,31 @@ export default function TechnicianPortal() {
                             <p className="text-xs text-white/60">IDLE hours</p>
                         </CardContent>
                     </Card>
+                </div>
+
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="text-sm text-slate-300 flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Viewing month
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Input
+                            type="month"
+                            value={selectedMonth}
+                            onChange={(e) => {
+                                const next = e.target.value;
+                                if (!next) return;
+                                setSelectedMonth(next);
+
+                                const todayMonth = format(new Date(), 'yyyy-MM');
+                                const nextDate = next === todayMonth
+                                    ? format(new Date(), 'yyyy-MM-dd')
+                                    : `${next}-01`;
+                                setFormData((prev) => ({ ...prev, date: nextDate, end_date: '' }));
+                            }}
+                            className="w-44 bg-white"
+                        />
+                    </div>
                 </div>
 
                 <Tabs defaultValue="log" className="space-y-6">
@@ -964,7 +998,7 @@ export default function TechnicianPortal() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="p-0">
-                                {myEntries.length === 0 ? (
+                                {myEntriesForMonth.length === 0 ? (
                                     <div className="py-12 text-center text-slate-500">
                                         <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
                                         <p>No entries yet</p>
@@ -987,7 +1021,7 @@ export default function TechnicianPortal() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {myEntries.map((entry) => {
+                                                {myEntriesForMonth.map((entry) => {
                                                     const isEditing = editingEntryId === entry.id;
                                                     const isIdle = !!entry.is_idle;
                                                     const showOtherDetail = isIdle && (editEntryDraft.category === 'Other' || entry.category === 'Other');
