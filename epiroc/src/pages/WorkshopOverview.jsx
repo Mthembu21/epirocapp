@@ -71,6 +71,7 @@ export default function WorkshopOverview() {
     const totalJobsOpened = Number(data?.total_jobs_opened || 0);
     const totalHoursConsumed = Number(data?.total_hours_consumed || 0);
     const utilization = Number(data?.labour_utilization_percentage || 0);
+    const appliedMonth = data?.month || selectedMonth;
 
     const workshops = ['component', 'pdis', 'rebuild']
         .map((k) => data?.by_workshop?.[k])
@@ -103,6 +104,7 @@ export default function WorkshopOverview() {
                             <div>
                                 <h1 className="text-2xl font-bold text-yellow-400 tracking-tight">EPIROC</h1>
                                 <p className="text-slate-400 text-xs tracking-widest">WORKSHOP OVERVIEW</p>
+                                <p className="text-slate-500 text-xs">Month: {appliedMonth}</p>
                                 {currentUser?.email && (
                                     <p className="text-slate-500 text-xs">{currentUser.email}</p>
                                 )}

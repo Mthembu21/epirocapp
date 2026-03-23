@@ -82,6 +82,15 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
         };
     }, [normalizedPeriodStart]);
 
+    const { todayDayOfMonth, todayDaysInMonth } = useMemo(() => {
+        const today = new Date();
+        const dim = endOfMonth(today).getDate();
+        return {
+            todayDayOfMonth: Math.min(today.getDate(), dim),
+            todayDaysInMonth: dim
+        };
+    }, []);
+
     const archiveMutation = useMutation({
         mutationFn: async () => {
             const startDate = normalizedPeriodStart;
@@ -153,7 +162,7 @@ export default function MonthlyArchiveManager({ timeEntries, technicians }) {
                         <div>
                             <p className="text-sm font-medium">Working Days This Period</p>
                             <p className="text-xs text-slate-400">
-                                {calendarDaysCount} of {calendarDaysInMonth} days
+                                {todayDayOfMonth} of {todayDaysInMonth} days
                             </p>
                         </div>
                     </div>
