@@ -467,10 +467,9 @@ export default function Dashboard() {
         return 7;
     };
 
-    const allocatedTotal = jobs.reduce((sum, j) => sum + Number(j.allocated_hours || 0), 0);
-    const utilizedTotal = jobs.reduce((sum, j) => sum + Number(j.total_hours_utilized || j.consumed_hours || 0), 0);
-    const labourUtilizationRaw = allocatedTotal > 0
-        ? (utilizedTotal / allocatedTotal) * 100
+    const utilizationDenom = totalProductiveHours + totalNonProductiveHours;
+    const labourUtilizationRaw = utilizationDenom > 0
+        ? (totalProductiveHours / utilizationDenom) * 100
         : 0;
     const labourUtilization = Math.max(0, Math.min(100, labourUtilizationRaw));
 

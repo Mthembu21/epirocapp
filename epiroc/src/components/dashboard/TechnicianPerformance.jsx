@@ -56,7 +56,8 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
         const productiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
         const nonProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
-        const productivityRaw = totalHours > 0 ? (productiveHours / totalHours) * 100 : 0;
+        const productivityDenom = productiveHours + nonProductiveHours;
+        const productivityRaw = productivityDenom > 0 ? (productiveHours / productivityDenom) * 100 : 0;
         const productivity = Math.max(0, Math.min(100, productivityRaw));
 
         const daily = new Map();

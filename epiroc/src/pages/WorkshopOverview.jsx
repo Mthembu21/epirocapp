@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createPageUrl } from '@/utils';
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import StatsCard from '../components/timesheet/StatsCard';
 import { Wrench, LogOut, Briefcase, Clock, TrendingUp } from 'lucide-react';
@@ -22,6 +23,10 @@ import {
 export default function WorkshopOverview() {
     const [isAuthenticated, setIsAuthenticated] = React.useState(false);
     const [currentUser, setCurrentUser] = React.useState(null);
+    const [selectedMonth, setSelectedMonth] = React.useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    });
 
     React.useEffect(() => {
         const validateSession = async () => {
@@ -58,8 +63,8 @@ export default function WorkshopOverview() {
     };
 
     const { data } = useQuery({
-        queryKey: ['workshopOverview'],
-        queryFn: () => base44.entities.Overview.workshop(),
+        queryKey: ['workshopOverview', selectedMonth],
+        queryFn: () => base44.entities.Overview.workshop(selectedMonth),
         enabled: isAuthenticated
     });
 
@@ -104,6 +109,16 @@ export default function WorkshopOverview() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3 flex-wrap">
+                            <Input
+                                type="month"
+                                value={selectedMonth}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    if (!next) return;
+                                    setSelectedMonth(next);
+                                }}
+                                className="w-44 bg-white"
+                            />
                             <Button
                                 variant="outline"
                                 className="border-yellow-400/40 text-yellow-200 hover:bg-yellow-400/10"
@@ -138,7 +153,7 @@ export default function WorkshopOverview() {
                     <StatsCard
                         title="Labour Utilization"
                         value={`${utilization.toFixed(0)}%`}
-                        subtitle="Utilized / Allocated"
+                        subtitle="Productive / (Productive + Non-Prod)"
                         icon={TrendingUp}
                         color="yellow"
                     />

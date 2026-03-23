@@ -51,12 +51,11 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         return techMatch;
     });
 
-    const allocatedSum = filteredJobs.reduce((sum, j) => sum + Number(j.allocated_hours || 0), 0);
-    const utilizedSum = filteredJobs.reduce((sum, j) => sum + Number(j.total_hours_utilized || j.consumed_hours || 0), 0);
-    const utilizationRaw = allocatedSum > 0 ? (utilizedSum / allocatedSum) * 100 : 0;
-    const utilization = Math.max(0, Math.min(100, utilizationRaw));
-
     const totalProductiveHours = filteredEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+    const totalNonProductiveHours = filteredEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+    const utilizationDenom = totalProductiveHours + totalNonProductiveHours;
+    const utilizationRaw = utilizationDenom > 0 ? (totalProductiveHours / utilizationDenom) * 100 : 0;
+    const utilization = Math.max(0, Math.min(100, utilizationRaw));
 
     // Calculate efficiency data per technician
     const technicianEfficiency = technicians.map(tech => {

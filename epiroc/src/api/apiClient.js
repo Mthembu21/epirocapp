@@ -219,7 +219,11 @@ class APIClient {
         },
 
         Overview: {
-            workshop: () => this.request('/overview/workshop')
+            workshop: (month) => {
+                const m = String(month || '').trim();
+                const qs = m ? `?month=${encodeURIComponent(m)}` : '';
+                return this.request(`/overview/workshop${qs}`);
+            }
         }
     };
 }
