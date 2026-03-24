@@ -57,6 +57,9 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     const utilizationRaw = utilizationDenom > 0 ? (totalProductiveHours / utilizationDenom) * 100 : 0;
     const utilization = Math.max(0, Math.min(100, utilizationRaw));
 
+    // Calculate total utilized hours for display
+    const utilizedSum = totalProductiveHours;
+
     // Calculate efficiency data per technician
     const technicianEfficiency = technicians.map(tech => {
         const isTechOnJob = (job) => {
@@ -99,6 +102,9 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             utilizedHours: totalUtilized
         };
     }).filter(t => t.productiveHours > 0 || t.completedJobs > 0);
+
+    // Calculate total allocated hours for display
+    const allocatedSum = technicianEfficiency.reduce((sum, tech) => sum + tech.allocatedHours, 0);
 
     // Daily productivity data
     const dailyData = eachDayOfInterval({ start, end }).map(day => {
