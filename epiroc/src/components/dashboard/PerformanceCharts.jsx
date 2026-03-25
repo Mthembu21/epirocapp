@@ -161,9 +161,10 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         if (selectedTechnician === 'all') {
             // For "all technicians", aggregate data across all technicians
             const allDailyData = {};
+            const technicianBreakdowns = {}; // Store per-technician data for tooltips
             
             // Collect all daily data from all technicians
-            Object.values(monthlySummaries).forEach(techDailyData => {
+            Object.entries(monthlySummaries).forEach(([techId, techDailyData]) => {
                 if (Array.isArray(techDailyData)) {
                     techDailyData.forEach(dayData => {
                         const dateKey = format(dayData.date, 'yyyy-MM-dd');
@@ -186,9 +187,27 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                     housekeepingPercentage: 0,
                                     trainingPercentage: 0
                                 },
-                                count: 0
+                                technicians: [] // Store per-technician breakdown
                             };
                         }
+                        
+                        // Store technician breakdown for tooltips
+                        if (!technicianBreakdowns[dateKey]) {
+                            technicianBreakdowns[dateKey] = [];
+                        }
+                        technicianBreakdowns[dateKey].push({
+                            technicianId: techId,
+                            productiveHours: dayData.productiveHours || 0,
+                            availableHours: dayData.availableHours || 0,
+                            dailyProductivePercentage: dayData.dailyProductivePercentage || 0,
+                            dailyUtilizationPercentage: dayData.dailyUtilizationPercentage || 0,
+                            breakdown: dayData.breakdown || {
+                                productivePercentage: 0,
+                                idlePercentage: 0,
+                                housekeepingPercentage: 0,
+                                trainingPercentage: 0
+                            }
+                        });
                         
                         // Aggregate all the fields
                         const day = allDailyData[dateKey];
@@ -200,17 +219,25 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                         day.trainingHours += (dayData.trainingHours || 0);
                         day.idleHours += (dayData.idleHours || 0);
                         day.housekeepingHours += (dayData.housekeepingHours || 0);
-                        day.count += 1;
                     });
                 }
             });
             
-            // Calculate averages and percentages for each day
+            // Calculate overall percentages for each day using proper formulas
             return Object.values(allDailyData).map(day => {
-                const avgProductivePercentage = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
-                const avgIdlePercentage = day.availableHours > 0 ? (day.idleHours / day.availableHours) * 100 : 0;
-                const avgHousekeepingPercentage = day.availableHours > 0 ? (day.housekeepingHours / day.availableHours) * 100 : 0;
-                const avgTrainingPercentage = day.totalHours > 0 ? (day.trainingHours / day.totalHours) * 100 : 0;
+                // Overall Utilization (%) = SUM(Productive Hours of All Technicians) / SUM(Available Hours of All Technicians) * 100
+                const overallUtilization = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
+                
+                // Overall Productivity (%) = Same as utilization in this context (time-based productivity)
+                const overallProductivity = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
+                
+                // Calculate percentage breakdowns for tooltip
+                const productivePercentage = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
+                const idlePercentage = day.availableHours > 0 ? (day.idleHours / day.availableHours) * 100 : 0;
+                const housekeepingPercentage = day.availableHours > 0 ? (day.housekeepingHours / day.availableHours) * 100 : 0;
+                const trainingPercentage = day.totalHours > 0 ? (day.trainingHours / day.totalHours) * 100 : 0;
+                
+                const dateKey = format(day.date, 'yyyy-MM-dd');
                 
                 return {
                     date: format(day.date, 'dd'),
@@ -218,14 +245,15 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     totalHours: day.totalHours,
                     productiveHours: day.productiveHours,
                     availableHours: day.availableHours,
-                    dailyProductivePercentage: Math.max(0, Math.min(100, avgProductivePercentage)),
-                    dailyUtilizationPercentage: Math.max(0, Math.min(100, avgProductivePercentage)),
+                    dailyProductivePercentage: Math.max(0, Math.min(100, overallProductivity)),
+                    dailyUtilizationPercentage: Math.max(0, Math.min(100, overallUtilization)),
                     breakdown: {
-                        productivePercentage: Math.max(0, Math.min(100, avgProductivePercentage)),
-                        idlePercentage: Math.max(0, Math.min(100, avgIdlePercentage)),
-                        housekeepingPercentage: Math.max(0, Math.min(100, avgHousekeepingPercentage)),
-                        trainingPercentage: Math.max(0, Math.min(100, avgTrainingPercentage))
-                    }
+                        productivePercentage: Math.max(0, Math.min(100, productivePercentage)),
+                        idlePercentage: Math.max(0, Math.min(100, idlePercentage)),
+                        housekeepingPercentage: Math.max(0, Math.min(100, housekeepingPercentage)),
+                        trainingPercentage: Math.max(0, Math.min(100, trainingPercentage))
+                    },
+                    technicians: technicianBreakdowns[dateKey] || [] // Per-technician breakdown for tooltips
                 };
             }).filter(d => d.availableHours > 0);
         } else {
@@ -501,7 +529,10 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     <CardHeader className="pb-2">
                         <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
                             <TrendingUp className="w-5 h-5 text-yellow-500" />
-                            Productivity (%)
+                            Daily Productivity (%)
+                            {selectedTechnician === 'all' && (
+                                <span className="text-sm text-slate-500 font-normal">(Overall Team)</span>
+                            )}
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -531,13 +562,13 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                             if (active && payload && payload.length) {
                                                 const data = payload[0].payload;
                                                 return (
-                                                    <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
+                                                    <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200 max-w-sm">
                                                         <div className="font-semibold text-gray-800 mb-2">
                                                             {data.fullDate || label}
                                                         </div>
                                                         <div className="text-sm space-y-1">
                                                             <div className="font-medium text-green-700">
-                                                                Productivity: {data.dailyProductivePercentage.toFixed(1)}%
+                                                                Overall Productivity: {data.dailyProductivePercentage.toFixed(1)}%
                                                             </div>
                                                             <div className="text-gray-600 text-xs mb-2">Breakdown:</div>
                                                             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -554,9 +585,23 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                                                     • Training: {data.breakdown?.trainingPercentage.toFixed(1)}%
                                                                 </div>
                                                             </div>
-                                                            {data.availableHours > 0 && (
-                                                                <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                                                                    Available: {data.availableHours.toFixed(1)}h | Productive: {data.productiveHours.toFixed(1)}h
+                                                            <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
+                                                                Available: {data.availableHours.toFixed(1)}h | Productive: {data.productiveHours.toFixed(1)}h
+                                                            </div>
+                                                            {selectedTechnician === 'all' && data.technicians && data.technicians.length > 0 && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                    <div className="text-xs text-gray-600 mb-1">Per-Technician Breakdown:</div>
+                                                                    <div className="space-y-1 max-h-20 overflow-y-auto">
+                                                                        {data.technicians.map((tech, index) => {
+                                                                            const techName = technicians.find(t => t.id === tech.technicianId)?.name || tech.technicianId;
+                                                                            return (
+                                                                                <div key={index} className="text-xs text-gray-700 flex justify-between">
+                                                                                    <span className="truncate">{techName}:</span>
+                                                                                    <span>{tech.dailyProductivePercentage.toFixed(1)}%</span>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -590,6 +635,9 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                         <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
                             <TrendingUp className="w-5 h-5 text-blue-500" />
                             Daily Utilization (%)
+                            {selectedTechnician === 'all' && (
+                                <span className="text-sm text-slate-500 font-normal">(Overall Team)</span>
+                            )}
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -619,13 +667,13 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                             if (active && payload && payload.length) {
                                                 const data = payload[0].payload;
                                                 return (
-                                                    <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
+                                                    <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200 max-w-sm">
                                                         <div className="font-semibold text-gray-800 mb-2">
                                                             {data.fullDate || label}
                                                         </div>
                                                         <div className="text-sm space-y-1">
                                                             <div className="font-medium text-blue-700">
-                                                                Utilization: {data.dailyUtilizationPercentage.toFixed(1)}%
+                                                                Overall Utilization: {data.dailyUtilizationPercentage.toFixed(1)}%
                                                             </div>
                                                             <div className="text-gray-600 text-xs mb-2">Breakdown:</div>
                                                             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -645,6 +693,22 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                                             <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
                                                                 Total Hours: {data.totalHours.toFixed(1)}h | Productive: {data.productiveHours.toFixed(1)}h
                                                             </div>
+                                                            {selectedTechnician === 'all' && data.technicians && data.technicians.length > 0 && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                    <div className="text-xs text-gray-600 mb-1">Per-Technician Breakdown:</div>
+                                                                    <div className="space-y-1 max-h-20 overflow-y-auto">
+                                                                        {data.technicians.map((tech, index) => {
+                                                                            const techName = technicians.find(t => t.id === tech.technicianId)?.name || tech.technicianId;
+                                                                            return (
+                                                                                <div key={index} className="text-xs text-gray-700 flex justify-between">
+                                                                                    <span className="truncate">{techName}:</span>
+                                                                                    <span>{tech.dailyUtilizationPercentage.toFixed(1)}%</span>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 );
