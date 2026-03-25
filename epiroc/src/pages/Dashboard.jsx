@@ -10,6 +10,7 @@ import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'da
 import StatsCard from '../components/timesheet/StatsCard';
 import ExportButton from '../components/timesheet/ExportButton';
 import TechnicianModal from '../components/technician/TechnicianModal';
+import GlobalTechnicianSelector from '../components/technician/GlobalTechnicianSelector';
 import TechnicianList from '../components/technician/TechnicianList';
 import JobAllocationModal from '../components/jobs/JobAllocationModal';
 import JobList from '../components/jobs/JobList';
@@ -28,6 +29,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Dashboard() {
     const [techModalOpen, setTechModalOpen] = useState(false);
+    const [globalTechSelectorOpen, setGlobalTechSelectorOpen] = useState(false);
     const [jobModalOpen, setJobModalOpen] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
@@ -527,6 +529,17 @@ export default function Dashboard() {
                                 isOpen={jobModalOpen}
                                 setIsOpen={setJobModalOpen}
                             />
+                            <GlobalTechnicianSelector
+                                isOpen={globalTechSelectorOpen}
+                                setIsOpen={setGlobalTechSelectorOpen}
+                                onTechnicianSelect={(technician) => {
+                                    // Handle technician selection - could assign to job, etc.
+                                    console.log('Selected technician:', technician);
+                                    // For now, just close the selector
+                                    setGlobalTechSelectorOpen(false);
+                                }}
+                                currentSupervisorKey={currentUser?.supervisor_key}
+                            />
                             <TechnicianModal 
                                 onAdd={createTechnicianMutation.mutate}
                                 isOpen={techModalOpen}
@@ -758,6 +771,23 @@ export default function Dashboard() {
                     </TabsContent>
 
                     <TabsContent value="technicians" className="mt-6">
+                        <div className="flex gap-3 mb-4">
+                            <Button 
+                                onClick={() => setTechModalOpen(true)}
+                                className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold"
+                            >
+                                <Users className="w-4 h-4 mr-2" />
+                                Add My Technician
+                            </Button>
+                            <Button 
+                                onClick={() => setGlobalTechSelectorOpen(true)}
+                                variant="outline"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                            >
+                                <Search className="w-4 h-4 mr-2" />
+                                Search All Technicians
+                            </Button>
+                        </div>
                         <TechnicianList 
                             technicians={technicians}
                             onDelete={deleteTechnicianMutation.mutate}

@@ -105,7 +105,10 @@ class APIClient {
                 method: 'PUT',
                 body: JSON.stringify(data)
             }),
-            delete: (id) => this.request(`/technicians/${id}`, { method: 'DELETE' })
+            delete: (id) => this.request(`/technicians/${id}`, { method: 'DELETE' }),
+            // ✅ New global endpoints
+            getAll: () => this.request('/technicians/all'),
+            search: (query) => this.request(`/technicians/search?q=${encodeURIComponent(query)}`)
         },
 
         Job: {
