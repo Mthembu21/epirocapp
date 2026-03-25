@@ -22,11 +22,28 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     ? technicians.map(t => t.id) 
                     : [selectedTechnician];
                 
+                console.log('🔍 Fetching daily productivity:', {
+                    selectedTechnician,
+                    technicians,
+                    technicianIds,
+                    technicianIdsType: typeof technicianIds,
+                    start,
+                    end
+                });
+                
                 const response = await fetch(`/api/time-entries/daily-productivity?start_date=${start.toISOString()}&end_date=${end.toISOString()}&technician_ids=${technicianIds.join(',')}`);
+                
+                console.log('🔍 API URL:', `/api/time-entries/daily-productivity?start_date=${start.toISOString()}&end_date=${end.toISOString()}&technician_ids=${technicianIds.join(',')}`);
                 
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('🔍 API Response Data:', data);
+                    console.log('🔍 Data type:', typeof data);
+                    console.log('🔍 Data keys:', Object.keys(data));
+                    console.log('🔍 Data sample:', Object.values(data)[0]);
                     setMonthlySummaries(data); // Reusing state for daily productivity data
+                } else {
+                    console.error('🔍 API Response Error:', response.status, response.statusText);
                 }
             } catch (error) {
                 console.error('Failed to fetch daily productivity data:', error);
@@ -158,13 +175,22 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
 
     // Daily productivity data - using enhanced daily productive percentage API
     const dailyData = useMemo(() => {
+        console.log('🔍 Debug dailyData calculation:', {
+            selectedTechnician,
+            monthlySummaries,
+            monthlySummariesKeys: Object.keys(monthlySummaries),
+            monthlySummariesValues: Object.values(monthlySummaries)
+        });
+
         if (selectedTechnician === 'all') {
+            console.log('🔍 Processing "all" technicians data...');
             // For "all technicians", aggregate data across all technicians
             const allDailyData = {};
             const technicianBreakdowns = {}; // Store per-technician data for tooltips
             
             // Collect all daily data from all technicians
             Object.entries(monthlySummaries).forEach(([techId, techDailyData]) => {
+                console.log(`🔍 Processing technician ${techId}:`, techDailyData);
                 if (Array.isArray(techDailyData)) {
                     techDailyData.forEach(dayData => {
                         const dateKey = format(dayData.date, 'yyyy-MM-dd');
@@ -209,7 +235,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                             }
                         });
                         
-                        // Aggregate all the fields
+                        // Aggregate all fields
                         const day = allDailyData[dateKey];
                         day.totalHours += (dayData.totalHours || 0);
                         day.productiveHours += (dayData.productiveHours || 0);
@@ -223,8 +249,10 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 }
             });
             
+            console.log('🔍 Aggregated allDailyData:', allDailyData);
+            
             // Calculate overall percentages for each day using proper formulas
-            return Object.values(allDailyData).map(day => {
+            const result = Object.values(allDailyData).map(day => {
                 // Overall Utilization (%) = SUM(Productive Hours of All Technicians) / SUM(Available Hours of All Technicians) * 100
                 const overallUtilization = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
                 
@@ -256,6 +284,9 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     technicians: technicianBreakdowns[dateKey] || [] // Per-technician breakdown for tooltips
                 };
             }).filter(d => d.availableHours > 0);
+            
+            console.log('🔍 Final result for "all":', result);
+            return result;
         } else {
             // For specific technician, use their data directly
             const techDailyData = monthlySummaries[selectedTechnician];
