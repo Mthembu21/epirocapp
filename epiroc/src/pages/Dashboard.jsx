@@ -3,7 +3,7 @@ import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle, Pencil, Trash2, Save, X, Search } from 'lucide-react';
+import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle, Pencil, Trash2, Save, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -784,7 +784,7 @@ export default function Dashboard() {
                                 variant="outline"
                                 className="border-blue-300 text-blue-700 hover:bg-blue-50"
                             >
-                                <Search className="w-4 h-4 mr-2" />
+                                <Users className="w-4 h-4 mr-2" />
                                 Search All Technicians
                             </Button>
                         </div>
