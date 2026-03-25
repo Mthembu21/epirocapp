@@ -156,7 +156,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     // Calculate total allocated hours for display
     const allocatedSum = technicianEfficiency.reduce((sum, tech) => sum + tech.allocatedHours, 0);
 
-    // Daily productivity data - using new daily productive percentage API
+    // Daily productivity data - using enhanced daily productive percentage API
     const dailyData = useMemo(() => {
         if (selectedTechnician === 'all') {
             // For "all technicians", aggregate data across all technicians
@@ -170,28 +170,64 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                         if (!allDailyData[dateKey]) {
                             allDailyData[dateKey] = {
                                 date: dayData.date,
+                                totalHours: 0,
                                 productiveHours: 0,
                                 availableHours: 0,
+                                unavailableHours: 0,
+                                utilizationLossHours: 0,
+                                trainingHours: 0,
+                                idleHours: 0,
+                                housekeepingHours: 0,
                                 dailyProductivePercentage: 0,
+                                dailyUtilizationPercentage: 0,
+                                breakdown: {
+                                    productivePercentage: 0,
+                                    idlePercentage: 0,
+                                    housekeepingPercentage: 0,
+                                    trainingPercentage: 0
+                                },
                                 count: 0
                             };
                         }
                         
-                        allDailyData[dateKey].productiveHours += dayData.productiveHours;
-                        allDailyData[dateKey].availableHours += dayData.availableHours;
-                        allDailyData[dateKey].count += 1;
+                        // Aggregate all the fields
+                        const day = allDailyData[dateKey];
+                        day.totalHours += (dayData.totalHours || 0);
+                        day.productiveHours += (dayData.productiveHours || 0);
+                        day.availableHours += (dayData.availableHours || 0);
+                        day.unavailableHours += (dayData.unavailableHours || 0);
+                        day.utilizationLossHours += (dayData.utilizationLossHours || 0);
+                        day.trainingHours += (dayData.trainingHours || 0);
+                        day.idleHours += (dayData.idleHours || 0);
+                        day.housekeepingHours += (dayData.housekeepingHours || 0);
+                        day.count += 1;
                     });
                 }
             });
             
-            // Calculate average percentages for each day
-            return Object.values(allDailyData).map(day => ({
-                date: format(day.date, 'dd'),
-                fullDate: format(day.date, 'MMM dd'),
-                productiveHours: day.productiveHours,
-                availableHours: day.availableHours,
-                dailyProductivePercentage: day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0
-            })).filter(d => d.availableHours > 0);
+            // Calculate averages and percentages for each day
+            return Object.values(allDailyData).map(day => {
+                const avgProductivePercentage = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
+                const avgIdlePercentage = day.availableHours > 0 ? (day.idleHours / day.availableHours) * 100 : 0;
+                const avgHousekeepingPercentage = day.availableHours > 0 ? (day.housekeepingHours / day.availableHours) * 100 : 0;
+                const avgTrainingPercentage = day.totalHours > 0 ? (day.trainingHours / day.totalHours) * 100 : 0;
+                
+                return {
+                    date: format(day.date, 'dd'),
+                    fullDate: format(day.date, 'MMM dd'),
+                    totalHours: day.totalHours,
+                    productiveHours: day.productiveHours,
+                    availableHours: day.availableHours,
+                    dailyProductivePercentage: Math.max(0, Math.min(100, avgProductivePercentage)),
+                    dailyUtilizationPercentage: Math.max(0, Math.min(100, avgProductivePercentage)),
+                    breakdown: {
+                        productivePercentage: Math.max(0, Math.min(100, avgProductivePercentage)),
+                        idlePercentage: Math.max(0, Math.min(100, avgIdlePercentage)),
+                        housekeepingPercentage: Math.max(0, Math.min(100, avgHousekeepingPercentage)),
+                        trainingPercentage: Math.max(0, Math.min(100, avgTrainingPercentage))
+                    }
+                };
+            }).filter(d => d.availableHours > 0);
         } else {
             // For specific technician, use their data directly
             const techDailyData = monthlySummaries[selectedTechnician];
@@ -199,9 +235,17 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 return techDailyData.map(dayData => ({
                     date: format(dayData.date, 'dd'),
                     fullDate: format(dayData.date, 'MMM dd'),
-                    productiveHours: dayData.productiveHours,
-                    availableHours: dayData.availableHours,
-                    dailyProductivePercentage: dayData.dailyProductivePercentage || 0
+                    totalHours: dayData.totalHours || 0,
+                    productiveHours: dayData.productiveHours || 0,
+                    availableHours: dayData.availableHours || 0,
+                    dailyProductivePercentage: Math.max(0, Math.min(100, dayData.dailyProductivePercentage || 0)),
+                    dailyUtilizationPercentage: Math.max(0, Math.min(100, dayData.dailyUtilizationPercentage || 0)),
+                    breakdown: dayData.breakdown || {
+                        productivePercentage: 0,
+                        idlePercentage: 0,
+                        housekeepingPercentage: 0,
+                        trainingPercentage: 0
+                    }
                 })).filter(d => d.availableHours > 0);
             }
         }
@@ -210,17 +254,26 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         return eachDayOfInterval({ start, end }).map(day => {
             const dayEntries = filteredEntries.filter(e => e?.log_date && isSameDay(parseISO(e.log_date), day));
             
+            const totalHours = dayEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+            const productiveHours = dayEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+            const availableHours = totalHours; // Fallback - no categorization
+            
             return {
                 date: format(day, 'dd'),
                 fullDate: format(day, 'MMM dd'),
-                productiveHours: dayEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0),
-                availableHours: dayEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0),
-                dailyProductivePercentage: 0 // Will be calculated below
+                totalHours,
+                productiveHours,
+                availableHours,
+                dailyProductivePercentage: availableHours > 0 ? (productiveHours / availableHours) * 100 : 0,
+                dailyUtilizationPercentage: availableHours > 0 ? (productiveHours / availableHours) * 100 : 0,
+                breakdown: {
+                    productivePercentage: availableHours > 0 ? (productiveHours / availableHours) * 100 : 0,
+                    idlePercentage: 0,
+                    housekeepingPercentage: 0,
+                    trainingPercentage: 0
+                }
             };
-        }).map(d => ({
-            ...d,
-            dailyProductivePercentage: d.availableHours > 0 ? (d.productiveHours / d.availableHours) * 100 : 0
-        })).filter(d => d.availableHours > 0);
+        }).filter(d => d.availableHours > 0);
     }, [monthlySummaries, selectedTechnician, filteredEntries, start, end]);
 
     // Job status distribution
@@ -305,8 +358,8 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="border-0 shadow-lg bg-white/95">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="border-0 shadow-lg bg-white/95 lg:col-span-2">
                     <CardHeader className="pb-2">
                         <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
                             <TrendingUp className="w-5 h-5 text-yellow-500" />
@@ -466,7 +519,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                         labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
                                         formatter={(value, name, props) => {
                                             const data = props?.payload;
-                                            if (data) {
+                                            if (data && data.breakdown) {
                                                 return [
                                                     `${data.dailyProductivePercentage.toFixed(1)}%`,
                                                     'Productivity (%)'
@@ -474,7 +527,44 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                             }
                                             return [value, name];
                                         }}
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                        content={({ active, payload, label }) => {
+                                            if (active && payload && payload.length) {
+                                                const data = payload[0].payload;
+                                                return (
+                                                    <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
+                                                        <div className="font-semibold text-gray-800 mb-2">
+                                                            {data.fullDate || label}
+                                                        </div>
+                                                        <div className="text-sm space-y-1">
+                                                            <div className="font-medium text-green-700">
+                                                                Productivity: {data.dailyProductivePercentage.toFixed(1)}%
+                                                            </div>
+                                                            <div className="text-gray-600 text-xs mb-2">Breakdown:</div>
+                                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                                                <div className="text-green-600">
+                                                                    • Productive: {data.breakdown?.productivePercentage.toFixed(1)}%
+                                                                </div>
+                                                                <div className="text-red-600">
+                                                                    • Idle Time: {data.breakdown?.idlePercentage.toFixed(1)}%
+                                                                </div>
+                                                                <div className="text-orange-600">
+                                                                    • Housekeeping: {data.breakdown?.housekeepingPercentage.toFixed(1)}%
+                                                                </div>
+                                                                <div className="text-blue-600">
+                                                                    • Training: {data.breakdown?.trainingPercentage.toFixed(1)}%
+                                                                </div>
+                                                            </div>
+                                                            {data.availableHours > 0 && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
+                                                                    Available: {data.availableHours.toFixed(1)}h | Productive: {data.productiveHours.toFixed(1)}h
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }}
                                     />
                                     <Line 
                                         type="monotone" 
@@ -489,6 +579,92 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                         ) : (
                             <div className="h-[250px] flex items-center justify-center text-slate-400">
                                 No productivity data for selected period
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Daily Utilization Line Chart */}
+                <Card className="border-0 shadow-lg bg-white/95">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                            <TrendingUp className="w-5 h-5 text-blue-500" />
+                            Daily Utilization (%)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {dailyData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={250}>
+                                <LineChart data={dailyData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} />
+                                    <YAxis 
+                                        tick={{ fill: '#64748b', fontSize: 12 }} 
+                                        domain={[0, 100]}
+                                        label={{ value: 'Utilization %', angle: -90, position: 'insideLeft' }}
+                                    />
+                                    <Tooltip 
+                                        labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
+                                        formatter={(value, name, props) => {
+                                            const data = props?.payload;
+                                            if (data && data.breakdown) {
+                                                return [
+                                                    `${data.dailyUtilizationPercentage.toFixed(1)}%`,
+                                                    'Utilization (%)'
+                                                ];
+                                            }
+                                            return [value, name];
+                                        }}
+                                        content={({ active, payload, label }) => {
+                                            if (active && payload && payload.length) {
+                                                const data = payload[0].payload;
+                                                return (
+                                                    <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
+                                                        <div className="font-semibold text-gray-800 mb-2">
+                                                            {data.fullDate || label}
+                                                        </div>
+                                                        <div className="text-sm space-y-1">
+                                                            <div className="font-medium text-blue-700">
+                                                                Utilization: {data.dailyUtilizationPercentage.toFixed(1)}%
+                                                            </div>
+                                                            <div className="text-gray-600 text-xs mb-2">Breakdown:</div>
+                                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                                                <div className="text-green-600">
+                                                                    • Productive: {data.breakdown?.productivePercentage.toFixed(1)}%
+                                                                </div>
+                                                                <div className="text-red-600">
+                                                                    • Loss Hours: {(data.breakdown?.idlePercentage + data.breakdown?.housekeepingPercentage).toFixed(1)}%
+                                                                </div>
+                                                                <div className="text-blue-600">
+                                                                    • Training: {data.breakdown?.trainingPercentage.toFixed(1)}%
+                                                                </div>
+                                                                <div className="text-gray-600">
+                                                                    • Available: {data.availableHours.toFixed(1)}h
+                                                                </div>
+                                                            </div>
+                                                            <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
+                                                                Total Hours: {data.totalHours.toFixed(1)}h | Productive: {data.productiveHours.toFixed(1)}h
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }}
+                                    />
+                                    <Line 
+                                        type="monotone" 
+                                        dataKey="dailyUtilizationPercentage" 
+                                        stroke="#3b82f6" 
+                                        strokeWidth={3}
+                                        dot={{ fill: '#3b82f6', strokeWidth: 2 }}
+                                        name="Utilization (%)"
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-[250px] flex items-center justify-center text-slate-400">
+                                No utilization data for selected period
                             </div>
                         )}
                     </CardContent>
