@@ -266,13 +266,26 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     // Calculate total allocated hours for display
     const allocatedSum = technicianEfficiency.reduce((sum, tech) => sum + tech.allocatedHours, 0);
 
+    // Debug: Add logging to understand data flow
+    console.log('🔍 DATA DEBUG:', {
+        timeEntriesCount: timeEntries.length,
+        filteredEntriesCount: filteredEntries.length,
+        timeEntriesSample: timeEntries.slice(0, 3),
+        filteredEntriesSample: filteredEntries.slice(0, 3),
+        techniciansCount: technicians.length,
+        selectedTechnician,
+        dateRange: { start: getDateRange().start, end: getDateRange().end }
+    });
+
     // Daily productivity data - using enhanced daily productive percentage API
     const dailyData = useMemo(() => {
         console.log('🔍 Debug dailyData calculation:', {
             selectedTechnician,
             monthlySummaries,
             monthlySummariesKeys: Object.keys(monthlySummaries),
-            monthlySummariesValues: Object.values(monthlySummaries)
+            monthlySummariesValues: Object.values(monthlySummaries),
+            filteredEntriesCount: filteredEntries.length,
+            dateRange: { start: getDateRange().start, end: getDateRange().end }
         });
 
         if (selectedTechnician === 'all') {
@@ -281,66 +294,74 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             const allDailyData = {};
             const technicianBreakdowns = {}; // Store per-technician data for tooltips
             
-            // Collect all daily data from all technicians
-            Object.entries(monthlySummaries).forEach(([techId, techDailyData]) => {
-                console.log(`🔍 Processing technician ${techId}:`, techDailyData);
-                if (Array.isArray(techDailyData)) {
-                    techDailyData.forEach(dayData => {
-                        const dateKey = format(dayData.date, 'yyyy-MM-dd');
-                        if (!allDailyData[dateKey]) {
-                            allDailyData[dateKey] = {
-                                date: dayData.date,
-                                totalHours: 0,
-                                productiveHours: 0,
-                                availableHours: 0,
-                                unavailableHours: 0,
-                                utilizationLossHours: 0,
-                                trainingHours: 0,
-                                idleHours: 0,
-                                housekeepingHours: 0,
-                                dailyProductivePercentage: 0,
-                                dailyUtilizationPercentage: 0,
-                                breakdown: {
+            // Check if we have any existing data to work with
+            if (Object.keys(monthlySummaries).length > 0 && Object.values(monthlySummaries).some(v => Array.isArray(v) && v.length > 0)) {
+                console.log('🔍 Using existing monthlySummaries data for aggregation...');
+                // Collect all daily data from all technicians
+                Object.entries(monthlySummaries).forEach(([techId, techDailyData]) => {
+                    console.log(`🔍 Processing technician ${techId}:`, techDailyData);
+                    if (Array.isArray(techDailyData)) {
+                        techDailyData.forEach(dayData => {
+                            const dateKey = format(dayData.date, 'yyyy-MM-dd');
+                            if (!allDailyData[dateKey]) {
+                                allDailyData[dateKey] = {
+                                    date: dayData.date,
+                                    totalHours: 0,
+                                    productiveHours: 0,
+                                    availableHours: 0,
+                                    unavailableHours: 0,
+                                    utilizationLossHours: 0,
+                                    trainingHours: 0,
+                                    idleHours: 0,
+                                    housekeepingHours: 0,
+                                    dailyProductivePercentage: 0,
+                                    dailyUtilizationPercentage: 0,
+                                    breakdown: {
+                                        productivePercentage: 0,
+                                        idlePercentage: 0,
+                                        housekeepingPercentage: 0,
+                                        trainingPercentage: 0
+                                    },
+                                    technicians: [] // Store per-technician breakdown
+                                };
+                            }
+                        
+                            // Store technician breakdown for tooltips
+                            if (!technicianBreakdowns[dateKey]) {
+                                technicianBreakdowns[dateKey] = [];
+                            }
+                            technicianBreakdowns[dateKey].push({
+                                technicianId: techId,
+                                productiveHours: dayData.productiveHours || 0,
+                                availableHours: dayData.availableHours || 0,
+                                dailyProductivePercentage: dayData.dailyProductivePercentage || 0,
+                                dailyUtilizationPercentage: dayData.dailyUtilizationPercentage || 0,
+                                breakdown: dayData.breakdown || {
                                     productivePercentage: 0,
                                     idlePercentage: 0,
                                     housekeepingPercentage: 0,
                                     trainingPercentage: 0
-                                },
-                                technicians: [] // Store per-technician breakdown
-                            };
-                        }
+                                }
+                            });
                         
-                        // Store technician breakdown for tooltips
-                        if (!technicianBreakdowns[dateKey]) {
-                            technicianBreakdowns[dateKey] = [];
-                        }
-                        technicianBreakdowns[dateKey].push({
-                            technicianId: techId,
-                            productiveHours: dayData.productiveHours || 0,
-                            availableHours: dayData.availableHours || 0,
-                            dailyProductivePercentage: dayData.dailyProductivePercentage || 0,
-                            dailyUtilizationPercentage: dayData.dailyUtilizationPercentage || 0,
-                            breakdown: dayData.breakdown || {
-                                productivePercentage: 0,
-                                idlePercentage: 0,
-                                housekeepingPercentage: 0,
-                                trainingPercentage: 0
-                            }
+                            // Aggregate all fields
+                            const day = allDailyData[dateKey];
+                            day.totalHours += (dayData.totalHours || 0);
+                            day.productiveHours += (dayData.productiveHours || 0);
+                            day.availableHours += (dayData.availableHours || 0);
+                            day.unavailableHours += (dayData.unavailableHours || 0);
+                            day.utilizationLossHours += (dayData.utilizationLossHours || 0);
+                            day.trainingHours += (dayData.trainingHours || 0);
+                            day.idleHours += (dayData.idleHours || 0);
+                            day.housekeepingHours += (dayData.housekeepingHours || 0);
                         });
-                        
-                        // Aggregate all fields
-                        const day = allDailyData[dateKey];
-                        day.totalHours += (dayData.totalHours || 0);
-                        day.productiveHours += (dayData.productiveHours || 0);
-                        day.availableHours += (dayData.availableHours || 0);
-                        day.unavailableHours += (dayData.unavailableHours || 0);
-                        day.utilizationLossHours += (dayData.utilizationLossHours || 0);
-                        day.trainingHours += (dayData.trainingHours || 0);
-                        day.idleHours += (dayData.idleHours || 0);
-                        day.housekeepingHours += (dayData.housekeepingHours || 0);
-                    });
-                }
-            });
+                    }
+                });
+            } else {
+                console.log('🔍 No existing monthlySummaries data, using fallback calculation...');
+                // Use fallback calculation from filteredEntries
+                return calculateFallbackDailyData();
+            }
             
             console.log('🔍 Aggregated allDailyData:', allDailyData);
             
@@ -856,10 +877,37 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                             </div>
                         )}
                     </CardContent>
-                </Card>
+                </div>
 
-                {/* Individual Performance Radar */}
+            {/* Hours Comparison - Moved up for better layout */}
+            {selectedTechnician === 'all' && technicianEfficiency.length > 0 && (
                 <Card className="border-0 shadow-lg bg-white/95">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                            <BarChart3 className="w-5 h-5 text-yellow-500" />
+                            Hours: Allocated vs Utilized
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={technicianEfficiency}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                />
+                                <Legend />
+                                <Bar dataKey="allocatedHours" name="Allocated Hours" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="utilizedHours" name="Utilized Hours" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Individual Performance Radar - Temporarily Commented Out */}
+            {/* <Card className="border-0 shadow-lg bg-white/95">
                     <CardHeader className="pb-2">
                         <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
                             <Award className="w-5 h-5 text-yellow-500" />
@@ -889,35 +937,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                             </div>
                         )}
                     </CardContent>
-                </Card>
-            </div>
-
-            {/* Hours Comparison */}
-            {selectedTechnician === 'all' && technicianEfficiency.length > 0 && (
-                <Card className="border-0 shadow-lg bg-white/95">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
-                            <BarChart3 className="w-5 h-5 text-yellow-500" />
-                            Hours: Allocated vs Utilized
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <ResponsiveContainer width="100%" height={300}>
-                            <BarChart data={technicianEfficiency}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12 }} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
-                                <Tooltip 
-                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                                />
-                                <Legend />
-                                <Bar dataKey="allocatedHours" name="Allocated Hours" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="utilizedHours" name="Utilized Hours" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </CardContent>
-                </Card>
-            )}
+                </Card> */}
         </div>
     );
-}
+};
