@@ -24,9 +24,8 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 
                 console.log('🔍 Fetching daily productivity:', {
                     selectedTechnician,
-                    technicians,
+                    technicians: technicians.length,
                     technicianIds,
-                    technicianIdsType: typeof technicianIds,
                     start,
                     end
                 });
@@ -34,6 +33,8 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 const response = await fetch(`/api/time-entries/daily-productivity?start_date=${start.toISOString()}&end_date=${end.toISOString()}&technician_ids=${technicianIds.join(',')}`);
                 
                 console.log('🔍 API URL:', `/api/time-entries/daily-productivity?start_date=${start.toISOString()}&end_date=${end.toISOString()}&technician_ids=${technicianIds.join(',')}`);
+                console.log('🔍 Response status:', response.status);
+                console.log('🔍 Response ok:', response.ok);
                 
                 if (response.ok) {
                     const data = await response.json();
@@ -44,10 +45,102 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     setMonthlySummaries(data); // Reusing state for daily productivity data
                 } else {
                     console.error('🔍 API Response Error:', response.status, response.statusText);
+                    // Try fallback to basic calculation if API fails
+                    console.log('🔍 Using fallback calculation...');
+                    const fallbackData = calculateFallbackDailyData();
+                    setMonthlySummaries(fallbackData);
                 }
             } catch (error) {
-                console.error('Failed to fetch daily productivity data:', error);
+                console.error('🔍 Failed to fetch daily productivity data:', error);
+                // Always provide fallback data
+                const fallbackData = calculateFallbackDailyData();
+                setMonthlySummaries(fallbackData);
             }
+        };
+
+        // Fallback calculation function
+        const calculateFallbackDailyData = () => {
+            console.log('🔍 Calculating fallback daily data from filteredEntries...');
+            const { eachDayOfInterval, format, isSameDay, parseISO } = require('date-fns');
+            const { start, end } = getDateRange();
+            
+            if (selectedTechnician === 'all') {
+                // For "all technicians", aggregate from filteredEntries
+                const allDailyData = {};
+                
+                Object.values(monthlySummaries).forEach(techDailyData => {
+                    if (Array.isArray(techDailyData)) {
+                        techDailyData.forEach(dayData => {
+                            const dateKey = format(dayData.date, 'yyyy-MM-dd');
+                            if (!allDailyData[dateKey]) {
+                                allDailyData[dateKey] = {
+                                    date: dayData.date,
+                                    totalHours: 0,
+                                    productiveHours: 0,
+                                    availableHours: 0,
+                                    dailyProductivePercentage: 0,
+                                    dailyUtilizationPercentage: 0,
+                                    breakdown: {
+                                        productivePercentage: 0,
+                                        idlePercentage: 0,
+                                        housekeepingPercentage: 0,
+                                        trainingPercentage: 0
+                                    }
+                                };
+                            }
+                            // Use existing data if available
+                            const day = allDailyData[dateKey];
+                            day.totalHours += (dayData.totalHours || 0);
+                            day.productiveHours += (dayData.productiveHours || 0);
+                            day.availableHours += (dayData.availableHours || 0);
+                            day.dailyProductivePercentage = Math.max(0, Math.min(100, dayData.dailyProductivePercentage || 0));
+                            day.dailyUtilizationPercentage = Math.max(0, Math.min(100, dayData.dailyUtilizationPercentage || 0));
+                            if (dayData.breakdown) {
+                                day.breakdown.productivePercentage = Math.max(0, Math.min(100, dayData.breakdown.productivePercentage || 0));
+                                day.breakdown.idlePercentage = Math.max(0, Math.min(100, dayData.breakdown.idlePercentage || 0));
+                                day.breakdown.housekeepingPercentage = Math.max(0, Math.min(100, dayData.breakdown.housekeepingPercentage || 0));
+                                day.breakdown.trainingPercentage = Math.max(0, Math.min(100, dayData.breakdown.trainingPercentage || 0));
+                            }
+                        });
+                    }
+                });
+                
+                const result = Object.values(allDailyData).filter(d => d.availableHours > 0);
+                console.log('🔍 Fallback result:', result);
+                return result;
+            } else {
+                // For specific technician, use their data directly
+                const techDailyData = monthlySummaries[selectedTechnician];
+                if (Array.isArray(techDailyData)) {
+                    console.log('🔍 Using existing data for technician:', selectedTechnician, techDailyData);
+                    return techDailyData.filter(d => d.availableHours > 0);
+                }
+            }
+            
+            // Final fallback - calculate from filteredEntries
+            return eachDayOfInterval({ start, end }).map(day => {
+                const dayEntries = filteredEntries.filter(e => e?.log_date && isSameDay(parseISO(e.log_date), day));
+                
+                const totalHours = dayEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+                const productiveHours = dayEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+                const availableHours = totalHours;
+                
+                return {
+                    date: format(day, 'dd'),
+                    fullDate: format(day, 'MMM dd'),
+                    totalHours,
+                    productiveHours,
+                    availableHours,
+                    dailyProductivePercentage: availableHours > 0 ? (productiveHours / availableHours) * 100 : 0,
+                    dailyUtilizationPercentage: availableHours > 0 ? (productiveHours / availableHours) * 100 : 0,
+                    breakdown: {
+                        productivePercentage: availableHours > 0 ? (productiveHours / availableHours) * 100 : 0,
+                        idlePercentage: 0,
+                        housekeepingPercentage: 0,
+                        trainingPercentage: 0
+                    }
+                };
+            }).filter(d => d.availableHours > 0);
         };
 
         if (technicians.length > 0) {
