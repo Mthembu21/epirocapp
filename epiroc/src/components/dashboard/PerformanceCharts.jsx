@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,32 @@ const COLORS = ['#facc15', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#f97316'
 export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     const [selectedTechnician, setSelectedTechnician] = useState('all');
     const [timeRange, setTimeRange] = useState('current');
+    const [monthlySummaries, setMonthlySummaries] = useState([]);
+
+    // Fetch daily productive percentage data when time range or technicians change
+    useEffect(() => {
+        const fetchDailyProductivity = async () => {
+            try {
+                const { start, end } = getDateRange();
+                const technicianIds = selectedTechnician === 'all' 
+                    ? technicians.map(t => t.id) 
+                    : [selectedTechnician];
+                
+                const response = await fetch(`/api/time-entries/daily-productivity?start_date=${start.toISOString()}&end_date=${end.toISOString()}&technician_ids=${technicianIds.join(',')}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    setMonthlySummaries(data); // Reusing state for daily productivity data
+                }
+            } catch (error) {
+                console.error('Failed to fetch daily productivity data:', error);
+            }
+        };
+
+        if (technicians.length > 0) {
+            fetchDailyProductivity();
+        }
+    }, [timeRange, selectedTechnician, technicians]);
 
     const getDateRange = () => {
         const now = new Date();
@@ -60,7 +86,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     // Calculate total utilized hours for display
     const utilizedSum = totalProductiveHours;
 
-    // Calculate efficiency data per technician
+    // Calculate efficiency data per technician using monthly summaries when available
     const technicianEfficiency = technicians.map(tech => {
         const isTechOnJob = (job) => {
             if (!job) return false;
@@ -71,6 +97,27 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         const techJobs = filteredJobs.filter(j => isTechOnJob(j));
         const completedJobs = techJobs.filter(j => j.status === 'completed');
         const techEntries = filteredEntries.filter(e => e.technician_id === tech.id);
+
+        // Try to get data from monthly summaries first
+        const monthlySummary = monthlySummaries.find(summary => 
+            summary.technician_id === tech.id
+        );
+
+        let totalProductiveHours, totalNonProductiveHours, totalOvertimeHours, totalNormalHours;
+        
+        if (monthlySummary) {
+            // Use monthly summary data
+            totalProductiveHours = monthlySummary.productive_hours || 0;
+            totalNonProductiveHours = monthlySummary.non_productive_hours || 0;
+            totalOvertimeHours = monthlySummary.overtime_hours || 0;
+            totalNormalHours = monthlySummary.normal_hours || 0;
+        } else {
+            // Fall back to time entries calculation
+            totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+            totalNonProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+            totalOvertimeHours = techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+            totalNormalHours = techEntries.reduce((sum, e) => sum + (e.normal_hours || 0), 0);
+        }
 
         const getAllocatedForTechOnJob = (job) => {
             const allocatedFromStages = (job?.subtasks || []).reduce((sum, st) => {
@@ -86,7 +133,6 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             .filter((e) => !e.is_idle)
             .filter((e) => completedJobs.some((j) => String(j.job_number) === String(e.job_id)))
             .reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
-        const totalProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
         
         const efficiencyRaw = totalUtilized > 0 ? (totalAllocated / totalUtilized) * 100 : 0;
         const efficiency = Math.max(0, Math.min(100, efficiencyRaw));
@@ -98,25 +144,84 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             completedJobs: completedJobs.length,
             activeJobs: techJobs.filter(j => ['active', 'in_progress'].includes(j.status)).length,
             productiveHours: totalProductiveHours,
+            nonProductiveHours: totalNonProductiveHours,
+            overtimeHours: totalOvertimeHours,
+            normalHours: totalNormalHours,
             allocatedHours: totalAllocated,
-            utilizedHours: totalUtilized
+            utilizedHours: totalUtilized,
+            utilizationRate: monthlySummary?.utilization_percentage || 0
         };
     }).filter(t => t.productiveHours > 0 || t.completedJobs > 0);
 
     // Calculate total allocated hours for display
     const allocatedSum = technicianEfficiency.reduce((sum, tech) => sum + tech.allocatedHours, 0);
 
-    // Daily productivity data
-    const dailyData = eachDayOfInterval({ start, end }).map(day => {
-        const dayEntries = filteredEntries.filter(e => e?.log_date && isSameDay(parseISO(e.log_date), day));
+    // Daily productivity data - using new daily productive percentage API
+    const dailyData = useMemo(() => {
+        if (selectedTechnician === 'all') {
+            // For "all technicians", aggregate data across all technicians
+            const allDailyData = {};
+            
+            // Collect all daily data from all technicians
+            Object.values(monthlySummaries).forEach(techDailyData => {
+                if (Array.isArray(techDailyData)) {
+                    techDailyData.forEach(dayData => {
+                        const dateKey = format(dayData.date, 'yyyy-MM-dd');
+                        if (!allDailyData[dateKey]) {
+                            allDailyData[dateKey] = {
+                                date: dayData.date,
+                                productiveHours: 0,
+                                availableHours: 0,
+                                dailyProductivePercentage: 0,
+                                count: 0
+                            };
+                        }
+                        
+                        allDailyData[dateKey].productiveHours += dayData.productiveHours;
+                        allDailyData[dateKey].availableHours += dayData.availableHours;
+                        allDailyData[dateKey].count += 1;
+                    });
+                }
+            });
+            
+            // Calculate average percentages for each day
+            return Object.values(allDailyData).map(day => ({
+                date: format(day.date, 'dd'),
+                fullDate: format(day.date, 'MMM dd'),
+                productiveHours: day.productiveHours,
+                availableHours: day.availableHours,
+                dailyProductivePercentage: day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0
+            })).filter(d => d.availableHours > 0);
+        } else {
+            // For specific technician, use their data directly
+            const techDailyData = monthlySummaries[selectedTechnician];
+            if (Array.isArray(techDailyData)) {
+                return techDailyData.map(dayData => ({
+                    date: format(dayData.date, 'dd'),
+                    fullDate: format(dayData.date, 'MMM dd'),
+                    productiveHours: dayData.productiveHours,
+                    availableHours: dayData.availableHours,
+                    dailyProductivePercentage: dayData.dailyProductivePercentage || 0
+                })).filter(d => d.availableHours > 0);
+            }
+        }
         
-        return {
-            date: format(day, 'dd'),
-            fullDate: format(day, 'MMM dd'),
-            productiveHours: dayEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0),
-            entries: dayEntries.length
-        };
-    }).filter(d => d.productiveHours > 0);
+        // Fallback to original calculation if no new data available
+        return eachDayOfInterval({ start, end }).map(day => {
+            const dayEntries = filteredEntries.filter(e => e?.log_date && isSameDay(parseISO(e.log_date), day));
+            
+            return {
+                date: format(day, 'dd'),
+                fullDate: format(day, 'MMM dd'),
+                productiveHours: dayEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0),
+                availableHours: dayEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0),
+                dailyProductivePercentage: 0 // Will be calculated below
+            };
+        }).map(d => ({
+            ...d,
+            dailyProductivePercentage: d.availableHours > 0 ? (d.productiveHours / d.availableHours) * 100 : 0
+        })).filter(d => d.availableHours > 0);
+    }, [monthlySummaries, selectedTechnician, filteredEntries, start, end]);
 
     // Job status distribution
     const statusDistribution = [
@@ -219,6 +324,35 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                 <div>Allocated: {allocatedSum.toFixed(1)}h</div>
                             </div>
                         </div>
+                        
+                        {/* Detailed hours breakdown */}
+                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                                <div className="text-green-700 font-medium">Productive Hours</div>
+                                <div className="text-green-900 font-bold text-lg">
+                                    {technicianEfficiency.reduce((sum, tech) => sum + (tech.productiveHours || 0), 0).toFixed(1)}h
+                                </div>
+                            </div>
+                            <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                                <div className="text-red-700 font-medium">Non-Productive Hours</div>
+                                <div className="text-red-900 font-bold text-lg">
+                                    {technicianEfficiency.reduce((sum, tech) => sum + (tech.nonProductiveHours || 0), 0).toFixed(1)}h
+                                </div>
+                            </div>
+                            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                                <div className="text-blue-700 font-medium">Normal Hours</div>
+                                <div className="text-blue-900 font-bold text-lg">
+                                    {technicianEfficiency.reduce((sum, tech) => sum + (tech.normalHours || 0), 0).toFixed(1)}h
+                                </div>
+                            </div>
+                            <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                                <div className="text-amber-700 font-medium">Overtime Hours</div>
+                                <div className="text-amber-900 font-bold text-lg">
+                                    {technicianEfficiency.reduce((sum, tech) => sum + (tech.overtimeHours || 0), 0).toFixed(1)}h
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div className="mt-4">
                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                 <div className="h-full bg-yellow-400" style={{ width: `${utilization}%` }} />
@@ -314,7 +448,7 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     <CardHeader className="pb-2">
                         <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
                             <TrendingUp className="w-5 h-5 text-yellow-500" />
-                            Daily Productive Hours
+                            Productivity (%)
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -323,24 +457,38 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                                 <LineChart data={dailyData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                     <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 11 }} />
-                                    <YAxis tick={{ fill: '#64748b', fontSize: 12 }} />
+                                    <YAxis 
+                                        tick={{ fill: '#64748b', fontSize: 12 }} 
+                                        domain={[0, 100]}
+                                        label={{ value: 'Productivity %', angle: -90, position: 'insideLeft' }}
+                                    />
                                     <Tooltip 
                                         labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
+                                        formatter={(value, name, props) => {
+                                            const data = props?.payload;
+                                            if (data) {
+                                                return [
+                                                    `${data.dailyProductivePercentage.toFixed(1)}%`,
+                                                    'Productivity (%)'
+                                                ];
+                                            }
+                                            return [value, name];
+                                        }}
                                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
                                     />
                                     <Line 
                                         type="monotone" 
-                                        dataKey="productiveHours" 
+                                        dataKey="dailyProductivePercentage" 
                                         stroke="#facc15" 
                                         strokeWidth={3}
                                         dot={{ fill: '#facc15', strokeWidth: 2 }}
-                                        name="Productive Hours"
+                                        name="Productivity (%)"
                                     />
                                 </LineChart>
                             </ResponsiveContainer>
                         ) : (
                             <div className="h-[250px] flex items-center justify-center text-slate-400">
-                                No time entries for selected period
+                                No productivity data for selected period
                             </div>
                         )}
                     </CardContent>
