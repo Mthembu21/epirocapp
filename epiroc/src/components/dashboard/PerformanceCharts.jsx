@@ -61,7 +61,6 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         // Fallback calculation function
         const calculateFallbackDailyData = () => {
             console.log('🔍 Calculating fallback daily data from filteredEntries...');
-            const { eachDayOfInterval, format, isSameDay, parseISO } = require('date-fns');
             const { start, end } = getDateRange();
             
             if (selectedTechnician === 'all') {
@@ -293,79 +292,44 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             // For "all technicians", aggregate data across all technicians
             const allDailyData = {};
             const technicianBreakdowns = {}; // Store per-technician data for tooltips
-            
-            // Check if we have any existing data to work with
-            if (Object.keys(monthlySummaries).length > 0 && Object.values(monthlySummaries).some(v => Array.isArray(v) && v.length > 0)) {
-                console.log('🔍 Using existing monthlySummaries data for aggregation...');
-                // Collect all daily data from all technicians
-                Object.entries(monthlySummaries).forEach(([techId, techDailyData]) => {
-                    console.log(`🔍 Processing technician ${techId}:`, techDailyData);
-                    if (Array.isArray(techDailyData)) {
-                        techDailyData.forEach(dayData => {
-                            const dateKey = format(dayData.date, 'yyyy-MM-dd');
-                            if (!allDailyData[dateKey]) {
-                                allDailyData[dateKey] = {
-                                    date: dayData.date,
-                                    totalHours: 0,
-                                    productiveHours: 0,
-                                    availableHours: 0,
-                                    unavailableHours: 0,
-                                    utilizationLossHours: 0,
-                                    trainingHours: 0,
-                                    idleHours: 0,
-                                    housekeepingHours: 0,
-                                    dailyProductivePercentage: 0,
-                                    dailyUtilizationPercentage: 0,
-                                    breakdown: {
-                                        productivePercentage: 0,
-                                        idlePercentage: 0,
-                                        housekeepingPercentage: 0,
-                                        trainingPercentage: 0
-                                    },
-                                    technicians: [] // Store per-technician breakdown
-                                };
-                            }
-                        
-                            // Store technician breakdown for tooltips
-                            if (!technicianBreakdowns[dateKey]) {
-                                technicianBreakdowns[dateKey] = [];
-                            }
-                            technicianBreakdowns[dateKey].push({
-                                technicianId: techId,
-                                productiveHours: dayData.productiveHours || 0,
-                                availableHours: dayData.availableHours || 0,
-                                dailyProductivePercentage: dayData.dailyProductivePercentage || 0,
-                                dailyUtilizationPercentage: dayData.dailyUtilizationPercentage || 0,
-                                breakdown: dayData.breakdown || {
                                     productivePercentage: 0,
                                     idlePercentage: 0,
                                     housekeepingPercentage: 0,
                                     trainingPercentage: 0
-                                }
-                            });
-                        
-                            // Aggregate all fields
-                            const day = allDailyData[dateKey];
-                            day.totalHours += (dayData.totalHours || 0);
-                            day.productiveHours += (dayData.productiveHours || 0);
-                            day.availableHours += (dayData.availableHours || 0);
-                            day.unavailableHours += (dayData.unavailableHours || 0);
-                            day.utilizationLossHours += (dayData.utilizationLossHours || 0);
-                            day.trainingHours += (dayData.trainingHours || 0);
-                            day.idleHours += (dayData.idleHours || 0);
-                            day.housekeepingHours += (dayData.housekeepingHours || 0);
+                                },
+                                technicians: [] // Store per-technician breakdown
+                            };
+                        }
+                    
+                        // Store technician breakdown for tooltips
+                        if (!technicianBreakdowns[dateKey]) {
+                            technicianBreakdowns[dateKey] = [];
+                        }
+                        technicianBreakdowns[dateKey].push({
+                            technicianId: techId,
+                            productiveHours: dayData.productiveHours || 0,
+                            availableHours: dayData.availableHours || 0,
+                            dailyProductivePercentage: dayData.dailyProductivePercentage || 0,
+                            dailyUtilizationPercentage: dayData.dailyUtilizationPercentage || 0,
+                            breakdown: dayData.breakdown || {
+                                productivePercentage: 0,
+                                idlePercentage: 0,
+                                housekeepingPercentage: 0,
+                                trainingPercentage: 0
+                            }
                         });
-                    }
-                });
-            } else {
-                console.log('🔍 No existing monthlySummaries data, using fallback calculation...');
-                // Use fallback calculation from filteredEntries
-                return calculateFallbackDailyData();
-            }
-            
-            console.log('🔍 Aggregated allDailyData:', allDailyData);
-            
-            // Calculate overall percentages for each day using proper formulas
+                    
+                        // Aggregate all fields
+                        const day = allDailyData[dateKey];
+                        day.totalHours += (dayData.totalHours || 0);
+                        day.productiveHours += (dayData.productiveHours || 0);
+                        day.availableHours += (dayData.availableHours || 0);
+                        day.unavailableHours += (dayData.unavailableHours || 0);
+                        day.utilizationLossHours += (dayData.utilizationLossHours || 0);
+                        day.trainingHours += (dayData.trainingHours || 0);
+                        day.idleHours += (dayData.idleHours || 0);
+                        day.housekeepingHours += (dayData.housekeepingHours || 0);
+                    });
             const result = Object.values(allDailyData).map(day => {
                 // Overall Utilization (%) = SUM(Productive Hours of All Technicians) / SUM(Available Hours of All Technicians) * 100
                 const overallUtilization = day.availableHours > 0 ? (day.productiveHours / day.availableHours) * 100 : 0;
