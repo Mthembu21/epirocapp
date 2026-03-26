@@ -32,12 +32,30 @@ class APIClient {
                 try {
                     const storedUser = localStorage.getItem('epiroc_user');
                     const parsed = storedUser ? JSON.parse(storedUser) : null;
+                    
+                    // ✅ Auto-recover technician sessions
                     if (parsed?.type === 'technician' && parsed?.name && parsed?.employee_id) {
                         await fetch(`${API_URL}/auth/technician/login`, {
                             method: 'POST',
                             credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ name: parsed.name, employee_id: parsed.employee_id })
+                        });
+
+                        const retryResponse = await doFetch();
+                        if (retryResponse.ok) {
+                            const json = await retryResponse.json();
+                            return this.normalizeIds(json);
+                        }
+                    }
+                    
+                    // ✅ Auto-recover supervisor sessions
+                    if (parsed?.type === 'supervisor' && parsed?.email && parsed?.password) {
+                        await fetch(`${API_URL}/auth/login`, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: parsed.email, password: parsed.password })
                         });
 
                         const retryResponse = await doFetch();
