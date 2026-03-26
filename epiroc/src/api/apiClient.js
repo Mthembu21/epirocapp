@@ -50,19 +50,12 @@ class APIClient {
                     }
                     
                     // ✅ Auto-recover supervisor sessions
-                    if (parsed?.type === 'supervisor' && parsed?.email && parsed?.password) {
-                        await fetch(`${API_URL}/auth/login`, {
-                            method: 'POST',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: parsed.email, password: parsed.password })
-                        });
-
-                        const retryResponse = await doFetch();
-                        if (retryResponse.ok) {
-                            const json = await retryResponse.json();
-                            return this.normalizeIds(json);
-                        }
+                    if (parsed?.type === 'supervisor' && parsed?.email) {
+                        // For supervisors, we can't auto-relogin with password since it's not stored
+                        // Instead, we'll just clear the invalid session and let the user handle it
+                        console.warn('Supervisor session expired, manual relogin required');
+                        localStorage.removeItem('epiroc_user');
+                        // Don't retry the request - let it fail with 401 so frontend can handle it
                     }
                 } catch {
                     // fall through to normal error handling
