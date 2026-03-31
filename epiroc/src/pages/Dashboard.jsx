@@ -158,13 +158,39 @@ export default function Dashboard() {
     });
 
     const isForeman = currentUser?.type === 'supervisor' && ['foreman', 'manager'].includes(currentUser?.role);
-    const approvalTenant = currentUser?.supervisor_key === 'pdis' || currentUser?.supervisor_key === 'rebuild';
+    const isComponentSupervisor = currentUser?.type === 'supervisor' && currentUser?.supervisor_key === 'component';
+    
+    // Enable approvals for component supervisors and foreman (but different scopes)
+    const approvalEnabled = isAuthenticated && (isComponentSupervisor || isForeman);
 
-    const { data: pendingApprovals = [] } = useQuery({
+    const { data: pendingApprovals = [], error: approvalError } = useQuery({
         queryKey: ['pendingApprovals', currentUser?.supervisor_key],
         queryFn: () => base44.entities.DailyTimeEntry.approvals.pending(),
-        enabled: isAuthenticated && isForeman && approvalTenant,
-        refetchInterval: (isAuthenticated && isForeman && approvalTenant) ? 10000 : false
+        enabled: approvalEnabled,
+        refetchInterval: approvalEnabled ? 10000 : false,
+        retry: (failureCount, error) => {
+            // Don't retry on 401 errors (session expired)
+            if (error?.response?.status === 401) {
+                return false;
+            }
+            return failureCount < 3;
+        },
+        // Ensure we always have an array to prevent React errors
+        select: (data) => {
+            console.log('Raw API response:', data);
+            // Always return an array, even if data is malformed
+            if (Array.isArray(data)) {
+                return data;
+            }
+            // If data is an object with keys, convert to array
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                console.log('Converting object to array:', Object.keys(data));
+                return Object.values(data || {});
+            }
+            // Fallback to empty array
+            console.log('Returning fallback array');
+            return [];
+        }
     });
 
     const createTechnicianMutation = useMutation({
@@ -681,7 +707,7 @@ export default function Dashboard() {
                             Time Logs
                         </TabsTrigger>
 
-                        {isForeman && approvalTenant && (
+                        {isForeman && approvalEnabled && (
                             <TabsTrigger
                                 value="approvals"
                                 className="flex items-center gap-2 rounded-lg text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800"
@@ -984,7 +1010,7 @@ export default function Dashboard() {
                         </div>
                     </TabsContent>
 
-                    {isForeman && approvalTenant && (
+                    {isForeman && approvalEnabled && (
                         <TabsContent value="approvals" className="space-y-6">
                             <Card className="border-0 shadow-lg bg-white/95">
                                 <CardHeader className="pb-4 border-b border-slate-100">
@@ -1006,7 +1032,26 @@ export default function Dashboard() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {pendingApprovals.map((log) => {
+                                                {console.log('Pending approvals data:', pendingApprovals, 'Type:', typeof pendingApprovals, 'IsArray:', Array.isArray(pendingApprovals))}
+                                                {approvalError?.response?.status === 401 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} className="text-center text-slate-500">
+                                                            Session expired. Please log in again.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : !Array.isArray(pendingApprovals) ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} className="text-center text-slate-500">
+                                                            Error loading pending approvals
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : pendingApprovals.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} className="text-center text-slate-500">
+                                                            No pending approvals
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : pendingApprovals.map((log) => {
                                                     const submitted = Number(log?.hours_logged || 0);
                                                     const draft = approvalHoursDraft[log.id] ?? String(submitted);
                                                     const isIdle = !!log?.is_idle;
@@ -1014,7 +1059,13 @@ export default function Dashboard() {
                                                     return (
                                                         <TableRow key={log.id}>
                                                             <TableCell>{log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : ''}</TableCell>
-                                                            <TableCell>{log?.technician_name || log?.technician_id}</TableCell>
+                                                            <TableCell>
+                                                            {log?.technician_id?.name || 
+                                                             log?.technician_name || 
+                                                             (typeof log?.technician_id === 'string' ? log.technician_id : 
+                                                              typeof log?.technician_id === 'object' ? log.technician_id?._id || log.technician_id?.id || 'Unknown' :
+                                                              'Unknown')}
+                                                        </TableCell>
                                                             <TableCell>{typeLabel}</TableCell>
                                                             <TableCell className="font-mono">{log?.job_id}</TableCell>
                                                             <TableCell>{log?.subtask_title || '-'}</TableCell>

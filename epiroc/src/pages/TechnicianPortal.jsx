@@ -241,6 +241,8 @@ export default function TechnicianPortal() {
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
     const isOtherIdleSelected = isIdleSelected && formData.category === 'Other';
     const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
+    const isSickSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'sick';
+    const isMultiDayLeave = isLeaveSelected || isSickSelected;
 
     const getAssignedSubtasksForJob = (job) => {
         const subtasks = job?.subtasks || [];
@@ -287,7 +289,7 @@ export default function TechnicianPortal() {
         if (!isIdleSelected && !formData.subtask_id) return;
         if (isIdleSelected && !formData.category) return;
 
-        if (isLeaveSelected) {
+        if (isMultiDayLeave) {
             const start = parseISO(formData.date);
             const end = String(formData.end_date || '').trim()
                 ? parseISO(formData.end_date)
@@ -300,6 +302,7 @@ export default function TechnicianPortal() {
             const batch = [];
             for (let d = start; !isAfter(d, end); d = addDays(d, 1)) {
                 const day = getDay(d);
+                // Skip weekends for leave/sick entries
                 if (day === 0 || day === 6) continue;
 
                 const hours = day === 5 ? 7 : 8;
@@ -312,7 +315,9 @@ export default function TechnicianPortal() {
                         log_date: format(d, 'yyyy-MM-dd'),
                         is_idle: true,
                         category: formData.category,
-                        category_detail: formData.category_detail || ''
+                        category_detail: formData.category_detail || '',
+                        // Mark as leave to prevent overtime calculation
+                        is_leave: true
                     },
                     report: null
                 });
@@ -623,7 +628,7 @@ export default function TechnicianPortal() {
                                                 </div>
                                             )}
 
-                                            {isLeaveSelected && (
+                                            {isMultiDayLeave && (
                                                 <div className="space-y-2">
                                                     <Label>End date</Label>
                                                     <Input
@@ -689,7 +694,7 @@ export default function TechnicianPortal() {
                                                     step="0.25"
                                                     value={formData.hours_logged}
                                                     onChange={(e) => setFormData(prev => ({ ...prev, hours_logged: e.target.value }))}
-                                                    disabled={isLeaveSelected}
+                                                    disabled={isMultiDayLeave}
                                                     className="border-slate-300"
                                                 />
                                             </div>
@@ -833,11 +838,11 @@ export default function TechnicianPortal() {
                                             disabled={
                                                 createEntryMutation.isPending ||
                                                 !formData.job_id ||
-                                                (!isLeaveSelected && !formData.hours_logged) ||
+                                                (!isMultiDayLeave && !formData.hours_logged) ||
                                                 (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                                 (isIdleSelected && !formData.category) ||
                                                 (isOtherIdleSelected && !String(formData.category_detail || '').trim()) ||
-                                                (!isLeaveSelected && (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24))
+                                                (!isMultiDayLeave && (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24))
                                             }
                                         >
                                             <Save className="w-4 h-4 mr-2" />
