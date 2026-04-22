@@ -119,7 +119,17 @@ class APIClient {
             delete: (id) => this.request(`/technicians/${id}`, { method: 'DELETE' }),
             // ✅ New global endpoints
             getAll: () => this.request('/technicians/all'),
-            search: (query) => this.request(`/technicians/search?q=${encodeURIComponent(query)}`)
+            search: (query) => this.request(`/technicians/search?q=${encodeURIComponent(query)}`),
+            // ✅ Temporary assignment endpoints
+            temporaryAssignment: (technicianId, duration_hours, reason) => this.request('/technicians/temporary-assignment', {
+                method: 'POST',
+                body: JSON.stringify({ technician_id: technicianId, duration_hours, reason })
+            }),
+            getTemporaryAssignments: () => this.request('/technicians/temporary-assignments'),
+            completeTemporaryAssignment: (assignmentId, performance_note) => this.request(`/technicians/temporary-assignment/${assignmentId}/complete`, {
+                method: 'PUT',
+                body: JSON.stringify({ performance_note })
+            })
         },
 
         Job: {
@@ -214,6 +224,23 @@ class APIClient {
                 body: JSON.stringify(data)
             }),
             delete: (id) => this.request(`/time-entries/${id}`, { method: 'DELETE' })
+        },
+        // Enhanced time entries with temporary assignment support
+        EnhancedTimeEntry: {
+            create: (data) => this.request('/enhanced-time-entries', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            }),
+            list: (params = {}) => {
+                const q = new URLSearchParams();
+                if (params.technician_id) q.set('technician_id', params.technician_id);
+                if (params.start_date) q.set('start_date', params.start_date);
+                if (params.end_date) q.set('end_date', params.end_date);
+                if (params.include_temporary) q.set('include_temporary', params.include_temporary);
+                const qs = q.toString();
+                return this.request(`/enhanced-time-entries${qs ? `?${qs}` : ''}`);
+            },
+            getTemporaryAssignmentPerformance: (assignmentId) => this.request(`/enhanced-time-entries/temporary-assignment-performance/${assignmentId}`)
         },
 
         JobReport: {

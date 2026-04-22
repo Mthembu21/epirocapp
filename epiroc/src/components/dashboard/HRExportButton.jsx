@@ -105,7 +105,7 @@ export default function HRExportButton({ timeEntries, technicians }) {
         <Button 
             onClick={exportHRData} 
             variant="outline" 
-            className="border-green-500 text-green-700 hover:bg-green-50"
+            className="border-green-500 text-green-700 hover:bg-green-50 h-10 px-4"
             disabled={!timeEntries || timeEntries.length === 0}
         >
             <Download className="w-4 h-4 mr-2" />

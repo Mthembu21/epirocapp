@@ -3,7 +3,7 @@ import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, Wrench, LogOut, Briefcase, TrendingUp, AlertTriangle, Pencil, Trash2, Save, X } from 'lucide-react';
+import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -29,8 +29,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function Dashboard() {
     const [techModalOpen, setTechModalOpen] = useState(false);
-    const [globalTechSelectorOpen, setGlobalTechSelectorOpen] = useState(false);
     const [jobModalOpen, setJobModalOpen] = useState(false);
+    const [globalTechSelectorOpen, setGlobalTechSelectorOpen] = useState(false);
+    const [selectedTechnician, setSelectedTechnician] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
     const [editingLogId, setEditingLogId] = useState(null);
@@ -45,6 +46,13 @@ export default function Dashboard() {
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const queryClient = useQueryClient();
+
+    // Clear selected technician when job modal closes
+    React.useEffect(() => {
+        if (!jobModalOpen) {
+            setSelectedTechnician(null);
+        }
+    }, [jobModalOpen]);
 
     React.useEffect(() => {
         const validateSession = async () => {
@@ -520,11 +528,11 @@ export default function Dashboard() {
                                 </div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex flex-wrap items-center gap-3">
                             {supervisorRole === 'manager' && supervisorAccess.includes('workshop_overview') && (
                                 <Button
                                     variant="outline"
-                                    className="border-yellow-400/40 text-yellow-200 hover:bg-yellow-400/10"
+                                    className="border-yellow-400/40 text-yellow-200 hover:bg-yellow-400/10 h-10 px-4"
                                     onClick={() => { window.location.href = createPageUrl('WorkshopOverview'); }}
                                 >
                                     Workshop Overview
@@ -537,8 +545,8 @@ export default function Dashboard() {
                                     variant={supervisorKey === w.key ? 'default' : 'outline'}
                                     className={
                                         supervisorKey === w.key
-                                            ? 'bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold'
-                                            : 'border-slate-600 text-slate-200 hover:bg-slate-700/40'
+                                            ? 'bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold h-10 px-4'
+                                            : 'border-slate-600 text-slate-200 hover:bg-slate-700/40 h-10 px-4'
                                     }
                                     onClick={() => handleSwitchWorkshop(w.key)}
                                 >
@@ -554,15 +562,16 @@ export default function Dashboard() {
                                 onSubmit={createJobMutation.mutateAsync}
                                 isOpen={jobModalOpen}
                                 setIsOpen={setJobModalOpen}
+                                preselectedTechnician={selectedTechnician}
                             />
                             <GlobalTechnicianSelector
                                 isOpen={globalTechSelectorOpen}
                                 setIsOpen={setGlobalTechSelectorOpen}
                                 onTechnicianSelect={(technician) => {
-                                    // Handle technician selection - could assign to job, etc.
-                                    console.log('Selected technician:', technician);
-                                    // For now, just close the selector
+                                    // Set the selected technician and open job allocation modal
+                                    setSelectedTechnician(technician);
                                     setGlobalTechSelectorOpen(false);
+                                    setJobModalOpen(true);
                                 }}
                                 currentSupervisorKey={currentUser?.supervisor_key}
                             />
@@ -786,7 +795,7 @@ export default function Dashboard() {
                             <PerformanceCharts 
                                 technicians={technicians}
                                 jobs={jobs}
-                                timeEntries={timeLogsForMonth}
+                                timeEntries={timeLogs || []}
                             />
                             <TechnicianPerformance 
                                 technicians={technicians}
@@ -797,10 +806,10 @@ export default function Dashboard() {
                     </TabsContent>
 
                     <TabsContent value="technicians" className="mt-6">
-                        <div className="flex gap-3 mb-4">
+                        <div className="flex flex-wrap items-center gap-3 mb-6">
                             <Button 
                                 onClick={() => setTechModalOpen(true)}
-                                className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold"
+                                className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold h-10 px-4"
                             >
                                 <Users className="w-4 h-4 mr-2" />
                                 Add My Technician
@@ -808,7 +817,7 @@ export default function Dashboard() {
                             <Button 
                                 onClick={() => setGlobalTechSelectorOpen(true)}
                                 variant="outline"
-                                className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                                className="border-blue-300 text-blue-700 hover:bg-blue-50 h-10 px-4"
                             >
                                 <Users className="w-4 h-4 mr-2" />
                                 Search All Technicians
@@ -1421,7 +1430,7 @@ export default function Dashboard() {
 
                                         <Button
                                             variant="outline"
-                                            className="h-8"
+                                            className="h-10 px-4"
                                             disabled={!jobAddTechnicianId || updateJobByNumberMutation.isPending}
                                             onClick={() => {
                                                 const techId = String(jobAddTechnicianId || '');

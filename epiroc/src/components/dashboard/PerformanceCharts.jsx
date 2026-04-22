@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell 
 } from 'recharts';
 import { BarChart3, TrendingUp, Award, Users } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, subWeeks, subDays } from 'date-fns';
 
 const COLORS = ['#facc15', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#f97316'];
 
@@ -19,13 +19,38 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
 
     const getDateRange = useCallback(() => {
         const now = new Date();
-        if (timeRange === 'current') {
-            return { start: startOfMonth(now), end: endOfMonth(now) };
-        } else if (timeRange === 'last') {
-            const lastMonth = subMonths(now, 1);
-            return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) };
-        } else {
-            return { start: startOfMonth(subMonths(now, 2)), end: endOfMonth(now) };
+        
+        switch (timeRange) {
+            case 'thisWeek':
+                return { start: startOfWeek(now), end: endOfWeek(now) };
+            case 'lastWeek':
+                const lastWeek = subWeeks(now, 1);
+                return { start: startOfWeek(lastWeek), end: endOfWeek(lastWeek) };
+            case 'last2Weeks':
+                const twoWeeksAgo = subWeeks(now, 2);
+                return { start: startOfWeek(twoWeeksAgo), end: endOfWeek(now) };
+            case 'last3Weeks':
+                const threeWeeksAgo = subWeeks(now, 3);
+                return { start: startOfWeek(threeWeeksAgo), end: endOfWeek(now) };
+            case 'current':
+                return { start: startOfMonth(now), end: endOfMonth(now) };
+            case 'last':
+                const lastMonth = subMonths(now, 1);
+                return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) };
+            case 'last2Months':
+                const twoMonthsAgo = subMonths(now, 2);
+                return { start: startOfMonth(twoMonthsAgo), end: endOfMonth(now) };
+            case 'last3Months':
+                const threeMonthsAgo = subMonths(now, 3);
+                return { start: startOfMonth(threeMonthsAgo), end: endOfMonth(now) };
+            case 'last6Months':
+                const sixMonthsAgo = subMonths(now, 6);
+                return { start: startOfMonth(sixMonthsAgo), end: endOfMonth(now) };
+            case 'last12Months':
+                const twelveMonthsAgo = subMonths(now, 12);
+                return { start: startOfMonth(twelveMonthsAgo), end: endOfMonth(now) };
+            default:
+                return { start: startOfMonth(now), end: endOfMonth(now) };
         }
     }, [timeRange]);
 
@@ -375,13 +400,22 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 <div className="flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-slate-400" />
                     <Select value={timeRange} onValueChange={setTimeRange}>
-                        <SelectTrigger className="w-40 bg-white">
+                        <SelectTrigger className="w-48 bg-white">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                            <div className="font-semibold text-xs text-slate-500 px-2 py-1">WEEKLY</div>
+                            <SelectItem value="thisWeek">This Week</SelectItem>
+                            <SelectItem value="lastWeek">Last Week</SelectItem>
+                            <SelectItem value="last2Weeks">Last 2 Weeks</SelectItem>
+                            <SelectItem value="last3Weeks">Last 3 Weeks</SelectItem>
+                            <div className="font-semibold text-xs text-slate-500 px-2 py-1 mt-1">MONTHLY</div>
                             <SelectItem value="current">This Month</SelectItem>
                             <SelectItem value="last">Last Month</SelectItem>
-                            <SelectItem value="quarter">Last 3 Months</SelectItem>
+                            <SelectItem value="last2Months">Last 2 Months</SelectItem>
+                            <SelectItem value="last3Months">Last 3 Months</SelectItem>
+                            <SelectItem value="last6Months">Last 6 Months</SelectItem>
+                            <SelectItem value="last12Months">Last 12 Months</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>

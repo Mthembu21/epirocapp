@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Briefcase } from 'lucide-react';
 
-export default function JobAllocationModal({ technicians, existingJobs, onSubmit, isOpen, setIsOpen }) {
+export default function JobAllocationModal({ technicians, existingJobs, onSubmit, isOpen, setIsOpen, preselectedTechnician = null }) {
     const getSupervisorKey = () => {
         try {
             const stored = localStorage.getItem('epiroc_user');
@@ -51,11 +51,14 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
     const [formData, setFormData] = useState({
         job_number: '',
         description: '',
-        assigned_technician_id: '',
+        assigned_technician_id: preselectedTechnician?.id || '',
         allocated_hours: '',
         start_date: '',
         target_completion_date: '',
-        subtasks: defaultSubtasks
+        subtasks: defaultSubtasks.map(st => ({
+            ...st,
+            technician_id: preselectedTechnician?.id || ''
+        }))
     });
 
     const handleSubmit = async (e) => {
@@ -117,11 +120,14 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
             setFormData({
                 job_number: '',
                 description: '',
-                assigned_technician_id: '',
+                assigned_technician_id: preselectedTechnician?.id || '',
                 allocated_hours: '',
                 start_date: '',
                 target_completion_date: '',
-                subtasks: defaultSubtasks
+                subtasks: defaultSubtasks.map(st => ({
+                    ...st,
+                    technician_id: preselectedTechnician?.id || ''
+                }))
             });
             setIsOpen(false);
         } catch (err) {
@@ -139,7 +145,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-                <Button className="bg-yellow-400 hover:bg-yellow-500 text-slate-800">
+                <Button className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 h-10 px-4">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Job
                 </Button>

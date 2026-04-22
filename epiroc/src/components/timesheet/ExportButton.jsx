@@ -86,7 +86,7 @@ export default function ExportButton({ entries, filename = "timesheet_export" })
         <Button 
             onClick={exportToExcel}
             variant="outline"
-            className="border-yellow-400 text-yellow-700 hover:bg-yellow-50"
+            className="border-yellow-400 text-yellow-700 hover:bg-yellow-50 h-10 px-4"
             disabled={!entries || entries.length === 0}
         >
             <Download className="w-4 h-4 mr-2" />
