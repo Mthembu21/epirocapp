@@ -91,13 +91,19 @@ export default function Dashboard() {
             
             try {
                 // Use the working daily endpoint instead of failing batch endpoint
-                const response = await fetch(`/api/metrics/utilization/daily?techId=all&dateRange=${selectedMonth}`);
+                const apiUrl = `/api/metrics/utilization/daily?techId=all&dateRange=${selectedMonth}`;
+                console.log('MAKING API CALL TO:', apiUrl);
+                const response = await fetch(apiUrl);
+                
+                console.log('API RESPONSE STATUS:', response.status);
+                console.log('API RESPONSE OK:', response.ok);
                 
                 if (response.ok) {
                     const result = await response.json();
                     console.log('API Response Status:', response.status);
                     const dailyData = result.data || [];
                     console.log('Daily Data Length:', dailyData.length);
+                    console.log('Daily Data Sample:', dailyData.slice(0, 2));
                     
                     // Calculate aggregate metrics from daily data
                     const aggregateMetrics = dailyData.reduce((acc, day) => {
