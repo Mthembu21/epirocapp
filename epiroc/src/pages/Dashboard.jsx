@@ -90,23 +90,22 @@ export default function Dashboard() {
             if (!isAuthenticated || !selectedMonth) return;
             
             try {
-                // Get batch metrics for all technicians in the selected month
-                const response = await fetch(`/api/metrics/utilization/batch?dateRange=${selectedMonth}`);
+                // Use the working daily endpoint instead of failing batch endpoint
+                const response = await fetch(`/api/metrics/utilization/daily?techId=all&dateRange=${selectedMonth}`);
                 
                 if (response.ok) {
                     const result = await response.json();
                     console.log('API Response Status:', response.status);
-                    console.log('API Response Data:', result);
-                    const batchData = result.data || [];
-                    console.log('Batch Data Length:', batchData.length);
+                    const dailyData = result.data || [];
+                    console.log('Daily Data Length:', dailyData.length);
                     
-                    // Calculate aggregate metrics for all technicians
-                    const aggregateMetrics = batchData.reduce((acc, tech) => {
-                        acc.productiveHours += tech.productiveHours || 0;
-                        acc.nonProductiveHours += tech.nonProductiveHours || 0;
-                        acc.idleHours += tech.idleHours || 0;
-                        acc.notAvailableHours += tech.notAvailableHours || 0;
-                        acc.totalContractedHours += tech.totalContractedHours || 0;
+                    // Calculate aggregate metrics from daily data
+                    const aggregateMetrics = dailyData.reduce((acc, day) => {
+                        acc.productiveHours += day.productiveHours || 0;
+                        acc.nonProductiveHours += day.nonProductiveHours || 0;
+                        acc.idleHours += day.idleHours || 0;
+                        acc.notAvailableHours += day.notAvailableHours || 0;
+                        acc.totalContractedHours += day.totalHours || 0;
                         return acc;
                     }, {
                         productiveHours: 0,
@@ -116,12 +115,14 @@ export default function Dashboard() {
                         totalContractedHours: 0
                     });
                     
-                    // Calculate final percentages
+                    // Calculate final percentages using new operational formulas
                     const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
                     const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
                     const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
                     const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
                     const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
+                    
+                    console.log('Calculated Metrics:', { utilization, productivity, idlePercentage });
                     
                     setOperationalMetrics({
                         utilization,
