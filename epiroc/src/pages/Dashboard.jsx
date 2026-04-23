@@ -84,70 +84,8 @@ export default function Dashboard() {
         validateSession();
     }, []);
 
-    // Fetch operational metrics for the selected month
-    React.useEffect(() => {
-        const fetchOperationalMetrics = async () => {
-            if (!isAuthenticated || !selectedMonth) return;
-            
-            try {
-                // Use the working daily endpoint instead of failing batch endpoint
-                const apiUrl = `/api/metrics/utilization/daily?techId=all&dateRange=${selectedMonth}`;
-                console.log('MAKING API CALL TO:', apiUrl);
-                const response = await fetch(apiUrl);
-                
-                console.log('API RESPONSE STATUS:', response.status);
-                console.log('API RESPONSE OK:', response.ok);
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    console.log('API Response Status:', response.status);
-                    const dailyData = result.data || [];
-                    console.log('Daily Data Length:', dailyData.length);
-                    console.log('Daily Data Sample:', dailyData.slice(0, 2));
-                    
-                    // Calculate aggregate metrics from daily data
-                    const aggregateMetrics = dailyData.reduce((acc, day) => {
-                        acc.productiveHours += day.productiveHours || 0;
-                        acc.nonProductiveHours += day.nonProductiveHours || 0;
-                        acc.idleHours += day.idleHours || 0;
-                        acc.notAvailableHours += day.notAvailableHours || 0;
-                        acc.totalContractedHours += day.totalHours || 0;
-                        return acc;
-                    }, {
-                        productiveHours: 0,
-                        nonProductiveHours: 0,
-                        idleHours: 0,
-                        notAvailableHours: 0,
-                        totalContractedHours: 0
-                    });
-                    
-                    // Calculate final percentages using new operational formulas
-                    const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
-                    const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
-                    const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
-                    const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
-                    const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
-                    
-                    console.log('Calculated Metrics:', { utilization, productivity, idlePercentage });
-                    
-                    setOperationalMetrics({
-                        utilization,
-                        productivity,
-                        idlePercentage,
-                        ...aggregateMetrics
-                    });
-                } else {
-                    console.error('Failed to fetch operational metrics - Status:', response.status);
-                    console.error('Response Text:', await response.text());
-                }
-            } catch (error) {
-                console.error('Error fetching operational metrics:', error);
-                console.error('Error details:', error.message);
-            }
-        };
-        
-        fetchOperationalMetrics();
-    }, [isAuthenticated, selectedMonth]);
+    // Operational metrics are now provided by PerformanceCharts component via callback
+    // No separate API call needed - PerformanceCharts handles the data fetching
 
     const supervisorKey = currentUser?.supervisor_key || 'component';
     const supervisorRole = currentUser?.role || 'supervisor';
