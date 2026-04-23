@@ -404,8 +404,9 @@ export default function Dashboard() {
     });
 
     const activeJobs = jobs.filter(j =>
-        ['pending_confirmation', 'active', 'in_progress', 'at_risk'].includes(j.status)
+        ['pending_confirmation', 'active', 'in_progress', 'at_risk', 'over_allocated', 'reopened'].includes(j.status)
         || Number(j.bottleneck_count || 0) >= 2
+        || (j.status === 'completed' && Number(j.remaining_hours ?? (j.allocated_hours - j.consumed_hours) ?? 0) > 0)
     );
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
