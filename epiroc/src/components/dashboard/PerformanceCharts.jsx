@@ -80,23 +80,20 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         return jobs.filter(j => selectedTechnician === 'all' || isTechOnJob(j, selectedTechnician));
     }, [jobs, selectedTechnician]);
 
-    // Fetch daily productivity
+    // Fetch operational metrics using new API
     useEffect(() => {
-        const fetchDailyProductivity = async () => {
+        const fetchOperationalMetrics = async () => {
             try {
-                const { start, end } = getDateRange();
-                const technicianIds = selectedTechnician === 'all'
-                    ? technicians.map(t => t.id)
-                    : [selectedTechnician];
-
+                const dateRange = format(start, 'yyyy-MM');
                 const response = await fetch(
-                    `/api/time-entries/daily-productivity?start_date=${start.toISOString()}&end_date=${end.toISOString()}&technician_ids=${technicianIds.join(',')}`
+                    `/api/metrics/utilization/daily?techId=${selectedTechnician}&dateRange=${dateRange}`
                 );
 
                 if (response.ok) {
-                    const data = await response.json();
+                    const result = await response.json();
+                    const data = result.data || [];
                     // Normalize to always be an array
-                    setMonthlySummaries(Array.isArray(data) ? data : Object.values(data).flat());
+                    setMonthlySummaries(Array.isArray(data) ? data : []);
                 } else {
                     console.error('API error:', response.status);
                     setMonthlySummaries([]); // will trigger fallback
@@ -108,9 +105,9 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
         };
 
         if (technicians.length > 0) {
-            fetchDailyProductivity();
+            fetchOperationalMetrics();
         }
-    }, [timeRange, selectedTechnician, technicians, getDateRange]);
+    }, [selectedTechnician, start, technicians]);
 
     // Technician Efficiency
     const technicianEfficiency = useMemo(() => {
@@ -131,11 +128,17 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 ? monthlySummaries.find(s => s.technician_id === tech.id)
                 : null;
 
-            const totalProductiveHours = monthlySummary?.productive_hours ?? 
+            const totalProductiveHours = monthlySummary?.productiveHours ?? 
                 techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
 
-            const totalNonProductiveHours = monthlySummary?.non_productive_hours ?? 
-                techEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+            const totalNonProductiveHours = monthlySummary?.nonProductiveHours ?? 
+                techEntries.reduce((sum, e) => sum + (e.is_idle && !e.is_leave ? (e.hours_logged || 0) : 0), 0);
+
+            const totalIdleHours = monthlySummary?.idleHours ?? 
+                techEntries.reduce((sum, e) => sum + (e.is_idle && !e.is_leave ? (e.hours_logged || 0) : 0), 0);
+
+            const totalNotAvailableHours = monthlySummary?.notAvailableHours ?? 
+                techEntries.reduce((sum, e) => sum + (e.is_leave ? (e.hours_logged || 0) : 0), 0);
 
             const totalOvertimeHours = monthlySummary?.overtime_hours ?? 
                 techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
@@ -169,6 +172,8 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                 activeJobs: techJobs.filter(j => ['active', 'in_progress'].includes(j.status)).length,
                 productiveHours: totalProductiveHours,
                 nonProductiveHours: totalNonProductiveHours,
+                idleHours: totalIdleHours,
+                notAvailableHours: totalNotAvailableHours,
                 overtimeHours: totalOvertimeHours,
                 normalHours: totalNormalHours,
                 allocatedHours: totalAllocated,
@@ -187,22 +192,28 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
     const utilizedSum = filteredEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
     const allocatedSum = technicianEfficiency.reduce((sum, t) => sum + t.allocatedHours, 0);
 
-    // Daily Data (Fixed + Robust)
+    // Daily Data (New Operational Metrics)
     const dailyData = useMemo(() => {
         if (Array.isArray(monthlySummaries) && monthlySummaries.length > 0) {
             return monthlySummaries.map(day => {
-                // ✅ Available Hours = Productive + Idle + Housekeeping (exclude training & leave)
-                const availableHours = (day.productiveHours || 0) + (day.idleHours || 0) + (day.housekeepingHours || 0);
+                // New operational principles
+                const totalContractedHours = day.totalHours || 0;
+                const adjustedAvailableHours = totalContractedHours - (day.notAvailableHours || 0);
                 
-                // ✅ Utilization = Productive / Available * 100 (exclude training & leave)
-                const utilization = availableHours > 0 
-                    ? Math.round((day.productiveHours || 0) / availableHours * 100) 
+                // A. Utilization % = Productive Hours / Adjusted Available Hours * 100
+                const utilization = adjustedAvailableHours > 0 
+                    ? Math.round((day.productiveHours || 0) / adjustedAvailableHours * 100) 
                     : 0;
                 
-                // ✅ Productivity = Productive / Total Logged * 100 (includes all recorded hours)
-                const totalLogged = (day.productiveHours || 0) + (day.idleHours || 0) + (day.housekeepingHours || 0) + (day.trainingHours || 0);
-                const productivity = totalLogged > 0 
-                    ? Math.round((day.productiveHours || 0) / totalLogged * 100) 
+                // B. Productivity % = Productive Hours / (Productive Hours + Non-Productive Hours) * 100
+                const workingHours = (day.productiveHours || 0) + (day.nonProductiveHours || 0);
+                const productivity = workingHours > 0 
+                    ? Math.round((day.productiveHours || 0) / workingHours * 100) 
+                    : 0;
+                
+                // C. Idle % = Idle Hours / Adjusted Available Hours * 100
+                const idlePercentage = adjustedAvailableHours > 0 
+                    ? Math.round((day.idleHours || 0) / adjustedAvailableHours * 100) 
                     : 0;
                 
                 return {
@@ -214,10 +225,10 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     dailyProductivePercentage: productivity,
                     dailyUtilizationPercentage: utilization,
                     breakdown: {
-                        productivePercentage: totalLogged > 0 ? Math.round((day.productiveHours || 0) / totalLogged * 100) : 0,
-                        idlePercentage: totalLogged > 0 ? Math.round((day.idleHours || 0) / totalLogged * 100) : 0,
-                        housekeepingPercentage: totalLogged > 0 ? Math.round((day.housekeepingHours || 0) / totalLogged * 100) : 0,
-                        trainingPercentage: totalLogged > 0 ? Math.round((day.trainingHours || 0) / totalLogged * 100) : 0
+                        productivePercentage: adjustedAvailableHours > 0 ? Math.round((day.productiveHours || 0) / adjustedAvailableHours * 100) : 0,
+                        nonProductivePercentage: adjustedAvailableHours > 0 ? Math.round((day.nonProductiveHours || 0) / adjustedAvailableHours * 100) : 0,
+                        idlePercentage: adjustedAvailableHours > 0 ? Math.round((day.idleHours || 0) / adjustedAvailableHours * 100) : 0,
+                        notAvailablePercentage: totalContractedHours > 0 ? Math.round((day.notAvailableHours || 0) / totalContractedHours * 100) : 0
                     },
                     technicians: day.technicians || []
                 };

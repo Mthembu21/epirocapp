@@ -3,7 +3,7 @@ import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil } from 'lucide-react';
+import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -45,6 +45,7 @@ export default function Dashboard() {
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
+    const [operationalMetrics, setOperationalMetrics] = useState(null);
     const queryClient = useQueryClient();
 
     // Clear selected technician when job modal closes
@@ -82,6 +83,59 @@ export default function Dashboard() {
         };
         validateSession();
     }, []);
+
+    // Fetch operational metrics for the selected month
+    React.useEffect(() => {
+        const fetchOperationalMetrics = async () => {
+            if (!isAuthenticated || !selectedMonth) return;
+            
+            try {
+                // Get batch metrics for all technicians in the selected month
+                const response = await fetch(`/api/metrics/utilization/batch?dateRange=${selectedMonth}`);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    const batchData = result.data || [];
+                    
+                    // Calculate aggregate metrics for all technicians
+                    const aggregateMetrics = batchData.reduce((acc, tech) => {
+                        acc.productiveHours += tech.productiveHours || 0;
+                        acc.nonProductiveHours += tech.nonProductiveHours || 0;
+                        acc.idleHours += tech.idleHours || 0;
+                        acc.notAvailableHours += tech.notAvailableHours || 0;
+                        acc.totalContractedHours += tech.totalContractedHours || 0;
+                        return acc;
+                    }, {
+                        productiveHours: 0,
+                        nonProductiveHours: 0,
+                        idleHours: 0,
+                        notAvailableHours: 0,
+                        totalContractedHours: 0
+                    });
+                    
+                    // Calculate final percentages
+                    const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
+                    const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
+                    const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
+                    const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
+                    const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
+                    
+                    setOperationalMetrics({
+                        utilization,
+                        productivity,
+                        idlePercentage,
+                        ...aggregateMetrics
+                    });
+                } else {
+                    console.error('Failed to fetch operational metrics');
+                }
+            } catch (error) {
+                console.error('Error fetching operational metrics:', error);
+            }
+        };
+        
+        fetchOperationalMetrics();
+    }, [isAuthenticated, selectedMonth]);
 
     const supervisorKey = currentUser?.supervisor_key || 'component';
     const supervisorRole = currentUser?.role || 'supervisor';
@@ -694,18 +748,25 @@ export default function Dashboard() {
                         color="yellow"
                     />
                     <StatsCard
-                        title="Productivity"
-                        value={`${productivity.toFixed(0)}%`}
-                        subtitle="Productive / Total"
+                        title="Utilization"
+                        value={`${operationalMetrics?.utilization?.toFixed(0) || 0}%`}
+                        subtitle="Productive / Available"
                         icon={TrendingUp}
+                        color="blue"
+                    />
+                    <StatsCard
+                        title="Productivity"
+                        value={`${operationalMetrics?.productivity?.toFixed(0) || 0}%`}
+                        subtitle="Operational Efficiency"
+                        icon={Award}
                         color="green"
                     />
                     <StatsCard
-                        title="Utilization"
-                        value={`${labourUtilization.toFixed(0)}%`}
-                        subtitle="This month (Target 85%)"
-                        icon={TrendingUp}
-                        color="yellow"
+                        title="Idle %"
+                        value={`${operationalMetrics?.idlePercentage?.toFixed(0) || 0}%`}
+                        subtitle="Capacity Loss"
+                        icon={AlertTriangle}
+                        color="red"
                     />
                 </div>
 
