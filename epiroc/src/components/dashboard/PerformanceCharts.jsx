@@ -605,4 +605,4 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
             </div>
         </div>
     );
-}
+}``
