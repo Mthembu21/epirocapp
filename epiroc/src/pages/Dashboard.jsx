@@ -95,7 +95,10 @@ export default function Dashboard() {
                 
                 if (response.ok) {
                     const result = await response.json();
+                    console.log('API Response Status:', response.status);
+                    console.log('API Response Data:', result);
                     const batchData = result.data || [];
+                    console.log('Batch Data Length:', batchData.length);
                     
                     // Calculate aggregate metrics for all technicians
                     const aggregateMetrics = batchData.reduce((acc, tech) => {
@@ -127,10 +130,12 @@ export default function Dashboard() {
                         ...aggregateMetrics
                     });
                 } else {
-                    console.error('Failed to fetch operational metrics');
+                    console.error('Failed to fetch operational metrics - Status:', response.status);
+                    console.error('Response Text:', await response.text());
                 }
             } catch (error) {
                 console.error('Error fetching operational metrics:', error);
+                console.error('Error details:', error.message);
             }
         };
         
