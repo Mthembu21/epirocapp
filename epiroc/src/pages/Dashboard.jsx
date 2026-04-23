@@ -731,6 +731,18 @@ export default function Dashboard() {
                     </div>
                 )}
 
+                {/* PerformanceCharts moved outside tabs to always render for KPI cards */}
+                <PerformanceCharts 
+                    technicians={technicians}
+                    jobs={jobs}
+                    timeEntries={timeLogs || []}
+                    onOperationalMetricsUpdate={(metrics) => {
+                        // Update operational metrics from PerformanceCharts
+                        console.log('Dashboard: Received operational metrics from PerformanceCharts:', metrics);
+                        setOperationalMetrics(metrics);
+                    }}
+                />
+
                 <Tabs defaultValue="jobs" className="space-y-6">
                     <TabsList className="bg-slate-700/50 p-1 rounded-xl border border-slate-600">
                         <TabsTrigger 
@@ -860,16 +872,6 @@ export default function Dashboard() {
 
                     <TabsContent value="performance" className="mt-6">
                         <div className="space-y-6">
-                            <PerformanceCharts 
-                                technicians={technicians}
-                                jobs={jobs}
-                                timeEntries={timeLogs || []}
-                                onOperationalMetricsUpdate={(metrics) => {
-                                    // Update operational metrics from PerformanceCharts
-                                    console.log('Dashboard: Received operational metrics from PerformanceCharts:', metrics);
-                                    setOperationalMetrics(metrics);
-                                }}
-                            />
                             <TechnicianPerformance 
                                 technicians={technicians}
                                 jobs={jobs}
