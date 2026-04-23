@@ -300,6 +300,35 @@ export default function Dashboard() {
         }
     });
 
+    const reopenJobMutation = useMutation({
+        mutationFn: async (jobNumber) => {
+            const response = await fetch(`/api/jobs/by-job/${jobNumber}/reopen`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    technician_id: currentUser?.id,
+                    reason: 'Job mistakenly marked as completed - has remaining hours'
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error?.error || 'Failed to reopen job');
+            }
+            
+            return response.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            alert('Job reopened successfully! You can now add more hours.');
+        },
+        onError: (e) => {
+            alert(e?.message || 'Could not reopen job');
+        }
+    });
+
     const openJobDetails = async (job) => {
         try {
             const jobNumber = job?.job_number;
@@ -759,12 +788,13 @@ export default function Dashboard() {
                                                 <TableHead>Technician</TableHead>
                                                 <TableHead>Stage</TableHead>
                                                 <TableHead>Completion Time</TableHead>
+                                                <TableHead>Actions</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {completedStageRows.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={4} className="text-center text-slate-500 py-10">
+                                                    <TableCell colSpan={5} className="text-center text-slate-500 py-10">
                                                         No completed jobs found
                                                     </TableCell>
                                                 </TableRow>
@@ -780,6 +810,27 @@ export default function Dashboard() {
                                                             <TableCell>{techLabel}</TableCell>
                                                             <TableCell>{r.stage || '-'}</TableCell>
                                                             <TableCell>{timeLabel}</TableCell>
+                                                            <TableCell>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() => {
+                                                                        const job = jobs.find(j => j.job_number === r.job_number);
+                                                                        const remainingHours = Number(job?.remaining_hours ?? (job?.allocated_hours - job?.consumed_hours) ?? 0);
+                                                                        if (remainingHours > 0) {
+                                                                            if (window.confirm(`Recover job ${r.job_number}? This job has ${remainingHours.toFixed(1)} hours remaining and will be reopened for additional work.`)) {
+                                                                                reopenJobMutation.mutate(r.job_number);
+                                                                            }
+                                                                        } else {
+                                                                            alert('This job has no remaining hours to recover.');
+                                                                        }
+                                                                    }}
+                                                                    disabled={reopenJobMutation.isPending}
+                                                                    className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                                                >
+                                                                    Recover Job
+                                                                </Button>
+                                                            </TableCell>
                                                         </TableRow>
                                                     );
                                                 })
