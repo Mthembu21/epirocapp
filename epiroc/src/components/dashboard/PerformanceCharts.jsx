@@ -98,6 +98,8 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries, onOp
                     
                     // Calculate operational metrics from working data and share with Dashboard
                     if (onOperationalMetricsUpdate && dataArray.length > 0) {
+                        console.log('PerformanceCharts: Processing operational metrics from', dataArray.length, 'items');
+                        
                         const aggregateMetrics = dataArray.reduce((acc, day) => {
                             acc.productiveHours += day.productiveHours || 0;
                             acc.nonProductiveHours += day.nonProductiveHours || 0;
@@ -120,12 +122,17 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries, onOp
                         const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
                         const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
                         
-                        onOperationalMetricsUpdate({
+                        const metrics = {
                             utilization,
                             productivity,
                             idlePercentage,
                             ...aggregateMetrics
-                        });
+                        };
+                        
+                        console.log('PerformanceCharts: Calculated operational metrics:', metrics);
+                        console.log('PerformanceCharts: Calling onOperationalMetricsUpdate callback');
+                        
+                        onOperationalMetricsUpdate(metrics);
                     }
                 } else {
                     console.error('API error:', response.status);

@@ -46,6 +46,11 @@ export default function Dashboard() {
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [operationalMetrics, setOperationalMetrics] = useState(null);
+    
+    // Debug operationalMetrics changes
+    React.useEffect(() => {
+        console.log('Dashboard: operationalMetrics state changed:', operationalMetrics);
+    }, [operationalMetrics]);
     const queryClient = useQueryClient();
 
     // Clear selected technician when job modal closes
@@ -861,6 +866,7 @@ export default function Dashboard() {
                                 timeEntries={timeLogs || []}
                                 onOperationalMetricsUpdate={(metrics) => {
                                     // Update operational metrics from PerformanceCharts
+                                    console.log('Dashboard: Received operational metrics from PerformanceCharts:', metrics);
                                     setOperationalMetrics(metrics);
                                 }}
                             />
