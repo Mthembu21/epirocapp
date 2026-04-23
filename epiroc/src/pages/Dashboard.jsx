@@ -921,6 +921,10 @@ export default function Dashboard() {
                                 technicians={technicians}
                                 jobs={jobs}
                                 timeEntries={timeLogs || []}
+                                onOperationalMetricsUpdate={(metrics) => {
+                                    // Update operational metrics from PerformanceCharts
+                                    setOperationalMetrics(metrics);
+                                }}
                             />
                             <TechnicianPerformance 
                                 technicians={technicians}

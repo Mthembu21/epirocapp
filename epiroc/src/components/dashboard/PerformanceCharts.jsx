@@ -12,7 +12,7 @@ import { format, parseISO, startOfMonth, endOfMonth, subMonths, startOfWeek, end
 
 const COLORS = ['#facc15', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#f97316'];
 
-export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
+export default function PerformanceCharts({ technicians, jobs, timeEntries, onOperationalMetricsUpdate }) {
     const [selectedTechnician, setSelectedTechnician] = useState('all');
     const [timeRange, setTimeRange] = useState('current');
     const [monthlySummaries, setMonthlySummaries] = useState([]);
@@ -93,7 +93,40 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries }) {
                     const result = await response.json();
                     const data = result.data || [];
                     // Normalize to always be an array
-                    setMonthlySummaries(Array.isArray(data) ? data : []);
+                    const dataArray = Array.isArray(data) ? data : [];
+                    setMonthlySummaries(dataArray);
+                    
+                    // Calculate operational metrics from working data and share with Dashboard
+                    if (onOperationalMetricsUpdate && dataArray.length > 0) {
+                        const aggregateMetrics = dataArray.reduce((acc, day) => {
+                            acc.productiveHours += day.productiveHours || 0;
+                            acc.nonProductiveHours += day.nonProductiveHours || 0;
+                            acc.idleHours += day.idleHours || 0;
+                            acc.notAvailableHours += day.notAvailableHours || 0;
+                            acc.totalContractedHours += day.totalHours || 0;
+                            return acc;
+                        }, {
+                            productiveHours: 0,
+                            nonProductiveHours: 0,
+                            idleHours: 0,
+                            notAvailableHours: 0,
+                            totalContractedHours: 0
+                        });
+                        
+                        // Calculate final percentages using new operational formulas
+                        const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
+                        const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
+                        const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
+                        const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
+                        const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
+                        
+                        onOperationalMetricsUpdate({
+                            utilization,
+                            productivity,
+                            idlePercentage,
+                            ...aggregateMetrics
+                        });
+                    }
                 } else {
                     console.error('API error:', response.status);
                     setMonthlySummaries([]); // will trigger fallback
