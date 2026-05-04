@@ -15,7 +15,8 @@ import TechnicianList from '../components/technician/TechnicianList';
 import JobAllocationModal from '../components/jobs/JobAllocationModal';
 import JobList from '../components/jobs/JobList';
 import AtRiskJobs from '../components/jobs/AtRiskJobs';
-import TechnicianPerformance from '../components/dashboard/TechnicianPerformance';
+import TechnicianPerformance from '@/components/dashboard/TechnicianPerformance';
+import OperationalMetricsFetcher from '@/components/dashboard/OperationalMetricsFetcher';
 import PerformanceCharts from '../components/dashboard/PerformanceCharts';
 import HRExportButton from '../components/dashboard/HRExportButton';
 import MonthlyArchiveManager from '../components/dashboard/MonthlyArchiveManager';
@@ -752,17 +753,16 @@ export default function Dashboard() {
                     </Card>
                 )}
 
-                {/* PerformanceCharts moved outside tabs to always render for KPI cards */}
-                <PerformanceCharts 
-                    technicians={technicians}
-                    jobs={jobs}
-                    timeEntries={timeLogs || []}
-                    onOperationalMetricsUpdate={(metrics) => {
-                        // Update operational metrics from PerformanceCharts
-                        console.log('Dashboard: Received operational metrics from PerformanceCharts:', metrics);
-                        setOperationalMetrics(metrics);
-                    }}
-                />
+                {/* Hidden component to fetch operational metrics for KPI cards */}
+                <div style={{ display: 'none' }}>
+                    <OperationalMetricsFetcher 
+                        technicians={technicians}
+                        onOperationalMetricsUpdate={(metrics) => {
+                            console.log('Dashboard: Received operational metrics from OperationalMetricsFetcher:', metrics);
+                            setOperationalMetrics(metrics);
+                        }}
+                    />
+                </div>
 
                 <Tabs defaultValue="jobs" className="space-y-6">
                     <TabsList className="bg-slate-700/50 p-1 rounded-xl border border-slate-600">
@@ -807,16 +807,63 @@ export default function Dashboard() {
                     </TabsList>
 
                     <TabsContent value="jobs" className="mt-6">
-                        <JobList 
-                            jobs={activeJobs}
-                            technicians={technicians}
-                            onDelete={deleteJobMutation.mutate}
-                            onReassign={reassignJobMutation.mutate}
-                            onAddTechnician={addTechnicianMutation.mutate}
-                            onSelectJob={openJobDetails}
-                            isReassigning={reassignJobMutation.isPending}
-                            isAddingTechnician={addTechnicianMutation.isPending}
-                        />
+                        <div className="space-y-6">
+                            <JobList 
+                                jobs={activeJobs}
+                                technicians={technicians}
+                                onDelete={deleteJobMutation.mutate}
+                                onReassign={reassignJobMutation.mutate}
+                                onAddTechnician={addTechnicianMutation.mutate}
+                                onSelectJob={openJobDetails}
+                                isReassigning={reassignJobMutation.isPending}
+                                isAddingTechnician={addTechnicianMutation.isPending}
+                            />
+                            
+                            {/* Job Status Distribution Chart */}
+                            <Card className="border-0 shadow-lg bg-white/95">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                                        <Award className="w-5 h-5 text-yellow-500" />
+                                        Job Status Distribution
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {(() => {
+                                        const statusDistribution = [
+                                            { name: 'Active', value: jobs.filter(j => j.status === 'active').length, color: '#22c55e' },
+                                            { name: 'In Progress', value: jobs.filter(j => j.status === 'in_progress').length, color: '#facc15' },
+                                            { name: 'Completed', value: jobs.filter(j => j.status === 'completed').length, color: '#3b82f6' },
+                                            { name: 'On Hold', value: jobs.filter(j => j.status === 'on_hold').length, color: '#ef4444' }
+                                        ].filter(item => item.value > 0);
+                                        
+                                        return statusDistribution.length > 0 ? (
+                                            <div className="flex items-center">
+                                                <ResponsiveContainer width="100%" height={200}>
+                                                    <PieChart>
+                                                        <Pie
+                                                            data={statusDistribution}
+                                                            cx="50%"
+                                                            cy="50%"
+                                                            outerRadius={80}
+                                                            fill="#8884d8"
+                                                            dataKey="value"
+                                                            label={({ name, value }) => `${name}: ${value}`}
+                                                        >
+                                                            {statusDistribution.map((entry, index) => (
+                                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                                            ))}
+                                                        </Pie>
+                                                        <Tooltip />
+                                                    </PieChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        ) : (
+                                            <div className="h-[200px] flex items-center justify-center text-slate-400">No job data</div>
+                                        );
+                                    })()}
+                                </CardContent>
+                            </Card>
+                        </div>
                     </TabsContent>
 
                     <Dialog open={completedDialogOpen} onOpenChange={setCompletedDialogOpen}>
@@ -898,33 +945,153 @@ export default function Dashboard() {
                                 jobs={jobs}
                                 timeEntries={timeLogsForMonth}
                             />
+                            
+                            {/* Daily Productivity Chart */}
+                            <Card className="border-0 shadow-lg bg-white/95">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                                        <TrendingUp className="w-5 h-5 text-green-500" />
+                                        Daily Productivity (%)
+                                        <span className="text-sm text-slate-500 font-normal">(Overall Team)</span>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {(() => {
+                                        const dailyData = (monthlySummaries || []).map(day => ({
+                                            date: format(new Date(day.date), 'MMM dd'),
+                                            fullDate: day.date,
+                                            dailyProductivePercentage: day.totalHours > 0 ? (day.productiveHours / day.totalHours) * 100 : 0
+                                        }));
+                                        
+                                        return dailyData.length > 0 ? (
+                                            <ResponsiveContainer width="100%" height={250}>
+                                                <LineChart data={dailyData}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                                    <XAxis dataKey="date" />
+                                                    <YAxis domain={[0, 100]} />
+                                                    <Tooltip labelFormatter={(l, p) => p?.[0]?.payload?.fullDate || l} />
+                                                    <Line type="monotone" dataKey="dailyProductivePercentage" stroke="#facc15" strokeWidth={3} dot={{ fill: '#facc15' }} />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="h-[250px] flex items-center justify-center text-slate-400">No productivity data</div>
+                                        );
+                                    })()}
+                                </CardContent>
+                            </Card>
+
+                            {/* Daily Utilization Chart */}
+                            <Card className="border-0 shadow-lg bg-white/95">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                                        <TrendingUp className="w-5 h-5 text-blue-500" />
+                                        Daily Utilization (%)
+                                        <span className="text-sm text-slate-500 font-normal">(Overall Team)</span>
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {(() => {
+                                        const dailyData = (monthlySummaries || []).map(day => ({
+                                            date: format(new Date(day.date), 'MMM dd'),
+                                            fullDate: day.date,
+                                            dailyUtilizationPercentage: day.totalHours > 0 ? ((day.totalHours - day.notAvailableHours) > 0 ? (day.productiveHours / (day.totalHours - day.notAvailableHours)) * 100 : 0) : 0
+                                        }));
+                                        
+                                        return dailyData.length > 0 ? (
+                                            <ResponsiveContainer width="100%" height={250}>
+                                                <LineChart data={dailyData}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                                    <XAxis dataKey="date" />
+                                                    <YAxis domain={[0, 100]} />
+                                                    <Tooltip labelFormatter={(l, p) => p?.[0]?.payload?.fullDate || l} />
+                                                    <Line type="monotone" dataKey="dailyUtilizationPercentage" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6' }} />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="h-[250px] flex items-center justify-center text-slate-400">No utilization data</div>
+                                        );
+                                    })()}
+                                </CardContent>
+                            </Card>
                         </div>
                     </TabsContent>
 
                     <TabsContent value="technicians" className="mt-6">
-                        <div className="flex flex-wrap items-center gap-3 mb-6">
-                            <Button 
-                                onClick={() => setTechModalOpen(true)}
-                                className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold h-10 px-4"
-                            >
-                                <Users className="w-4 h-4 mr-2" />
-                                Add My Technician
-                            </Button>
-                            <Button 
-                                onClick={() => setGlobalTechSelectorOpen(true)}
-                                variant="outline"
-                                className="border-blue-300 text-blue-700 hover:bg-blue-50 h-10 px-4"
-                            >
-                                <Users className="w-4 h-4 mr-2" />
-                                Search All Technicians
-                            </Button>
+                        <div className="space-y-6">
+                            <div className="flex flex-wrap items-center gap-3 mb-6">
+                                <Button 
+                                    onClick={() => setTechModalOpen(true)}
+                                    className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold h-10 px-4"
+                                >
+                                    <Users className="w-4 h-4 mr-2" />
+                                    Add My Technician
+                                </Button>
+                                <Button 
+                                    onClick={() => setGlobalTechSelectorOpen(true)}
+                                    variant="outline"
+                                    className="border-blue-300 text-blue-700 hover:bg-blue-50 h-10 px-4"
+                                >
+                                    <Users className="w-4 h-4 mr-2" />
+                                    Search All Technicians
+                                </Button>
+                            </div>
+                            <TechnicianList 
+                                technicians={technicians}
+                                onDelete={deleteTechnicianMutation.mutate}
+                                onUpdate={updateTechnicianMutation.mutate}
+                                isUpdating={updateTechnicianMutation.isPending}
+                            />
+                            
+                            {/* Technician Efficiency Chart */}
+                            <Card className="border-0 shadow-lg bg-white/95">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
+                                        <BarChart3 className="w-5 h-5 text-yellow-500" />
+                                        Technician Efficiency (%)
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {(() => {
+                                        const technicianEfficiency = technicians.map(tech => {
+                                            const techJobs = jobs.filter(j => j.technician_id === tech.technician_id && j.status === 'completed');
+                                            const techEntries = timeLogs.filter(e => e.technician_id === tech.technician_id);
+                                            const completedJobs = techJobs;
+                                            
+                                            const totalAllocated = completedJobs.reduce((sum, j) => sum + (j.allocated_hours || 0), 0);
+                                            const totalUtilized = techEntries
+                                                .filter(e => !e.is_idle)
+                                                .filter(e => completedJobs.some(j => String(j.job_number) === String(e.job_id)))
+                                                .reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
+
+                                            const efficiency = totalUtilized > 0 
+                                                ? Math.max(0, Math.min(100, (totalAllocated / totalUtilized) * 100)) 
+                                                : 0;
+
+                                            return {
+                                                name: tech.name?.split(' ')[0] || 'Unknown',
+                                                fullName: tech.name,
+                                                efficiency,
+                                                completedJobs: completedJobs.length
+                                            };
+                                        }).filter(tech => tech.completedJobs > 0);
+                                        
+                                        return technicianEfficiency.length > 0 ? (
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <BarChart data={technicianEfficiency} layout="vertical">
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                                    <XAxis type="number" domain={[0, 100]} />
+                                                    <YAxis dataKey="name" type="category" width={80} />
+                                                    <Tooltip formatter={(value) => [`${value.toFixed(1)}%`, 'Efficiency']} />
+                                                    <Bar dataKey="efficiency" fill="#facc15" radius={[0, 4, 4, 0]} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="h-[300px] flex items-center justify-center text-slate-400">No efficiency data</div>
+                                        );
+                                    })()}
+                                </CardContent>
+                            </Card>
                         </div>
-                        <TechnicianList 
-                            technicians={technicians}
-                            onDelete={deleteTechnicianMutation.mutate}
-                            onUpdate={updateTechnicianMutation.mutate}
-                            isUpdating={updateTechnicianMutation.isPending}
-                        />
                     </TabsContent>
 
                     <TabsContent value="timeLogs" className="mt-6">
