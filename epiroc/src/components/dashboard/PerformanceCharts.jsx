@@ -91,9 +91,13 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries, onOp
 
                 if (response.ok) {
                     const result = await response.json();
+                    console.log('PerformanceCharts: Raw API response:', result);
                     const data = result.data || [];
+                    console.log('PerformanceCharts: Data from result.data:', data);
                     // Normalize to always be an array
                     const dataArray = Array.isArray(data) ? data : [];
+                    console.log('PerformanceCharts: Normalized data array length:', dataArray.length);
+                    console.log('PerformanceCharts: Sample data item:', dataArray[0]);
                     setMonthlySummaries(dataArray);
                     
                     // Calculate operational metrics from working data and share with Dashboard
@@ -135,7 +139,9 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries, onOp
                         onOperationalMetricsUpdate(metrics);
                     }
                 } else {
-                    console.error('API error:', response.status);
+                    console.error('PerformanceCharts: API error:', response.status);
+                    console.error('PerformanceCharts: API response text:', await response.text());
+                    console.error('PerformanceCharts: Failed API call URL:', `/api/metrics/utilization/daily?techId=${selectedTechnician}&dateRange=${dateRange}`);
                     setMonthlySummaries([]); // will trigger fallback
                 }
             } catch (error) {
