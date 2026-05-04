@@ -265,6 +265,16 @@ class APIClient {
                 const qs = m ? `?month=${encodeURIComponent(m)}` : '';
                 return this.request(`/overview/workshop${qs}`);
             }
+        },
+
+        Utilization: {
+            daily: (techId, dateRange) => {
+                const params = new URLSearchParams();
+                if (techId) params.set('techId', techId);
+                if (dateRange) params.set('dateRange', dateRange);
+                const qs = params.toString();
+                return this.request(`/metrics/utilization/daily${qs ? `?${qs}` : ''}`);
+            }
         }
     };
 }
