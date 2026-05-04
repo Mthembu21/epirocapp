@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import { BarChart3, TrendingUp, Award, Users } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, subWeeks, subDays } from 'date-fns';
+import { base44 } from '@/api/apiClient';
 
 const COLORS = ['#facc15', '#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#f97316'];
 
@@ -85,68 +86,60 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries, onOp
         const fetchOperationalMetrics = async () => {
             try {
                 const dateRange = format(start, 'yyyy-MM');
-                const response = await fetch(
-                    `/api/metrics/utilization/daily?techId=${selectedTechnician}&dateRange=${dateRange}`
-                );
-
-                if (response.ok) {
-                    const result = await response.json();
-                    console.log('PerformanceCharts: Raw API response:', result);
-                    const data = result.data || [];
-                    console.log('PerformanceCharts: Data from result.data:', data);
-                    // Normalize to always be an array
-                    const dataArray = Array.isArray(data) ? data : [];
-                    console.log('PerformanceCharts: Normalized data array length:', dataArray.length);
-                    console.log('PerformanceCharts: Sample data item:', dataArray[0]);
-                    setMonthlySummaries(dataArray);
+                console.log('PerformanceCharts: Fetching utilization data for dateRange:', dateRange, 'techId:', selectedTechnician);
+                
+                // Use the same API client as Dashboard - call the utilization endpoint directly
+                const data = await base44.entities.Utilization.daily(selectedTechnician, dateRange);
+                console.log('PerformanceCharts: Raw API response:', data);
+                
+                // Normalize to always be an array
+                const dataArray = Array.isArray(data) ? data : [];
+                console.log('PerformanceCharts: Normalized data array length:', dataArray.length);
+                console.log('PerformanceCharts: Sample data item:', dataArray[0]);
+                setMonthlySummaries(dataArray);
+                
+                // Calculate operational metrics from working data and share with Dashboard
+                if (onOperationalMetricsUpdate && dataArray.length > 0) {
+                    console.log('PerformanceCharts: Processing operational metrics from', dataArray.length, 'items');
                     
-                    // Calculate operational metrics from working data and share with Dashboard
-                    if (onOperationalMetricsUpdate && dataArray.length > 0) {
-                        console.log('PerformanceCharts: Processing operational metrics from', dataArray.length, 'items');
-                        
-                        const aggregateMetrics = dataArray.reduce((acc, day) => {
-                            acc.productiveHours += day.productiveHours || 0;
-                            acc.nonProductiveHours += day.nonProductiveHours || 0;
-                            acc.idleHours += day.idleHours || 0;
-                            acc.notAvailableHours += day.notAvailableHours || 0;
-                            acc.totalContractedHours += day.totalHours || 0;
-                            return acc;
-                        }, {
-                            productiveHours: 0,
-                            nonProductiveHours: 0,
-                            idleHours: 0,
-                            notAvailableHours: 0,
-                            totalContractedHours: 0
-                        });
-                        
-                        // Calculate final percentages using new operational formulas
-                        const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
-                        const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
-                        const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
-                        const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
-                        const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
-                        
-                        const metrics = {
-                            utilization,
-                            productivity,
-                            idlePercentage,
-                            ...aggregateMetrics
-                        };
-                        
-                        console.log('PerformanceCharts: Calculated operational metrics:', metrics);
-                        console.log('PerformanceCharts: Calling onOperationalMetricsUpdate callback');
-                        
-                        onOperationalMetricsUpdate(metrics);
-                    }
-                } else {
-                    console.error('PerformanceCharts: API error:', response.status);
-                    console.error('PerformanceCharts: API response text:', await response.text());
-                    console.error('PerformanceCharts: Failed API call URL:', `/api/metrics/utilization/daily?techId=${selectedTechnician}&dateRange=${dateRange}`);
-                    setMonthlySummaries([]); // will trigger fallback
+                    const aggregateMetrics = dataArray.reduce((acc, day) => {
+                        acc.productiveHours += day.productiveHours || 0;
+                        acc.nonProductiveHours += day.nonProductiveHours || 0;
+                        acc.idleHours += day.idleHours || 0;
+                        acc.notAvailableHours += day.notAvailableHours || 0;
+                        acc.totalContractedHours += day.totalHours || 0;
+                        return acc;
+                    }, {
+                        productiveHours: 0,
+                        nonProductiveHours: 0,
+                        idleHours: 0,
+                        notAvailableHours: 0,
+                        totalContractedHours: 0
+                    });
+                    
+                    // Calculate final percentages using new operational formulas
+                    const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
+                    const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
+                    const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
+                    const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
+                    const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
+                    
+                    const metrics = {
+                        utilization,
+                        productivity,
+                        idlePercentage,
+                        ...aggregateMetrics
+                    };
+                    
+                    console.log('PerformanceCharts: Calculated operational metrics:', metrics);
+                    console.log('PerformanceCharts: Calling onOperationalMetricsUpdate callback');
+                    
+                    onOperationalMetricsUpdate(metrics);
                 }
             } catch (error) {
-                console.error('Failed to fetch daily productivity:', error);
-                setMonthlySummaries([]);
+                console.error('PerformanceCharts: Failed to fetch daily productivity:', error);
+                console.error('PerformanceCharts: Error details:', error.message);
+                setMonthlySummaries([]); // will trigger fallback
             }
         };
 
