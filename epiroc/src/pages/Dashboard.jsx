@@ -46,6 +46,7 @@ export default function Dashboard() {
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [operationalMetrics, setOperationalMetrics] = useState(null);
+    const [showAtRiskDetails, setShowAtRiskDetails] = useState(false);
     
     // Debug operationalMetrics changes
     React.useEffect(() => {
@@ -726,9 +727,29 @@ export default function Dashboard() {
                 </div>
 
                 {atRiskJobs.length > 0 && (
-                    <div className="mb-8">
-                        <AtRiskJobs jobs={jobs} jobReports={jobReports} onSelectJob={setSelectedJobDetails} />
-                    </div>
+                    <Card className="mb-6 border-orange-200 bg-orange-50/50">
+                        <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-lg text-orange-800 flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5" />
+                                    Jobs at Risk ({atRiskJobs.length})
+                                </CardTitle>
+                                <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={() => setShowAtRiskDetails(!showAtRiskDetails)}
+                                    className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                                >
+                                    {showAtRiskDetails ? 'Hide' : 'Show'} Details
+                                </Button>
+                            </div>
+                        </CardHeader>
+                        {showAtRiskDetails && (
+                            <CardContent className="pt-0">
+                                <AtRiskJobs jobs={jobs} jobReports={jobReports} onSelectJob={setSelectedJobDetails} />
+                            </CardContent>
+                        )}
+                    </Card>
                 )}
 
                 {/* PerformanceCharts moved outside tabs to always render for KPI cards */}
