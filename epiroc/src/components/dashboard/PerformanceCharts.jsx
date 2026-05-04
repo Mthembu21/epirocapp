@@ -89,17 +89,22 @@ export default function PerformanceCharts({ technicians, jobs, timeEntries, onOp
                 console.log('PerformanceCharts: Fetching utilization data for dateRange:', dateRange, 'techId:', selectedTechnician);
                 
                 // Use the same API client as Dashboard - call the utilization endpoint directly
+                console.log('PerformanceCharts: About to call base44.entities.Utilization.daily with:', selectedTechnician, dateRange);
                 const data = await base44.entities.Utilization.daily(selectedTechnician, dateRange);
                 console.log('PerformanceCharts: Raw API response:', data);
+                console.log('PerformanceCharts: Data type:', typeof data);
+                console.log('PerformanceCharts: Is array?', Array.isArray(data));
                 
                 // Normalize to always be an array
                 const dataArray = Array.isArray(data) ? data : [];
                 console.log('PerformanceCharts: Normalized data array length:', dataArray.length);
                 console.log('PerformanceCharts: Sample data item:', dataArray[0]);
+                console.log('PerformanceCharts: onOperationalMetricsUpdate exists?', !!onOperationalMetricsUpdate);
                 setMonthlySummaries(dataArray);
                 
                 // Calculate operational metrics from working data and share with Dashboard
                 if (onOperationalMetricsUpdate && dataArray.length > 0) {
+                    console.log('PerformanceCharts: Processing operational metrics from', dataArray.length, 'items');
                     console.log('PerformanceCharts: Processing operational metrics from', dataArray.length, 'items');
                     
                     const aggregateMetrics = dataArray.reduce((acc, day) => {
