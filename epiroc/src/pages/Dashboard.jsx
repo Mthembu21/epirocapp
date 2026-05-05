@@ -962,7 +962,9 @@ export default function Dashboard() {
                                 </CardHeader>
                                 <CardContent>
                                     {(() => {
-                                        const dailyData = (monthlySummaries || []).map(day => ({
+                                        // Safety check to prevent undefined error
+                                        const summaries = monthlySummaries || [];
+                                        const dailyData = summaries.map(day => ({
                                             date: format(new Date(day.date), 'MMM dd'),
                                             fullDate: day.date,
                                             dailyProductivePercentage: day.totalHours > 0 ? (day.productiveHours / day.totalHours) * 100 : 0
@@ -996,7 +998,9 @@ export default function Dashboard() {
                                 </CardHeader>
                                 <CardContent>
                                     {(() => {
-                                        const dailyData = (monthlySummaries || []).map(day => ({
+                                        // Safety check to prevent undefined error
+                                        const summaries = monthlySummaries || [];
+                                        const dailyData = summaries.map(day => ({
                                             date: format(new Date(day.date), 'MMM dd'),
                                             fullDate: day.date,
                                             dailyUtilizationPercentage: day.totalHours > 0 ? ((day.totalHours - day.notAvailableHours) > 0 ? (day.productiveHours / (day.totalHours - day.notAvailableHours)) * 100 : 0) : 0
