@@ -63,21 +63,27 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                     const isFriday = dayOfWeek === 5;
                     const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // Mon-Fri
                     
+                    // Enhanced debugging for user's test case
+                    console.log(`Processing ${day.date}: Day ${dayOfWeek}, Friday: ${isFriday}, Weekday: ${isWeekday}`);
+                    console.log(`Hours - Productive: ${day.productiveHours}, Non-productive: ${day.nonProductiveHours}, Idle: ${day.idleHours}, Total: ${day.totalHours}`);
+                    
                     // Only apply half-hour rule on weekdays
                     if (isWeekday && day.idleHours === 0) {
                         // Check if technician booked full day on job
                         const fullDayHours = isFriday ? 7 : 7.5; // 7 hours Friday, 7.5 hours Mon-Thu
                         const totalWorkHours = day.productiveHours + day.nonProductiveHours;
                         
+                        console.log(`Half-hour rule check: TotalWorkHours=${totalWorkHours}, FullDayHours=${fullDayHours}, IdleHours=${day.idleHours}`);
+                        
                         // Apply half-hour deduction only if:
                         // 1. No idle hours
                         // 2. Total work hours equal or exceed full day hours
                         if (totalWorkHours >= fullDayHours) {
-                            console.log(`Applying half-hour deduction for ${day.date}: ${totalWorkHours}h >= ${fullDayHours}h, no idle hours`);
+                            console.log(`✅ APPLYING half-hour deduction for ${day.date}: ${totalWorkHours}h >= ${fullDayHours}h, no idle hours`);
                             // Deduct 0.5 hours from total available hours for utilization calculation
                             day.halfHourDeduction = 0.5;
                         } else {
-                            console.log(`No half-hour deduction for ${day.date}: ${totalWorkHours}h < ${fullDayHours}h or has idle hours`);
+                            console.log(`❌ NO half-hour deduction for ${day.date}: ${totalWorkHours}h < ${fullDayHours}h or has idle hours`);
                             day.halfHourDeduction = 0;
                         }
                     } else {
