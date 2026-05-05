@@ -11,9 +11,50 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                 const dateRange = format(new Date(), 'yyyy-MM');
                 console.log('OperationalMetricsFetcher: Fetching data for dateRange:', dateRange, 'techId: all');
                 
-                // Use the same API client as Dashboard
-                const data = await base44.entities.Utilization.daily('all', dateRange);
-                console.log('OperationalMetricsFetcher: Raw API response:', data);
+                // Use existing working API calls instead of failing utilization endpoint
+                // Get daily time entries which we know work
+                const timeEntries = await base44.entities.DailyTimeEntry.list('-log_date', 500);
+                console.log('OperationalMetricsFetcher: Using timeEntries data instead:', timeEntries.length, 'items');
+                
+                // Filter entries for current month and calculate metrics
+                const currentMonthEntries = timeEntries.filter(entry => {
+                    const entryDate = new Date(entry.log_date);
+                    const entryMonth = format(entryDate, 'yyyy-MM');
+                    return entryMonth === dateRange;
+                });
+                
+                console.log('OperationalMetricsFetcher: Current month entries:', currentMonthEntries.length);
+                
+                // Convert time entries to utilization format
+                const aggregatedData = currentMonthEntries.reduce((acc, entry) => {
+                    const dateKey = format(new Date(entry.log_date), 'yyyy-MM-dd');
+                    if (!acc[dateKey]) {
+                        acc[dateKey] = {
+                            date: dateKey,
+                            productiveHours: 0,
+                            nonProductiveHours: 0,
+                            idleHours: 0,
+                            notAvailableHours: 0,
+                            totalHours: 0
+                        };
+                    }
+                    
+                    const day = acc[dateKey];
+                    day.totalHours += Number(entry.hours_logged || 0);
+                    
+                    if (entry.is_idle) {
+                        day.idleHours += Number(entry.hours_logged || 0);
+                    } else if (entry.is_productive === false) {
+                        day.nonProductiveHours += Number(entry.hours_logged || 0);
+                    } else {
+                        day.productiveHours += Number(entry.hours_logged || 0);
+                    }
+                    
+                    return acc;
+                }, {});
+                
+                const data = Object.values(aggregatedData);
+                console.log('OperationalMetricsFetcher: Processed utilization data:', data);
                 console.log('OperationalMetricsFetcher: Data type:', typeof data);
                 console.log('OperationalMetricsFetcher: Is array?', Array.isArray(data));
                 
