@@ -45,8 +45,10 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                     if (entry.is_idle) {
                         day.idleHours += Number(entry.hours_logged || 0);
                     } else if (entry.is_productive === false) {
+                        // Training and other non-productive work count as utilized but not productive
                         day.nonProductiveHours += Number(entry.hours_logged || 0);
                     } else {
+                        // Only actual productive work counts here
                         day.productiveHours += Number(entry.hours_logged || 0);
                     }
                     
@@ -91,9 +93,11 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                         totalContractedHours: 0
                     });
                     
-                    // Calculate final percentages using new operational formulas
+                    // Calculate final percentages with training counted as utilized but not productive
                     const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
-                    const utilization = adjustedAvailableHours > 0 ? (aggregateMetrics.productiveHours / adjustedAvailableHours) * 100 : 0;
+                    // Utilization includes both productive and non-productive work (including training)
+                    const utilizedHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
+                    const utilization = adjustedAvailableHours > 0 ? (utilizedHours / adjustedAvailableHours) * 100 : 0;
                     const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
                     const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
                     const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
