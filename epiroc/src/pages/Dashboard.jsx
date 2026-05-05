@@ -3,7 +3,7 @@ import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, BarChart3 } from 'lucide-react';
+import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, BarChart } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -1055,7 +1055,7 @@ export default function Dashboard() {
                             <Card className="border-0 shadow-lg bg-white/95">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
-                                        <BarChart3 className="w-5 h-5 text-yellow-500" />
+                                        <BarChart className="w-5 h-5 text-yellow-500" />
                                         Technician Efficiency (%)
                                     </CardTitle>
                                 </CardHeader>
