@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { base44 } from '@/api/apiClient';
 
-export default function OperationalMetricsFetcher({ technicians, onOperationalMetricsUpdate }) {
+export default function OperationalMetricsFetcher({ technicians, onOperationalMetricsUpdate, onMonthlySummariesUpdate }) {
     const [monthlySummaries, setMonthlySummaries] = useState([]);
 
     useEffect(() => {
@@ -22,7 +22,14 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                 console.log('OperationalMetricsFetcher: Normalized data array length:', dataArray.length);
                 console.log('OperationalMetricsFetcher: Sample data item:', dataArray[0]);
                 console.log('OperationalMetricsFetcher: onOperationalMetricsUpdate exists?', !!onOperationalMetricsUpdate);
+                console.log('OperationalMetricsFetcher: onMonthlySummariesUpdate exists?', !!onMonthlySummariesUpdate);
                 setMonthlySummaries(dataArray);
+                
+                // Update Dashboard with monthly summaries for charts
+                if (onMonthlySummariesUpdate) {
+                    console.log('OperationalMetricsFetcher: Calling onMonthlySummariesUpdate callback with', dataArray.length, 'items');
+                    onMonthlySummariesUpdate(dataArray);
+                }
                 
                 // Calculate operational metrics and share with Dashboard
                 if (onOperationalMetricsUpdate && dataArray.length > 0) {

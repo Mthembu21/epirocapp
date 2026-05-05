@@ -48,6 +48,7 @@ export default function Dashboard() {
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [operationalMetrics, setOperationalMetrics] = useState(null);
     const [showAtRiskDetails, setShowAtRiskDetails] = useState(false);
+    const [monthlySummaries, setMonthlySummaries] = useState([]);
     
     // Debug operationalMetrics changes
     React.useEffect(() => {
@@ -760,6 +761,10 @@ export default function Dashboard() {
                         onOperationalMetricsUpdate={(metrics) => {
                             console.log('Dashboard: Received operational metrics from OperationalMetricsFetcher:', metrics);
                             setOperationalMetrics(metrics);
+                        }}
+                        onMonthlySummariesUpdate={(summaries) => {
+                            console.log('Dashboard: Received monthly summaries from OperationalMetricsFetcher:', summaries);
+                            setMonthlySummaries(summaries);
                         }}
                     />
                 </div>
