@@ -25,7 +25,7 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                 
                 console.log('OperationalMetricsFetcher: Current month entries:', currentMonthEntries.length);
                 
-                // Convert time entries to utilization format
+                // Convert time entries to utilization format with half-hour deduction rule
                 const aggregatedData = currentMonthEntries.reduce((acc, entry) => {
                     const dateKey = format(new Date(entry.log_date), 'yyyy-MM-dd');
                     if (!acc[dateKey]) {
@@ -35,12 +35,14 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                             nonProductiveHours: 0,
                             idleHours: 0,
                             notAvailableHours: 0,
-                            totalHours: 0
+                            totalHours: 0,
+                            entries: [] // Store entries for half-hour rule calculation
                         };
                     }
                     
                     const day = acc[dateKey];
                     day.totalHours += Number(entry.hours_logged || 0);
+                    day.entries.push(entry); // Store entry for later processing
                     
                     if (entry.is_idle) {
                         day.idleHours += Number(entry.hours_logged || 0);
@@ -55,7 +57,43 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                     return acc;
                 }, {});
                 
-                const data = Object.values(aggregatedData);
+                // Apply half-hour deduction rule to each day
+                const processedData = Object.values(aggregatedData).map(day => {
+                    const dayOfWeek = new Date(day.date).getDay(); // 0 = Sunday, 6 = Saturday
+                    const isFriday = dayOfWeek === 5;
+                    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // Mon-Fri
+                    
+                    // Only apply half-hour rule on weekdays
+                    if (isWeekday && day.idleHours === 0) {
+                        // Check if technician booked full day on job
+                        const fullDayHours = isFriday ? 7 : 7.5; // 7 hours Friday, 7.5 hours Mon-Thu
+                        const totalWorkHours = day.productiveHours + day.nonProductiveHours;
+                        
+                        // Apply half-hour deduction only if:
+                        // 1. No idle hours
+                        // 2. Total work hours equal or exceed full day hours
+                        if (totalWorkHours >= fullDayHours) {
+                            console.log(`Applying half-hour deduction for ${day.date}: ${totalWorkHours}h >= ${fullDayHours}h, no idle hours`);
+                            // Deduct 0.5 hours from total available hours for utilization calculation
+                            day.halfHourDeduction = 0.5;
+                        } else {
+                            console.log(`No half-hour deduction for ${day.date}: ${totalWorkHours}h < ${fullDayHours}h or has idle hours`);
+                            day.halfHourDeduction = 0;
+                        }
+                    } else {
+                        // No deduction on weekends or if has idle hours
+                        day.halfHourDeduction = 0;
+                        if (day.idleHours > 0) {
+                            console.log(`No half-hour deduction for ${day.date}: has ${day.idleHours}h idle hours`);
+                        } else if (!isWeekday) {
+                            console.log(`No half-hour deduction for ${day.date}: weekend`);
+                        }
+                    }
+                    
+                    return day;
+                });
+                
+                const data = processedData;
                 console.log('OperationalMetricsFetcher: Processed utilization data:', data);
                 console.log('OperationalMetricsFetcher: Data type:', typeof data);
                 console.log('OperationalMetricsFetcher: Is array?', Array.isArray(data));
@@ -93,8 +131,9 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
                         totalContractedHours: 0
                     });
                     
-                    // Calculate final percentages with training counted as utilized but not productive
-                    const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours;
+                    // Calculate final percentages with half-hour deduction rule
+                    const totalHalfHourDeductions = dataArray.reduce((sum, day) => sum + (day.halfHourDeduction || 0), 0);
+                    const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours - totalHalfHourDeductions;
                     // Utilization includes both productive and non-productive work (including training)
                     const utilizedHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
                     const utilization = adjustedAvailableHours > 0 ? (utilizedHours / adjustedAvailableHours) * 100 : 0;
