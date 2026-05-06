@@ -141,6 +141,31 @@ export default function TechnicianPortal() {
                 const allJobs = await base44.entities.Job.list();
                 console.log('📋 Total jobs in system for filtering:', allJobs?.length || 0);
                 
+                // Extract all technician IDs used in jobs for debugging
+                const allTechnicianIdsInJobs = new Set();
+                const technicianSamples = [];
+                
+                allJobs.forEach(job => {
+                    const assignments = job?.technicians || [];
+                    assignments.forEach(tech => {
+                        if (tech.technician_id) {
+                            allTechnicianIdsInJobs.add(String(tech.technician_id));
+                            if (technicianSamples.length < 10) {
+                                technicianSamples.push({
+                                    technician_id: tech.technician_id,
+                                    technician_name: tech.technician_name,
+                                    job_number: job.job_number
+                                });
+                            }
+                        }
+                    });
+                });
+                
+                console.log('🔍 All technician IDs found in jobs:', Array.from(allTechnicianIdsInJobs));
+                console.log('📝 Sample technician assignments:', technicianSamples);
+                console.log(`🎯 Looking for technician ID: "${techId}"`);
+                console.log(`🔍 Exact match check: Does "${techId}" exist in job IDs?`, Array.from(allTechnicianIdsInJobs).includes(String(techId)));
+                
                 const filteredJobs = allJobs.filter(job => {
                     const assignments = job?.technicians || [];
                     const isAssigned = assignments.some(tech => 
