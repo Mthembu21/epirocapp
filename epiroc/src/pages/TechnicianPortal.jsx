@@ -101,7 +101,15 @@ export default function TechnicianPortal() {
 
     // Get the correct technician ID (employee_id if available, fallback to id)
     const getTechnicianId = () => {
-        return user?.employee_id || user?.id;
+        const techId = user?.employee_id || user?.id;
+        console.log('🔍 User object:', { 
+            id: user?.id, 
+            employee_id: user?.employee_id, 
+            name: user?.name,
+            type: user?.type 
+        });
+        console.log('🔍 Using technician ID:', techId);
+        return techId;
     };
 
     const { data: myJobs = [] } = useQuery({
