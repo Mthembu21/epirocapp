@@ -70,9 +70,10 @@ import {
   X,
 } from "lucide-react";
 
-const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // Force deployment - API fix
+const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // DEPLOYMENT UPDATE v2 - Fix MongoDB ObjectId issue
 
 export default function TechnicianPortal() {
+  // Force deployment cache invalidation - API fix v2.1
   const queryClient = useQueryClient();
 
   /* ===================== STATE ===================== */
