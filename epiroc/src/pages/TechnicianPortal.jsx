@@ -155,6 +155,19 @@ export default function TechnicianPortal() {
     refetchInterval: 30000,
   });
 
+  // Also fetch cross-supervisor assignments
+  const { data: myCrossSupervisorJobs = [] } = useQuery({
+    queryKey: ["myCrossSupervisorJobs", user?.employee_id],
+    queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.employee_id, include_cross_supervisor: true }),
+    enabled: !!user?.employee_id,
+    refetchInterval: 30000,
+  });
+
+  // Combine both job lists
+  const allMyJobs = useMemo(() => {
+    return [...(myJobs || []), ...(myCrossSupervisorJobs || [])];
+  }, [myJobs, myCrossSupervisorJobs, user?.employee_id]);
+
   const { data: myEntries = [] } = useQuery({
     queryKey: ["myTimeEntries", user?.employee_id],
     enabled: !!user?.employee_id,
@@ -313,9 +326,222 @@ export default function TechnicianPortal() {
           </Card>
         </div>
 
-        {/* TABS (UNCHANGED) */}
-        {/* Log / Jobs / History tabs remain exactly like your old UI */}
-        {/* … */}
+        {/* TABS */}
+        <Tabs defaultValue="log" className="space-y-6">
+          <TabsList className="bg-slate-700/50 p-1 rounded-xl border border-slate-600">
+            <TabsTrigger value="log" className="text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800">
+              <Clock className="w-4 h-4 mr-2" />
+              Log Hours
+            </TabsTrigger>
+            <TabsTrigger value="jobs" className="text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800">
+              <Briefcase className="w-4 h-4 mr-2" />
+              My Jobs
+            </TabsTrigger>
+            <TabsTrigger value="history" className="text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800">
+              <Calendar className="w-4 h-4 mr-2" />
+              History
+            </TabsTrigger>
+          </TabsList>
+
+          {/* LOG HOURS TAB */}
+          <TabsContent value="log">
+            <Card className="border-0 shadow-lg bg-white/95 backdrop-blur">
+              <CardHeader className="pb-4 border-b border-slate-100">
+                <CardTitle className="flex items-center gap-2 text-slate-800">
+                  <Clock className="w-5 h-5 text-yellow-500" />
+                  Log Daily Hours
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-6">
+                {error && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                    {error}
+                  </div>
+                )}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Date</Label>
+                      <Input
+                        type="date"
+                        value={formData.date}
+                        onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                        className="border-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <Label>Job</Label>
+                      <Select
+                        value={formData.job_id}
+                        onValueChange={value => setFormData(prev => ({ ...prev, job_id: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select job" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allMyJobs.map(job => (
+                            <SelectItem key={job.id} value={job.job_number}>
+                              {job.job_number}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={IDLE_JOB_ID}>
+                            {IDLE_JOB_ID}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Hours</Label>
+                      <Input
+                        type="number"
+                        step="0.25"
+                        value={formData.hours_logged}
+                        onChange={e => setFormData(prev => ({ ...prev, hours_logged: e.target.value }))}
+                        className="border-slate-300"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={createEntryMutation.isPending}
+                    className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-800"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {createEntryMutation.isPending ? "Saving..." : "Submit Hours"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* MY JOBS TAB */}
+          <TabsContent value="jobs">
+            <Card className="border-0 shadow-lg bg-white/95 backdrop-blur">
+              <CardHeader className="pb-4 border-b border-slate-100">
+                <CardTitle className="flex items-center gap-2 text-slate-800">
+                  <Briefcase className="w-5 h-5 text-yellow-500" />
+                  My Jobs ({allMyJobs.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {allMyJobs.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500">
+                    <Briefcase className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No active jobs</p>
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {allMyJobs.map(job => (
+                      <div key={job.id} className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <p className="font-semibold text-slate-800">{job.job_number}</p>
+                            <p className="text-sm text-slate-600">{job.description}</p>
+                          </div>
+                          <Badge className={
+                            job.status === 'at_risk' ? 'bg-red-100 text-red-700' :
+                            job.status === 'over_allocated' ? 'bg-orange-100 text-orange-700' :
+                            'bg-blue-100 text-blue-700'
+                          }>
+                            {job.status?.replace(/_/g, ' ')}
+                          </Badge>
+                        </div>
+                        <div className="mb-2">
+                          <Progress value={job.progress_percentage || 0} className="h-2" />
+                          <div className="flex justify-between text-xs text-slate-500 mt-1">
+                            <span>{(job.progress_percentage || 0).toFixed(0)}% complete</span>
+                            <span>{(job.remaining_hours || 0).toFixed(1)}h remaining</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          <div className="bg-slate-50 rounded p-2 text-center">
+                            <p className="text-slate-500 text-xs">Allocated</p>
+                            <p className="font-medium">{job.allocated_hours}h</p>
+                          </div>
+                          <div className="bg-slate-50 rounded p-2 text-center">
+                            <p className="text-slate-500 text-xs">Consumed</p>
+                            <p className="font-medium text-blue-600">{(job.consumed_hours || 0).toFixed(1)}h</p>
+                          </div>
+                          <div className="bg-slate-50 rounded p-2 text-center">
+                            <p className="text-slate-500 text-xs">Remaining</p>
+                            <p className="font-medium text-green-600">{(job.remaining_hours || 0).toFixed(1)}h</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* HISTORY TAB */}
+          <TabsContent value="history">
+            <Card className="border-0 shadow-lg bg-white/95 backdrop-blur">
+              <CardHeader className="pb-4 border-b border-slate-100">
+                <CardTitle className="flex items-center gap-2 text-slate-800">
+                  <Calendar className="w-5 h-5 text-yellow-500" />
+                  Recent Entries
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {myEntriesForMonth.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500">
+                    <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No entries yet</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-100">
+                          <TableHead>Date</TableHead>
+                          <TableHead>Job</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead className="text-right">Hours</TableHead>
+                          <TableHead className="text-right">Type</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {myEntriesForMonth.map(entry => (
+                          <TableRow key={entry.id}>
+                            <TableCell>
+                              {entry.log_date ? format(parseISO(entry.log_date), 'dd MMM yyyy') : '-'}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{entry.job_id}</TableCell>
+                            <TableCell>
+                              {entry.is_idle ? (
+                                <Badge variant="secondary">{entry.category || 'IDLE'}</Badge>
+                              ) : (
+                                <span className="text-sm text-slate-700">
+                                  {(() => {
+                                    const job = (allMyJobs || []).find(j => String(j.job_number) === String(entry.job_id));
+                                    const st = (job?.subtasks || []).find(s => String(s?._id || s?.id) === String(entry.subtask_id));
+                                    return st?.category || st?.title || entry.subtask_title || '-';
+                                  })()}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              {(entry.hours_logged || 0).toFixed(1)}h
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {entry.is_idle ? (
+                                <Badge variant="outline">Idle</Badge>
+                              ) : (
+                                <Badge>Productive</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
