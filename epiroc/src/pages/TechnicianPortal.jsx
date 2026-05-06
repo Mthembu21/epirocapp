@@ -147,12 +147,13 @@ export default function TechnicianPortal() {
 
   /* ===================== DATA ===================== */
   const { data: myJobs = [] } = useQuery({
-    queryKey: ["myJobs", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["myJobs", user?.employee_id || user?.id],
+    enabled: !!(user?.employee_id || user?.id),
     queryFn: () => {
-      console.log('🔥 FINAL DEPLOYMENT v6.0 - Using user.id:', user?.id);
+      const technicianId = user?.employee_id || user?.id;
+      console.log('🔥 FINAL DEPLOYMENT v6.0 - Using technicianId:', technicianId);
       return base44.entities.Job.filter({
-        assigned_technician_id: user.id,
+        assigned_technician_id: technicianId,
       });
     },
     refetchInterval: 30000,
@@ -160,9 +161,9 @@ export default function TechnicianPortal() {
 
   // Also fetch cross-supervisor assignments
   const { data: myCrossSupervisorJobs = [] } = useQuery({
-    queryKey: ["myCrossSupervisorJobs", user?.id],
-    queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.id, include_cross_supervisor: true }),
-    enabled: !!user?.id,
+    queryKey: ["myCrossSupervisorJobs", user?.employee_id || user?.id],
+    queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user?.employee_id || user?.id, include_cross_supervisor: true }),
+    enabled: !!(user?.employee_id || user?.id),
     refetchInterval: 30000,
   });
 
@@ -172,11 +173,11 @@ export default function TechnicianPortal() {
   }, [myJobs, myCrossSupervisorJobs, user?.id]);
 
   const { data: myEntries = [] } = useQuery({
-    queryKey: ["myTimeEntries", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["myTimeEntries", user?.employee_id || user?.id],
+    enabled: !!(user?.employee_id || user?.id),
     queryFn: () =>
       base44.entities.DailyTimeEntry.filter({
-        technician_id: user.id,
+        technician_id: user?.employee_id || user?.id,
       }),
     refetchInterval: 30000,
   });
@@ -240,7 +241,7 @@ export default function TechnicianPortal() {
 
     createEntryMutation.mutate({
       timeLog: {
-        technician_id: user.id,
+        technician_id: user?.employee_id || user?.id,
         job_id: formData.job_id,
         subtask_id:
           formData.job_id === IDLE_JOB_ID
