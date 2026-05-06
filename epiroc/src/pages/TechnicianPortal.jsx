@@ -107,20 +107,34 @@ export default function TechnicianPortal() {
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', getTechnicianId()],
         queryFn: async () => {
+            const techId = getTechnicianId();
+            console.log('🔍 Technician ID:', techId);
+            
             try {
                 // Try technician-specific endpoint first
-                return await base44.entities.Job.filter({ assigned_technician_id: getTechnicianId() });
+                const result = await base44.entities.Job.filter({ assigned_technician_id: techId });
+                console.log('✅ Technician-specific endpoint success, jobs found:', result?.length || 0);
+                return result;
             } catch (error) {
+                console.log('❌ Technician endpoint failed:', error.message);
                 // Fallback: Get all jobs and filter client-side
                 const allJobs = await base44.entities.Job.list();
-                const techId = getTechnicianId();
-                return allJobs.filter(job => {
+                console.log('📋 Total jobs in system:', allJobs?.length || 0);
+                
+                const filteredJobs = allJobs.filter(job => {
                     // Check if technician is assigned to this job
                     const assignments = job?.technicians || [];
-                    return assignments.some(tech => 
+                    const isAssigned = assignments.some(tech => 
                         String(tech.technician_id) === String(techId)
                     );
+                    if (isAssigned) {
+                        console.log('✅ Found assigned job:', job.job_number);
+                    }
+                    return isAssigned;
                 });
+                
+                console.log('🎯 Filtered jobs for technician:', filteredJobs?.length || 0);
+                return filteredJobs;
             }
         },
         enabled: !!getTechnicianId(),
@@ -132,19 +146,33 @@ export default function TechnicianPortal() {
     const { data: myCrossSupervisorJobs = [] } = useQuery({
         queryKey: ['myCrossSupervisorJobs', getTechnicianId()],
         queryFn: async () => {
+            const techId = getTechnicianId();
+            console.log('🔍 Cross-supervisor Technician ID:', techId);
+            
             try {
-                return await base44.entities.Job.filter({ assigned_technician_id: getTechnicianId(), include_cross_supervisor: true });
+                const result = await base44.entities.Job.filter({ assigned_technician_id: techId, include_cross_supervisor: true });
+                console.log('✅ Cross-supervisor endpoint success, jobs found:', result?.length || 0);
+                return result;
             } catch (error) {
+                console.log('❌ Cross-supervisor endpoint failed:', error.message);
                 // Fallback: Get all jobs and filter client-side for cross-supervisor assignments
                 const allJobs = await base44.entities.Job.list();
-                const techId = getTechnicianId();
-                return allJobs.filter(job => {
+                console.log('📋 Total jobs in system:', allJobs?.length || 0);
+                
+                const filteredJobs = allJobs.filter(job => {
                     // Check if technician is assigned to this job (including cross-supervisor)
                     const assignments = job?.technicians || [];
-                    return assignments.some(tech => 
+                    const isAssigned = assignments.some(tech => 
                         String(tech.technician_id) === String(techId)
                     );
+                    if (isAssigned) {
+                        console.log('✅ Found cross-supervisor assigned job:', job.job_number);
+                    }
+                    return isAssigned;
                 });
+                
+                console.log('🎯 Filtered cross-supervisor jobs for technician:', filteredJobs?.length || 0);
+                return filteredJobs;
             }
         },
         enabled: !!getTechnicianId(),
