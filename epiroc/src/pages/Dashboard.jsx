@@ -189,7 +189,18 @@ export default function Dashboard() {
 
     const { data: pendingApprovals = [], error: approvalError } = useQuery({
         queryKey: ['pendingApprovals', currentUser?.supervisor_key],
-        queryFn: () => base44.entities.DailyTimeEntry.approvals.pending(),
+        queryFn: async () => {
+            console.log('🔍 Fetching pending approvals for supervisor:', currentUser?.supervisor_key, currentUser?.name);
+            try {
+                const result = await base44.entities.DailyTimeEntry.approvals.pending();
+                console.log('✅ Pending approvals API response:', result);
+                console.log('📊 Pending approvals count:', Array.isArray(result) ? result.length : 'Not an array');
+                return result;
+            } catch (error) {
+                console.log('❌ Error fetching pending approvals:', error);
+                throw error;
+            }
+        },
         enabled: approvalEnabled,
         refetchInterval: approvalEnabled ? 10000 : false,
         retry: (failureCount, error) => {
@@ -804,7 +815,7 @@ export default function Dashboard() {
                             Time Logs
                         </TabsTrigger>
 
-                        {isForeman && approvalEnabled && (
+                        {approvalEnabled && (
                             <TabsTrigger
                                 value="approvals"
                                 className="flex items-center gap-2 rounded-lg text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800"
@@ -1295,7 +1306,7 @@ export default function Dashboard() {
                         </div>
                     </TabsContent>
 
-                    {isForeman && approvalEnabled && (
+                    {approvalEnabled && (
                         <TabsContent value="approvals" className="space-y-6">
                             <Card className="border-0 shadow-lg bg-white/95">
                                 <CardHeader className="pb-4 border-b border-slate-100">

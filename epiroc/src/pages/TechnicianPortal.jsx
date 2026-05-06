@@ -124,7 +124,7 @@ export default function TechnicianPortal() {
         queryKey: ['myJobs', getTechnicianId()],
         queryFn: async () => {
             const techId = getTechnicianId();
-            console.log('� Technician ID for job lookup:', techId);
+            console.log('🔍 Technician ID for job lookup:', techId);
             
             try {
                 // Try the cross-supervisor endpoint first to get all assigned jobs (including from other supervisors)
