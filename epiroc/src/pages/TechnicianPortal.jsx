@@ -560,22 +560,85 @@ export default function TechnicianPortal() {
                                     const mine = getMyAssignment(job);
                                     return !!mine && !mine.confirmed_by_technician && job.status !== 'completed' && hasIncompleteAssignedWork(job);
                                 }).map(job => (
-                                    <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">{job.job_number}</p>
-                                            <p className="text-sm text-slate-600">{job.description}</p>
-                                            <div className="flex gap-4 mt-2 text-sm">
-                                                <span className="text-blue-600">Allocated: {job.allocated_hours}h</span>
+                                    <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm border border-amber-200">
+                                        <div className="flex items-start justify-between mb-3">
+                                            <div className="flex-1">
+                                                <p className="font-semibold text-slate-800">{job.job_number}</p>
+                                                <p className="text-sm text-slate-600">{job.description}</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <Badge className="bg-amber-100 text-amber-700">
+                                                    Pending Acceptance
+                                                </Badge>
+                                                <Button 
+                                                    onClick={() => confirmJobMutation.mutate(job.job_number)}
+                                                    className="bg-green-500 hover:bg-green-600 text-white"
+                                                    disabled={confirmJobMutation.isPending}
+                                                    size="sm"
+                                                >
+                                                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                                                    Accept
+                                                </Button>
                                             </div>
                                         </div>
-                                        <Button 
-                                            onClick={() => confirmJobMutation.mutate(job.job_number)}
-                                            className="bg-green-500 hover:bg-green-600 text-white"
-                                            disabled={confirmJobMutation.isPending}
-                                        >
-                                            <CheckCircle2 className="w-4 h-4 mr-2" />
-                                            Accept Job
-                                        </Button>
+                                        <div className="mb-2">
+                                            <Progress value={job.aggregated_progress_percentage ?? job.progress_percentage ?? 0} className="h-2" />
+                                            <div className="flex justify-between text-xs text-slate-500 mt-1">
+                                                <span>{(job.aggregated_progress_percentage ?? job.progress_percentage ?? 0).toFixed(0)}% complete</span>
+                                                <span>{(job.remaining_hours ?? (job.allocated_hours - job.consumed_hours) ?? 0).toFixed(1)}h remaining</span>
+                                            </div>
+                                        </div>
+
+                                        {(job.subtasks || []).length > 0 && (
+                                            <div className="mt-3 space-y-2">
+                                                <p className="text-sm font-medium text-slate-700">Your Assigned Tasks</p>
+                                                <div className="space-y-2">
+                                                    {(job.subtasks || []).map((st) => {
+                                                        const subtaskId = st.id || st._id;
+
+                                                        const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
+                                                        const myAssignedRow = assigned.find((a) => String(a?.technician_id) === String(getTechnicianId())) || null;
+                                                        if (!myAssignedRow) return null;
+
+                                                        const myProgressObj = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(getTechnicianId())) || null;
+                                                        const myProgress = Number(myProgressObj?.progress_percentage || 0);
+                                                        const isStageCompleted = Boolean(myProgressObj?.completed) || myProgress >= 100 - 1e-9;
+                                                        if (isStageCompleted) return null;
+
+                                                        const stageAllocated = Number(
+                                                            typeof myAssignedRow?.allocated_hours !== 'undefined' && myAssignedRow?.allocated_hours !== null
+                                                                ? myAssignedRow.allocated_hours
+                                                                : (st.allocated_hours || 0)
+                                                        );
+                                                        const stageConsumed = Number(st.consumed_hours || 0);
+                                                        const stageRemaining = Number(
+                                                            typeof st.remaining_hours !== 'undefined' && st.remaining_hours !== null
+                                                                ? st.remaining_hours
+                                                                : Math.max(0, stageAllocated - stageConsumed)
+                                                        );
+
+                                                        return (
+                                                            <div key={subtaskId} className="bg-slate-50 rounded p-3">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-sm font-semibold text-slate-800 truncate">{st.title}</p>
+                                                                        <p className="text-xs text-slate-500">My progress: {Number(myProgress).toFixed(0)}%</p>
+                                                                    </div>
+                                                                    <div className="w-24 text-right text-sm font-semibold text-slate-700">
+                                                                        {Number(myProgress).toFixed(0)}%
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="mt-2 flex justify-between text-xs text-slate-500">
+                                                                    <span>Allocated: {stageAllocated.toFixed(1)}h</span>
+                                                                    <span>Remaining: {stageRemaining.toFixed(1)}h</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
