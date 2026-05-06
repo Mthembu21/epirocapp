@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle2, Pencil, Trash2, X } from 'lucide-react';
+import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle, CheckCircle2, Pencil, Trash2, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
