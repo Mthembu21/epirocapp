@@ -149,12 +149,9 @@
 //   const { data: myJobs = [] } = useQuery({
 //     queryKey: ["myJobs", user?.id],
 //     enabled: !!user?.id,
-//     queryFn: () => {
-//       console.log('🔥 DEPLOYMENT VERSION v4.0 - Using user.id:', user?.id);
-//       return base44.entities.Job.filter({
-//         assigned_technician_id: user.id,
-//       });
-//     },
+//     queryFn: () => base44.entities.Job.filter({
+//       assigned_technician_id: user.id,
+//     }),
 //     refetchInterval: 30000,
 //   });
 
@@ -758,7 +755,6 @@ export default function TechnicianPortal() {
     queryKey: ["myJobs", user?.id],
     enabled: !!user?.id,
     queryFn: () => {
-      console.log('🔥 DEPLOYMENT VERSION v4.0 - Using user.id:', user?.id);
       return base44.entities.Job.filter({
         assigned_technician_id: user.id,
       });
