@@ -467,8 +467,8 @@ const allMyJobs = useMemo(() => {
 };
 
 const handleLogout = async () => {
-    try { 
-        await base44.auth.logout(); 
+    try {
+        await base44.auth.logout();
     } catch (error) {
         console.error('Logout error:', error);
     }
