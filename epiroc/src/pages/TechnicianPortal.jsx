@@ -146,21 +146,21 @@ export default function TechnicianPortal() {
 
   /* ===================== DATA ===================== */
   const { data: myJobs = [] } = useQuery({
-    queryKey: ["myJobs", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["myJobs", user?.employee_id],
+    enabled: !!user?.employee_id,
     queryFn: () =>
       base44.entities.Job.filter({
-        assigned_technician_id: user.id,
+        assigned_technician_id: user.employee_id,
       }),
     refetchInterval: 30000,
   });
 
   const { data: myEntries = [] } = useQuery({
-    queryKey: ["myTimeEntries", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["myTimeEntries", user?.employee_id],
+    enabled: !!user?.employee_id,
     queryFn: () =>
       base44.entities.DailyTimeEntry.filter({
-        technician_id: user.id,
+        technician_id: user.employee_id,
       }),
     refetchInterval: 30000,
   });
@@ -224,7 +224,7 @@ export default function TechnicianPortal() {
 
     createEntryMutation.mutate({
       timeLog: {
-        technician_id: user.id,
+        technician_id: user.employee_id,
         job_id: formData.job_id,
         subtask_id:
           formData.job_id === IDLE_JOB_ID
