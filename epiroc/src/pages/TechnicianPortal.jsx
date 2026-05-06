@@ -467,7 +467,11 @@ const allMyJobs = useMemo(() => {
 };
 
 const handleLogout = async () => {
-    try { await base44.auth.logout(); } catch {}
+    try { 
+        await base44.auth.logout(); 
+    } catch (error) {
+        console.error('Logout error:', error);
+    }
     localStorage.removeItem('epiroc_user');
     window.location.href = createPageUrl('WorkshopLogin');
 };
