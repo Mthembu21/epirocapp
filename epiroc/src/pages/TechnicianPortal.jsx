@@ -259,24 +259,33 @@ export default function TechnicianPortal() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* HEADER */}
-      <header className="bg-slate-800/90 backdrop-blur border-b border-yellow-500/20 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-yellow-400 p-2 rounded-lg">
-              <Wrench className="text-slate-800" />
+      <header className="bg-slate-800/90 backdrop-blur-lg border-b border-yellow-500/20 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-yellow-400 p-2 rounded-lg">
+                <Wrench className="w-6 h-6 text-slate-800" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-yellow-400">EPIROC</h1>
+                <p className="text-slate-400 text-xs">Technician Portal</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-yellow-400">
-                EPIROC
-              </h1>
-              <p className="text-xs text-slate-400">
-                Technician Portal
-              </p>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-white">
+                <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-slate-800 font-bold text-sm">
+                  {user.name?.charAt(0)}
+                </div>
+                <div className="hidden sm:block">
+                  <p className="text-sm font-medium">{user.name}</p>
+                  <p className="text-xs text-slate-400">{user.employee_id || user.id}</p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleLogout} className="text-slate-400 hover:text-white">
+                <LogOut className="w-5 h-5" />
+              </Button>
             </div>
           </div>
-          <Button variant="ghost" onClick={handleLogout}>
-            <LogOut />
-          </Button>
         </div>
       </header>
 
@@ -298,30 +307,35 @@ export default function TechnicianPortal() {
 
         {/* DASHBOARD CARDS */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-            <CardContent className="p-4">
-              <p>Total Hours</p>
-              <p className="text-2xl font-bold">
-                {totalHours.toFixed(1)}h
-              </p>
+          <Card className="border-0 bg-gradient-to-br from-blue-500 to-blue-600">
+            <CardContent className="p-4 text-white">
+              <p className="text-sm text-white/80">Total Hours</p>
+              <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
+              <p className="text-xs text-white/60">Logged</p>
             </CardContent>
           </Card>
-
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-            <CardContent className="p-4">
-              <p>Productive</p>
-              <p className="text-2xl font-bold">
-                {totalProductiveHours.toFixed(1)}h
-              </p>
+          
+          <Card className="border-0 bg-gradient-to-br from-green-500 to-green-600">
+            <CardContent className="p-4 text-white">
+              <p className="text-sm text-white/80">Productive Hours</p>
+              <p className="text-2xl font-bold">{totalProductiveHours.toFixed(1)}h</p>
+              <p className="text-xs text-white/60">Job hours</p>
             </CardContent>
           </Card>
-
-          <Card className="bg-gradient-to-br from-slate-500 to-slate-600 text-white">
-            <CardContent className="p-4">
-              <p>Idle</p>
-              <p className="text-2xl font-bold">
-                {totalNonProductiveHours.toFixed(1)}h
-              </p>
+          
+          <Card className="border-0 bg-gradient-to-br from-yellow-400 to-yellow-500">
+            <CardContent className="p-4 text-slate-800">
+              <p className="text-sm text-slate-700">Overtime</p>
+              <p className="text-2xl font-bold">{(myEntriesForMonth.reduce((sum, e) => sum + (e.overtime_hours || 0), 0)).toFixed(1)}h</p>
+              <p className="text-xs text-slate-600">Overtime</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="border-0 bg-gradient-to-br from-slate-500 to-slate-600">
+            <CardContent className="p-4 text-white">
+              <p className="text-sm text-white/80">Non-Productive</p>
+              <p className="text-2xl font-bold">{totalNonProductiveHours.toFixed(1)}h</p>
+              <p className="text-xs text-white/60">IDLE hours</p>
             </CardContent>
           </Card>
         </div>
@@ -358,7 +372,7 @@ export default function TechnicianPortal() {
                     {error}
                   </div>
                 )}
-                <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl">
+                <form onSubmit={handleSubmit} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <Label>Date</Label>
@@ -402,6 +416,40 @@ export default function TechnicianPortal() {
                       />
                     </div>
                   </div>
+
+                  {/* Category selection for IDLE entries */}
+                  {formData.job_id === IDLE_JOB_ID && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Category</Label>
+                        <Select
+                          value={formData.category}
+                          onValueChange={value => setFormData(prev => ({ ...prev, category: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Leave">Leave</SelectItem>
+                            <SelectItem value="Sick">Sick</SelectItem>
+                            <SelectItem value="Training">Training</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {formData.category === 'Other' && (
+                        <div>
+                          <Label>Details</Label>
+                          <Input
+                            placeholder="Specify other category"
+                            value={formData.category_detail}
+                            onChange={e => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
+                            className="border-slate-300"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <Button
                     type="submit"
                     disabled={createEntryMutation.isPending}
@@ -499,7 +547,9 @@ export default function TechnicianPortal() {
                           <TableHead>Date</TableHead>
                           <TableHead>Job</TableHead>
                           <TableHead>Category</TableHead>
-                          <TableHead className="text-right">Hours</TableHead>
+                          <TableHead className="text-right">Normal</TableHead>
+                          <TableHead className="text-right">OT</TableHead>
+                          <TableHead className="text-right">Payable</TableHead>
                           <TableHead className="text-right">Type</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -524,7 +574,13 @@ export default function TechnicianPortal() {
                               )}
                             </TableCell>
                             <TableCell className="text-right font-medium">
-                              {(entry.hours_logged || 0).toFixed(1)}h
+                              {(entry.normal_hours || entry.hours_logged || 0).toFixed(1)}h
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-yellow-600">
+                              {(entry.overtime_hours || 0).toFixed(1)}h
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-slate-800">
+                              {(entry.payable_hours || entry.hours_logged || 0).toFixed(1)}h
                             </TableCell>
                             <TableCell className="text-right">
                               {entry.is_idle ? (
