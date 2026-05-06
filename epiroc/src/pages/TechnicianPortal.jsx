@@ -106,12 +106,22 @@ export default function TechnicianPortal() {
 
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', getTechnicianId()],
-        queryFn: () => {
-            // Try technician-specific endpoint first, fallback to generic list
-            return base44.entities.Job.filter({ assigned_technician_id: getTechnicianId() })
-                .catch(() => {
-                    return base44.entities.Job.list();
+        queryFn: async () => {
+            try {
+                // Try technician-specific endpoint first
+                return await base44.entities.Job.filter({ assigned_technician_id: getTechnicianId() });
+            } catch (error) {
+                // Fallback: Get all jobs and filter client-side
+                const allJobs = await base44.entities.Job.list();
+                const techId = getTechnicianId();
+                return allJobs.filter(job => {
+                    // Check if technician is assigned to this job
+                    const assignments = job?.technicians || [];
+                    return assignments.some(tech => 
+                        String(tech.technician_id) === String(techId)
+                    );
                 });
+            }
         },
         enabled: !!getTechnicianId(),
         staleTime: 0,
@@ -121,11 +131,21 @@ export default function TechnicianPortal() {
     // Also fetch cross-supervisor assignments
     const { data: myCrossSupervisorJobs = [] } = useQuery({
         queryKey: ['myCrossSupervisorJobs', getTechnicianId()],
-        queryFn: () => {
-            return base44.entities.Job.filter({ assigned_technician_id: getTechnicianId(), include_cross_supervisor: true })
-                .catch(() => {
-                    return base44.entities.Job.list();
+        queryFn: async () => {
+            try {
+                return await base44.entities.Job.filter({ assigned_technician_id: getTechnicianId(), include_cross_supervisor: true });
+            } catch (error) {
+                // Fallback: Get all jobs and filter client-side for cross-supervisor assignments
+                const allJobs = await base44.entities.Job.list();
+                const techId = getTechnicianId();
+                return allJobs.filter(job => {
+                    // Check if technician is assigned to this job (including cross-supervisor)
+                    const assignments = job?.technicians || [];
+                    return assignments.some(tech => 
+                        String(tech.technician_id) === String(techId)
+                    );
                 });
+            }
         },
         enabled: !!getTechnicianId(),
         staleTime: 0,
@@ -139,11 +159,17 @@ export default function TechnicianPortal() {
 
     const { data: myEntries = [] } = useQuery({
         queryKey: ['myTimeEntries', getTechnicianId()],
-        queryFn: () => {
-            return base44.entities.DailyTimeEntry.filter({ technician_id: getTechnicianId() })
-                .catch(() => {
-                    return base44.entities.DailyTimeEntry.list();
-                });
+        queryFn: async () => {
+            try {
+                return await base44.entities.DailyTimeEntry.filter({ technician_id: getTechnicianId() });
+            } catch (error) {
+                // Fallback: Get all time entries and filter client-side
+                const allEntries = await base44.entities.DailyTimeEntry.list();
+                const techId = getTechnicianId();
+                return allEntries.filter(entry => 
+                    String(entry.technician_id) === String(techId)
+                );
+            }
         },
         enabled: !!getTechnicianId(),
         staleTime: 0,
