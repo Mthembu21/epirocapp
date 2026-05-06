@@ -6,13 +6,16 @@ import {
   isSameDay,
   startOfMonth,
   endOfMonth,
+  addMonths,
+  subMonths,
+  eachDayOfInterval,
   isWithinInterval,
 } from "date-fns";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { base44 } from "@/api/apiClient";
 import { createPageUrl } from "@/utils";
 
-/* ===================== UI IMPORTS (SAFE) ===================== */
+/* ================= UI (SAFE FILE IMPORTS) ================= */
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,29 +33,29 @@ import {
 
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@/components/ui/select";
 
 import {
   Tabs,
-  TabsContent,
   TabsList,
   TabsTrigger,
+  TabsContent,
 } from "@/components/ui/tabs";
 
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  TableCell,
 } from "@/components/ui/table";
 
-/* ===================== ICONS ===================== */
+/* ================= ICONS ================= */
 import {
   Wrench,
   Clock,
@@ -60,33 +63,34 @@ import {
   LogOut,
   Calendar,
   Briefcase,
+  ChevronLeft,
+  ChevronRight,
   AlertTriangle,
 } from "lucide-react";
 
-/* ===================== CONSTANTS ===================== */
+/* ================= CONSTANTS ================= */
 const IDLE_JOB_ID = "IDLE / NON-PRODUCTIVE";
 
-/* ===================== COMPONENT ===================== */
 export default function TechnicianPortal() {
   const queryClient = useQueryClient();
 
-  /* ===================== STATE ===================== */
+  /* ================= STATE ================= */
   const [user, setUser] = useState(null);
+  const [error, setError] = useState("");
+
   const [selectedMonth, setSelectedMonth] = useState(
     format(new Date(), "yyyy-MM")
   );
-  const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
     date: format(new Date(), "yyyy-MM-dd"),
     job_id: "",
-    subtask_id: "",
     hours_logged: "",
     category: "",
     category_detail: "",
   });
 
-  /* ===================== AUTH ===================== */
+  /* ================= AUTH ================= */
   useEffect(() => {
     const init = async () => {
       const stored = localStorage.getItem("epiroc_user");
@@ -94,7 +98,6 @@ export default function TechnicianPortal() {
         window.location.href = createPageUrl("WorkshopLogin");
         return;
       }
-
       const parsed = JSON.parse(stored);
       try {
         await base44.auth.me();
@@ -115,7 +118,7 @@ export default function TechnicianPortal() {
     window.location.href = createPageUrl("WorkshopLogin");
   };
 
-  /* ===================== QUERIES ===================== */
+  /* ================= DATA ================= */
   const { data: myJobs = [] } = useQuery({
     queryKey: ["myJobs", user?.id],
     enabled: !!user?.id,
@@ -134,25 +137,39 @@ export default function TechnicianPortal() {
       }),
   });
 
-  /* ===================== DERIVED ===================== */
+  /* ================= DATE CALCULATIONS ================= */
   const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
   const monthEnd = endOfMonth(parseISO(`${selectedMonth}-01`));
+  const allDaysInMonth = eachDayOfInterval({
+    start: monthStart,
+    end: monthEnd,
+  });
 
-  const entriesForMonth = myEntries.filter(e =>
-    e?.log_date &&
-    isWithinInterval(parseISO(e.log_date), {
-      start: monthStart,
-      end: monthEnd,
-    })
+  const entriesForMonth = myEntries.filter(
+    e =>
+      e.log_date &&
+      isWithinInterval(parseISO(e.log_date), {
+        start: monthStart,
+        end: monthEnd,
+      })
   );
 
+  const entriesByDate = useMemo(() => {
+    const map = {};
+    entriesForMonth.forEach(e => {
+      map[e.log_date] = (map[e.log_date] || 0) + e.hours_logged;
+    });
+    return map;
+  }, [entriesForMonth]);
+
+  /* ================= DASHBOARD TOTALS ================= */
   const totalHours = entriesForMonth.reduce(
-    (sum, e) => sum + (e.hours_logged || 0),
+    (s, e) => s + (e.hours_logged || 0),
     0
   );
 
   const productiveHours = entriesForMonth.reduce(
-    (s, e) => s + (e.is_idle ? 0 : e.hours_logged || 0),
+    (s, e) => s + (!e.is_idle ? e.hours_logged || 0 : 0),
     0
   );
 
@@ -161,32 +178,19 @@ export default function TechnicianPortal() {
     0
   );
 
-  const selectedDateEntries = myEntries.filter(
-    e => e.log_date && isSameDay(parseISO(e.log_date), parseISO(formData.date))
-  );
-
-  const dailyTotal = selectedDateEntries.reduce(
-    (s, e) => s + (e.hours_logged || 0),
-    0
-  );
-
-  /* ===================== MUTATION ===================== */
+  /* ================= MUTATION ================= */
   const createEntryMutation = useMutation({
     mutationFn: payload =>
       base44.entities.DailyTimeEntry.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["myEntries"] });
       queryClient.invalidateQueries({ queryKey: ["myJobs"] });
-      setFormData(prev => ({
-        ...prev,
+      setFormData(p => ({
+        ...p,
         job_id: "",
-        subtask_id: "",
         hours_logged: "",
-        category: "",
-        category_detail: "",
       }));
     },
-    onError: e => setError(e?.message || "Failed to save entry"),
   });
 
   const handleSubmit = e => {
@@ -194,7 +198,7 @@ export default function TechnicianPortal() {
     setError("");
 
     if (!formData.job_id || !formData.hours_logged) {
-      setError("Please complete all fields");
+      setError("Complete all fields");
       return;
     }
 
@@ -202,8 +206,6 @@ export default function TechnicianPortal() {
       timeLog: {
         technician_id: user.id,
         job_id: formData.job_id,
-        subtask_id:
-          formData.job_id === IDLE_JOB_ID ? null : formData.subtask_id,
         hours_logged: Number(formData.hours_logged),
         log_date: formData.date,
         is_idle: formData.job_id === IDLE_JOB_ID,
@@ -216,12 +218,12 @@ export default function TechnicianPortal() {
 
   if (!user) return null;
 
-  /* ===================== UI ===================== */
+  /* ================= UI ================= */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* ===================== HEADER ===================== */}
-      <header className="sticky top-0 z-10 bg-slate-800/90 backdrop-blur border-b border-yellow-500/20">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+      {/* HEADER */}
+      <header className="sticky top-0 z-10 bg-slate-800/90 border-b border-yellow-500/20 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="bg-yellow-400 p-2 rounded-lg">
               <Wrench className="text-slate-900" />
@@ -237,79 +239,144 @@ export default function TechnicianPortal() {
         </div>
       </header>
 
-      {/* ===================== MAIN ===================== */}
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-        {/* ===================== DASHBOARD ===================== */}
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+        {/* ================= MONTH NAVIGATION ================= */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() =>
+                setSelectedMonth(format(subMonths(monthStart, 1), "yyyy-MM"))
+              }
+            >
+              <ChevronLeft />
+            </Button>
+
+            <Input
+              type="month"
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(e.target.value)}
+              className="w-44"
+            />
+
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() =>
+                setSelectedMonth(format(addMonths(monthStart, 1), "yyyy-MM"))
+              }
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setSelectedMonth(format(new Date(), "yyyy-MM"))
+              }
+            >
+              This Month
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setSelectedMonth(format(subMonths(new Date(), 1), "yyyy-MM"))
+              }
+            >
+              Last Month
+            </Button>
+          </div>
+        </div>
+
+        {/* ================= DAY HIGHLIGHT GRID ================= */}
+        <Card className="bg-white/95">
+          <CardHeader>
+            <CardTitle className="text-slate-800">
+              Monthly Overview
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-7 gap-2 text-xs">
+            {allDaysInMonth.map(d => {
+              const iso = format(d, "yyyy-MM-dd");
+              const hours = entriesByDate[iso] || 0;
+              const isWeekend = [0, 6].includes(getDay(d));
+
+              return (
+                <div
+                  key={iso}
+                  className={`p-2 rounded text-center
+                    ${hours > 0 ? "bg-green-100 text-green-700" : ""}
+                    ${!hours && !isWeekend ? "bg-red-100 text-red-700" : ""}
+                    ${isWeekend ? "bg-slate-100 text-slate-400" : ""}
+                  `}
+                >
+                  <div>{format(d, "dd")}</div>
+                  <div className="font-semibold">
+                    {hours ? `${hours.toFixed(1)}h` : "-"}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        {/* ================= DASHBOARD ================= */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+          <Card className="bg-blue-500 text-white">
             <CardContent className="p-4">
-              <p className="text-sm opacity-80">Total Hours</p>
+              <p>Total</p>
               <p className="text-2xl font-bold">
                 {totalHours.toFixed(1)}h
               </p>
             </CardContent>
           </Card>
-
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+          <Card className="bg-green-500 text-white">
             <CardContent className="p-4">
-              <p className="text-sm opacity-80">Productive</p>
+              <p>Productive</p>
               <p className="text-2xl font-bold">
                 {productiveHours.toFixed(1)}h
               </p>
             </CardContent>
           </Card>
-
-          <Card className="bg-gradient-to-br from-slate-500 to-slate-600 text-white">
+          <Card className="bg-slate-500 text-white">
             <CardContent className="p-4">
-              <p className="text-sm opacity-80">Idle</p>
+              <p>Idle</p>
               <p className="text-2xl font-bold">
                 {idleHours.toFixed(1)}h
               </p>
             </CardContent>
           </Card>
-
-          <Card className="bg-gradient-to-br from-yellow-400 to-yellow-500 text-slate-900">
+          <Card className="bg-yellow-400 text-slate-900">
             <CardContent className="p-4">
-              <p className="text-sm">Today</p>
+              <p>Days Logged</p>
               <p className="text-2xl font-bold">
-                {dailyTotal.toFixed(1)}h
+                {Object.keys(entriesByDate).length}
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* ===================== TABS ===================== */}
+        {/* ================= TABS ================= */}
         <Tabs defaultValue="log">
-          <TabsList className="bg-slate-700/60">
-            <TabsTrigger value="log">
-              <Clock className="w-4 h-4 mr-2" />
-              Log
-            </TabsTrigger>
-            <TabsTrigger value="history">
-              <Calendar className="w-4 h-4 mr-2" />
-              History
-            </TabsTrigger>
-            <TabsTrigger value="jobs">
-              <Briefcase className="w-4 h-4 mr-2" />
-              Jobs
-            </TabsTrigger>
+          <TabsList>
+            <TabsTrigger value="log">Log</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="jobs">Jobs</TabsTrigger>
           </TabsList>
 
-          {/* ===================== LOG ===================== */}
           <TabsContent value="log">
-            <Card className="bg-white/95 backdrop-blur">
+            <Card className="bg-white/95">
               <CardHeader>
                 <CardTitle>Log Hours</CardTitle>
               </CardHeader>
               <CardContent>
-                {error && (
-                  <div className="text-red-600 mb-4">
-                    {error}
-                  </div>
-                )}
                 <form
                   onSubmit={handleSubmit}
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                  className="grid grid-cols-2 gap-4"
                 >
                   <Input
                     type="date"
@@ -321,7 +388,6 @@ export default function TechnicianPortal() {
                       }))
                     }
                   />
-
                   <Select
                     value={formData.job_id}
                     onValueChange={v =>
@@ -333,10 +399,7 @@ export default function TechnicianPortal() {
                     </SelectTrigger>
                     <SelectContent>
                       {myJobs.map(j => (
-                        <SelectItem
-                          key={j.id}
-                          value={j.job_number}
-                        >
+                        <SelectItem key={j.id} value={j.job_number}>
                           {j.job_number}
                         </SelectItem>
                       ))}
@@ -345,11 +408,9 @@ export default function TechnicianPortal() {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-
                   <Input
                     type="number"
                     step="0.25"
-                    placeholder="Hours"
                     value={formData.hours_logged}
                     onChange={e =>
                       setFormData(p => ({
@@ -358,12 +419,8 @@ export default function TechnicianPortal() {
                       }))
                     }
                   />
-
-                  <Button
-                    type="submit"
-                    className="bg-yellow-400 text-slate-900"
-                  >
-                    <Save className="w-4 h-4 mr-2" />
+                  <Button type="submit" className="bg-yellow-400">
+                    <Save className="mr-2 w-4 h-4" />
                     Save
                   </Button>
                 </form>
@@ -371,7 +428,6 @@ export default function TechnicianPortal() {
             </Card>
           </TabsContent>
 
-          {/* ===================== HISTORY ===================== */}
           <TabsContent value="history">
             <Card className="bg-white/95">
               <CardHeader>
@@ -384,7 +440,6 @@ export default function TechnicianPortal() {
                       <TableHead>Date</TableHead>
                       <TableHead>Job</TableHead>
                       <TableHead>Hours</TableHead>
-                      <TableHead>Type</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -395,16 +450,7 @@ export default function TechnicianPortal() {
                         </TableCell>
                         <TableCell>{e.job_id}</TableCell>
                         <TableCell>
-                          {e.hours_logged.toFixed(1)}
-                        </TableCell>
-                        <TableCell>
-                          {e.is_idle ? (
-                            <Badge>Idle</Badge>
-                          ) : (
-                            <Badge variant="secondary">
-                              Job
-                            </Badge>
-                          )}
+                          {e.hours_logged.toFixed(1)}h
                         </TableCell>
                       </TableRow>
                     ))}
@@ -414,7 +460,6 @@ export default function TechnicianPortal() {
             </Card>
           </TabsContent>
 
-          {/* ===================== JOBS ===================== */}
           <TabsContent value="jobs">
             <Card className="bg-white/95">
               <CardHeader>
@@ -426,12 +471,8 @@ export default function TechnicianPortal() {
                     key={j.id}
                     className="border p-3 rounded-lg"
                   >
-                    <p className="font-semibold">
-                      {j.job_number}
-                    </p>
-                    <Progress
-                      value={j.progress_percentage || 0}
-                    />
+                    <p className="font-semibold">{j.job_number}</p>
+                    <Progress value={j.progress_percentage || 0} />
                   </div>
                 ))}
               </CardContent>
