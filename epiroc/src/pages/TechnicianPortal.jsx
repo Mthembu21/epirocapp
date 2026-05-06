@@ -70,10 +70,10 @@ import {
   X,
 } from "lucide-react";
 
-const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // FRESH VERSION - Complete rewrite
+const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // FINAL VERSION - Force cache clear - 2026-05-06-12:05
 
 export default function TechnicianPortal() {
-  // Force deployment cache invalidation - COMPLETE REWRITE v3.0
+  // FINAL FORCE CACHE CLEAR - 2026-05-06-12:05:30 - COMPLETE REWRITE v4.0
   const queryClient = useQueryClient();
 
   /* ===================== STATE ===================== */
@@ -149,10 +149,12 @@ export default function TechnicianPortal() {
   const { data: myJobs = [] } = useQuery({
     queryKey: ["myJobs", user?.id],
     enabled: !!user?.id,
-    queryFn: () =>
-      base44.entities.Job.filter({
+    queryFn: () => {
+      console.log('🔥 DEPLOYMENT VERSION v4.0 - Using user.id:', user?.id);
+      return base44.entities.Job.filter({
         assigned_technician_id: user.id,
-      }),
+      });
+    },
     refetchInterval: 30000,
   });
 
