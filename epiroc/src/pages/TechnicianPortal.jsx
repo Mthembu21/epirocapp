@@ -26,7 +26,7 @@ const bottleneckCategories = [
     { value: 'technical_complexity', label: 'Technical Complexity' },
     { value: 'external_dependency', label: 'External Dependency' },
     { value: 'other', label: 'Other' }
-];
+]; // FINAL DEPLOYMENT - Force cache clear - 2026-05-06-14:35
 
 export default function TechnicianPortal() {
     const [user, setUser] = useState(null);
