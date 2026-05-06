@@ -107,11 +107,9 @@ export default function TechnicianPortal() {
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', getTechnicianId()],
         queryFn: () => {
-            console.log('🔥 Using technicianId:', getTechnicianId());
             // Try technician-specific endpoint first, fallback to generic list
             return base44.entities.Job.filter({ assigned_technician_id: getTechnicianId() })
                 .catch(() => {
-                    console.log('🔥 Fallback to generic job list');
                     return base44.entities.Job.list();
                 });
         },
@@ -124,10 +122,8 @@ export default function TechnicianPortal() {
     const { data: myCrossSupervisorJobs = [] } = useQuery({
         queryKey: ['myCrossSupervisorJobs', getTechnicianId()],
         queryFn: () => {
-            console.log('🔥 Using technicianId for cross-supervisor:', getTechnicianId());
             return base44.entities.Job.filter({ assigned_technician_id: getTechnicianId(), include_cross_supervisor: true })
                 .catch(() => {
-                    console.log('🔥 Fallback to generic job list for cross-supervisor');
                     return base44.entities.Job.list();
                 });
         },
@@ -144,10 +140,8 @@ export default function TechnicianPortal() {
     const { data: myEntries = [] } = useQuery({
         queryKey: ['myTimeEntries', getTechnicianId()],
         queryFn: () => {
-            console.log('🔥 Using technicianId for time entries:', getTechnicianId());
             return base44.entities.DailyTimeEntry.filter({ technician_id: getTechnicianId() })
                 .catch(() => {
-                    console.log('🔥 Fallback to generic time entries list');
                     return base44.entities.DailyTimeEntry.list();
                 });
         },
