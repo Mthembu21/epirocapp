@@ -70,10 +70,10 @@ import {
   X,
 } from "lucide-react";
 
-const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // DEPLOYMENT UPDATE v2 - Fix MongoDB ObjectId issue
+const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // FRESH VERSION - Complete rewrite
 
 export default function TechnicianPortal() {
-  // Force deployment cache invalidation - API fix v2.1
+  // Force deployment cache invalidation - COMPLETE REWRITE v3.0
   const queryClient = useQueryClient();
 
   /* ===================== STATE ===================== */
@@ -256,7 +256,7 @@ export default function TechnicianPortal() {
 
   if (!user) return null;
 
-  /* ===================== UI (UNCHANGED STRUCTURE) ===================== */
+  /* ===================== UI (COMPLETE REWRITE) ===================== */
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* HEADER */}
