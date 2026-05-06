@@ -70,7 +70,7 @@ import {
   X,
 } from "lucide-react";
 
-const IDLE_JOB_ID = "IDLE / NON-PRODUCTIVE";
+const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // Force deployment - API fix
 
 export default function TechnicianPortal() {
   const queryClient = useQueryClient();
