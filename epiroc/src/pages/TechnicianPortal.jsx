@@ -99,10 +99,13 @@ export default function TechnicianPortal() {
         validateSession();
     }, []);
 
-    // Get the correct technician ID (employee_id if available, fallback to id)
+    // Get the correct technician ID (employeeNumber if available, fallback to employee_id, then id)
     const getTechnicianId = () => {
-        const techId = user?.employee_id || user?.id;
-        console.log('🔍 User object:', { 
+        // Backend expects employeeNumber field, not employee_id
+        return user?.employeeNumber || user?.employee_id || user?.id;
+    };
+
+    console.log('🔍 User object:', { 
             id: user?.id, 
             employee_id: user?.employee_id, 
             name: user?.name,
@@ -115,22 +118,25 @@ export default function TechnicianPortal() {
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', getTechnicianId()],
         queryFn: async () => {
-            const techId = getTechnicianId();
-            console.log('🔍 Technician ID:', techId);
-            
             try {
-                // Try technician-specific endpoint first
-                const result = await base44.entities.Job.filter({ assigned_technician_id: techId });
-                console.log('✅ Technician-specific endpoint success, jobs found:', result?.length || 0);
-                return result;
-            } catch (error) {
-                console.log('❌ Technician endpoint failed:', error.message);
-                // Fallback: Get all jobs and filter client-side
                 const allJobs = await base44.entities.Job.list();
-                console.log('📋 Total jobs in system:', allJobs?.length || 0);
+                console.log('📋 All jobs in system:', allJobs?.length || 0);
                 
+                // Extract all unique technician IDs from all jobs
+                const allTechnicianIds = new Set();
+                allJobs?.forEach(job => {
+                    const assignments = job?.technicians || [];
+                    assignments.forEach(tech => {
+                        if (tech.technician_id) {
+                            allTechnicianIds.add(String(tech.technician_id));
+                        }
+                    });
+                });
+                
+                console.log('👥 Available technician IDs in system:', Array.from(allTechnicianIds));
+                
+                const techId = getTechnicianId();
                 const filteredJobs = allJobs.filter(job => {
-                    // Check if technician is assigned to this job
                     const assignments = job?.technicians || [];
                     const isAssigned = assignments.some(tech => 
                         String(tech.technician_id) === String(techId)
@@ -143,6 +149,9 @@ export default function TechnicianPortal() {
                 
                 console.log('🎯 Filtered jobs for technician:', filteredJobs?.length || 0);
                 return filteredJobs;
+            } catch (error) {
+                console.log('❌ Error fetching jobs:', error.message);
+                return [];
             }
         },
         enabled: !!getTechnicianId(),
