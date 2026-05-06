@@ -102,93 +102,58 @@ export default function TechnicianPortal() {
     // Get the correct technician ID (employeeNumber if available, fallback to employee_id, then id)
     const getTechnicianId = () => {
         // Backend expects employeeNumber field, not employee_id
-        return user?.employeeNumber || user?.employee_id || user?.id;
-    };
-
-    console.log('🔍 User object:', { 
+        const techId = user?.employeeNumber || user?.employee_id || user?.id;
+        console.log('🔍 User object:', { 
             id: user?.id, 
             employee_id: user?.employee_id, 
+            employeeNumber: user?.employeeNumber,
             name: user?.name,
             type: user?.type 
         });
         console.log('🔍 Using technician ID:', techId);
+        console.log('🔍 Checking all possible ID formats:', {
+            'user.id': user?.id,
+            'user.employee_id': user?.employee_id,
+            'user.employeeNumber': user?.employeeNumber,
+            'final techId': techId
+        });
         return techId;
     };
 
     const { data: myJobs = [] } = useQuery({
         queryKey: ['myJobs', getTechnicianId()],
         queryFn: async () => {
+            const techId = getTechnicianId();
+            console.log('� Technician ID for job lookup:', techId);
+            
             try {
-                const allJobs = await base44.entities.Job.list();
-                console.log('📋 All jobs in system:', allJobs?.length || 0);
-                
-                // Extract all unique technician IDs from all jobs
-                const allTechnicianIds = new Set();
-                allJobs?.forEach(job => {
-                    const assignments = job?.technicians || [];
-                    assignments.forEach(tech => {
-                        if (tech.technician_id) {
-                            allTechnicianIds.add(String(tech.technician_id));
-                        }
-                    });
+                // Try the cross-supervisor endpoint first to get all assigned jobs (including from other supervisors)
+                const result = await base44.entities.Job.filter({ assigned_technician_id: techId, include_cross_supervisor: true });
+                console.log('✅ Cross-supervisor endpoint success, jobs found:', result?.length || 0);
+                result.forEach(job => {
+                    console.log(`  - Job: ${job.job_number} (${job.description})`);
                 });
+                return result;
+            } catch (error) {
+                console.log('❌ Cross-supervisor endpoint failed:', error.message);
                 
-                console.log('👥 Available technician IDs in system:', Array.from(allTechnicianIds));
+                // Fallback: Get all jobs and filter for this technician's assignments
+                const allJobs = await base44.entities.Job.list();
+                console.log('📋 Total jobs in system for filtering:', allJobs?.length || 0);
                 
-                const techId = getTechnicianId();
                 const filteredJobs = allJobs.filter(job => {
                     const assignments = job?.technicians || [];
                     const isAssigned = assignments.some(tech => 
                         String(tech.technician_id) === String(techId)
                     );
-                    if (isAssigned) {
-                        console.log('✅ Found assigned job:', job.job_number);
-                    }
                     return isAssigned;
                 });
                 
                 console.log('🎯 Filtered jobs for technician:', filteredJobs?.length || 0);
-                return filteredJobs;
-            } catch (error) {
-                console.log('❌ Error fetching jobs:', error.message);
-                return [];
-            }
-        },
-        enabled: !!getTechnicianId(),
-        staleTime: 0,
-        refetchInterval: 30000
-    });
-
-    // Also fetch cross-supervisor assignments
-    const { data: myCrossSupervisorJobs = [] } = useQuery({
-        queryKey: ['myCrossSupervisorJobs', getTechnicianId()],
-        queryFn: async () => {
-            const techId = getTechnicianId();
-            console.log('🔍 Cross-supervisor Technician ID:', techId);
-            
-            try {
-                const result = await base44.entities.Job.filter({ assigned_technician_id: techId, include_cross_supervisor: true });
-                console.log('✅ Cross-supervisor endpoint success, jobs found:', result?.length || 0);
-                return result;
-            } catch (error) {
-                console.log('❌ Cross-supervisor endpoint failed:', error.message);
-                // Fallback: Get all jobs and filter client-side for cross-supervisor assignments
-                const allJobs = await base44.entities.Job.list();
-                console.log('📋 Total jobs in system:', allJobs?.length || 0);
-                
-                const filteredJobs = allJobs.filter(job => {
-                    // Check if technician is assigned to this job (including cross-supervisor)
-                    const assignments = job?.technicians || [];
-                    const isAssigned = assignments.some(tech => 
-                        String(tech.technician_id) === String(techId)
-                    );
-                    if (isAssigned) {
-                        console.log('✅ Found cross-supervisor assigned job:', job.job_number);
-                    }
-                    return isAssigned;
+                filteredJobs.forEach(job => {
+                    console.log(`  - Job: ${job.job_number} (${job.description})`);
                 });
                 
-                console.log('🎯 Filtered cross-supervisor jobs for technician:', filteredJobs?.length || 0);
                 return filteredJobs;
             }
         },
@@ -197,10 +162,10 @@ export default function TechnicianPortal() {
         refetchInterval: 30000
     });
 
-    // Combine both job lists
+    // All jobs (including cross-supervisor assignments) are now handled in the single query above
     const allMyJobs = useMemo(() => {
-        return [...(myJobs || []), ...(myCrossSupervisorJobs || [])];
-    }, [myJobs, myCrossSupervisorJobs, getTechnicianId()]);
+        return myJobs || [];
+    }, [myJobs]);
 
     const { data: myEntries = [] } = useQuery({
         queryKey: ['myTimeEntries', getTechnicianId()],
