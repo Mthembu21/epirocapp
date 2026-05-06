@@ -411,7 +411,12 @@ export default function TechnicianPortal() {
                         category: formData.category,
                         category_detail: formData.category_detail || '',
                         // Mark as leave to prevent overtime calculation
-                        is_leave: true
+                        is_leave: true,
+                        // Ensure entry goes to approval system
+                        approval_status: 'pending',
+                        approved_hours: null,
+                        approved_by: null,
+                        approved_at: null
                     },
                     report: null
                 });
@@ -431,7 +436,12 @@ export default function TechnicianPortal() {
             log_date: formData.date,
             is_idle: isIdleSelected,
             category: isIdleSelected ? formData.category : null,
-            category_detail: isIdleSelected ? (formData.category_detail || '') : ''
+            category_detail: isIdleSelected ? (formData.category_detail || '') : '',
+            // Ensure entry goes to approval system
+            approval_status: 'pending',
+            approved_hours: null,
+            approved_by: null,
+            approved_at: null
         };
 
         const shouldSendReport =
