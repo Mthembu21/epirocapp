@@ -494,7 +494,7 @@ const getEntryCategoryLabel = (entry) => {
         return base;
     }
 
-    const job = (myJobs || []).find((j) => String(j.job_number) === String(entry.job_id));
+    const job = (allMyJobs || []).find((j) => String(j.job_number) === String(entry.job_id));
     const st = (job?.subtasks || []).find((s) => String(s?._id || s?.id) === String(entry.subtask_id));
     return st?.category || st?.title || entry.subtask_title || '-';
 };
