@@ -99,10 +99,10 @@ export default function TechnicianPortal() {
         validateSession();
     }, []);
 
-    // Get the correct technician ID (employeeNumber if available, fallback to employee_id, then id)
+    // Get the correct technician ID (MongoDB ObjectId for job assignments)
     const getTechnicianId = () => {
-        // Backend expects employeeNumber field, not employee_id
-        const techId = user?.employeeNumber || user?.employee_id || user?.id;
+        // Jobs use MongoDB ObjectId for technician assignments, not employee_id
+        const techId = user?.id; // Use MongoDB ObjectId
         console.log('🔍 User object:', { 
             id: user?.id, 
             employee_id: user?.employee_id, 
@@ -110,9 +110,9 @@ export default function TechnicianPortal() {
             name: user?.name,
             type: user?.type 
         });
-        console.log('🔍 Using technician ID:', techId);
+        console.log('🔍 Using technician ID (MongoDB ObjectId):', techId);
         console.log('🔍 Checking all possible ID formats:', {
-            'user.id': user?.id,
+            'user.id (MongoDB)': user?.id,
             'user.employee_id': user?.employee_id,
             'user.employeeNumber': user?.employeeNumber,
             'final techId': techId
