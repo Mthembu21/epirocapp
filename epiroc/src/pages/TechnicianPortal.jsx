@@ -675,10 +675,10 @@ import {
   X,
 } from "lucide-react";
 
-const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // FINAL VERSION - Force cache clear - 2026-05-06-12:05
+const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE'; // FINAL VERSION - Force cache clear - 2026-05-06-12:20 - CRITICAL DEPLOYMENT
 
 export default function TechnicianPortal() {
-  // FINAL FORCE CACHE CLEAR - 2026-05-06-12:05:30 - COMPLETE REWRITE v4.0
+  // FINAL FORCE CACHE CLEAR - 2026-05-06-12:20:30 - COMPLETE REWRITE v5.0
   const queryClient = useQueryClient();
 
   /* ===================== STATE ===================== */
