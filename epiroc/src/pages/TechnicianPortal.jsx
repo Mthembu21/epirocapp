@@ -26,7 +26,7 @@ const bottleneckCategories = [
     { value: 'technical_complexity', label: 'Technical Complexity' },
     { value: 'external_dependency', label: 'External Dependency' },
     { value: 'other', label: 'Other' }
-];
+]; // Add small comment to trigger fresh deployment
 
 export default function TechnicianPortal() {
     const [user, setUser] = useState(null);
