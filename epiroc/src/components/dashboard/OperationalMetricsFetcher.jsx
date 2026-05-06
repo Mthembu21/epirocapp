@@ -4,10 +4,14 @@ import { base44 } from '@/api/apiClient';
 
 export default function OperationalMetricsFetcher({ technicians, onOperationalMetricsUpdate, onMonthlySummariesUpdate }) {
     const [monthlySummaries, setMonthlySummaries] = useState([]);
+    const [isFetching, setIsFetching] = useState(false);
 
     useEffect(() => {
         const fetchOperationalMetrics = async () => {
+            if (isFetching) return; // Prevent excessive requests
+            
             try {
+                setIsFetching(true);
                 const dateRange = format(new Date(), 'yyyy-MM');
                 console.log('OperationalMetricsFetcher: Fetching data for dateRange:', dateRange, 'techId: all');
                 
@@ -164,6 +168,13 @@ export default function OperationalMetricsFetcher({ technicians, onOperationalMe
             } catch (error) {
                 console.error('OperationalMetricsFetcher: Failed to fetch daily productivity:', error);
                 console.error('OperationalMetricsFetcher: Error details:', error.message);
+                // Don't retry on authentication errors
+                if (error.message?.includes('Authentication required')) {
+                    console.log('OperationalMetricsFetcher: Authentication error detected, skipping retry');
+                    return;
+                }
+            } finally {
+                setIsFetching(false);
             }
         };
 
