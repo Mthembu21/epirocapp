@@ -462,13 +462,6 @@ const allMyJobs = useMemo(() => {
                             </Button>
                         </div>
 
-    if (report?.has_bottleneck && report?.bottleneck_category === 'technical_complexity') {
-        const timeLost = Number(reportData.bottleneck_time_lost_hours);
-        if (Number.isNaN(timeLost) || timeLost <= 0) {
-            setError('Please enter time lost due to technical complexity (hours) greater than 0.');
-            return;
-        }
-    }
 
     createEntryMutation.mutate({ timeLog, report });
 };
