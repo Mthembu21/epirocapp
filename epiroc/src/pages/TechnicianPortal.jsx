@@ -146,34 +146,34 @@ export default function TechnicianPortal() {
 
   /* ===================== DATA ===================== */
   const { data: myJobs = [] } = useQuery({
-    queryKey: ["myJobs", user?.employee_id],
-    enabled: !!user?.employee_id,
+    queryKey: ["myJobs", user?.id],
+    enabled: !!user?.id,
     queryFn: () =>
       base44.entities.Job.filter({
-        assigned_technician_id: user.employee_id,
+        assigned_technician_id: user.id,
       }),
     refetchInterval: 30000,
   });
 
   // Also fetch cross-supervisor assignments
   const { data: myCrossSupervisorJobs = [] } = useQuery({
-    queryKey: ["myCrossSupervisorJobs", user?.employee_id],
-    queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.employee_id, include_cross_supervisor: true }),
-    enabled: !!user?.employee_id,
+    queryKey: ["myCrossSupervisorJobs", user?.id],
+    queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.id, include_cross_supervisor: true }),
+    enabled: !!user?.id,
     refetchInterval: 30000,
   });
 
   // Combine both job lists
   const allMyJobs = useMemo(() => {
     return [...(myJobs || []), ...(myCrossSupervisorJobs || [])];
-  }, [myJobs, myCrossSupervisorJobs, user?.employee_id]);
+  }, [myJobs, myCrossSupervisorJobs, user?.id]);
 
   const { data: myEntries = [] } = useQuery({
-    queryKey: ["myTimeEntries", user?.employee_id],
-    enabled: !!user?.employee_id,
+    queryKey: ["myTimeEntries", user?.id],
+    enabled: !!user?.id,
     queryFn: () =>
       base44.entities.DailyTimeEntry.filter({
-        technician_id: user.employee_id,
+        technician_id: user.id,
       }),
     refetchInterval: 30000,
   });
@@ -237,7 +237,7 @@ export default function TechnicianPortal() {
 
     createEntryMutation.mutate({
       timeLog: {
-        technician_id: user.employee_id,
+        technician_id: user.id,
         job_id: formData.job_id,
         subtask_id:
           formData.job_id === IDLE_JOB_ID
@@ -358,8 +358,8 @@ export default function TechnicianPortal() {
                     {error}
                   </div>
                 )}
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <Label>Date</Label>
                       <Input
@@ -395,6 +395,7 @@ export default function TechnicianPortal() {
                       <Input
                         type="number"
                         step="0.25"
+                        placeholder="0.0"
                         value={formData.hours_logged}
                         onChange={e => setFormData(prev => ({ ...prev, hours_logged: e.target.value }))}
                         className="border-slate-300"
