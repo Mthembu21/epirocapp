@@ -107,6 +107,20 @@ export default function TechnicianPortal() {
         refetchInterval: 30000
     });
 
+// Also fetch cross-supervisor assignments
+const { data: myCrossSupervisorJobs = [] } = useQuery({
+    queryKey: ['myCrossSupervisorJobs', user?.id],
+    queryFn: () => base44.entities.Job.filter({ assigned_technician_id: user.id, include_cross_supervisor: true }),
+        enabled: !!user?.id,
+        staleTime: 0,
+        refetchInterval: 30000
+    });
+
+// Combine both job lists
+const allMyJobs = useMemo(() => {
+    return [...(myJobs || []), ...(myCrossSupervisorJobs || [])];
+}, [myJobs, myCrossSupervisorJobs, user?.id]);
+
     const { data: myEntries = [] } = useQuery({
         queryKey: ['myTimeEntries', user?.id],
         queryFn: () => base44.entities.DailyTimeEntry.filter({ technician_id: user.id }),
@@ -234,7 +248,7 @@ export default function TechnicianPortal() {
 
     const belowRequiredNormalForDay = totalLoggedHoursForDate > 0 && totalLoggedHoursForDate < requiredNormalForDay;
 
-    const selectedJob = myJobs.find(j => j.job_number === formData.job_id);
+    const selectedJob = allMyJobs.find(j => j.job_number === formData.job_id);
     const selectedJobRemainingHours = Number(
         selectedJob?.remaining_hours ?? (Number(selectedJob?.allocated_hours || 0) - Number(selectedJob?.consumed_hours || 0))
     );
@@ -447,26 +461,212 @@ export default function TechnicianPortal() {
                                 <LogOut className="w-5 h-5" />
                             </Button>
                         </div>
+
+    if (report?.has_bottleneck && report?.bottleneck_category === 'technical_complexity') {
+        const timeLost = Number(reportData.bottleneck_time_lost_hours);
+        if (Number.isNaN(timeLost) || timeLost <= 0) {
+            setError('Please enter time lost due to technical complexity (hours) greater than 0.');
+            return;
+        }
+    }
+
+    createEntryMutation.mutate({ timeLog, report });
+};
+
+const handleLogout = async () => {
+    try { await base44.auth.logout(); } catch {}
+    localStorage.removeItem('epiroc_user');
+    window.location.href = createPageUrl('WorkshopLogin');
+};
+
+const getDayBadgeColor = (day) => {
+    switch (day) {
+        case 'Sunday': return 'bg-red-100 text-red-700 border-red-200';
+        case 'Saturday': return 'bg-amber-100 text-amber-700 border-amber-200';
+        default: return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+};
+
+const getEntryCategoryLabel = (entry) => {
+    if (!entry) return '-';
+    if (entry.is_idle) {
+        const base = entry.category || '-';
+        if (base === 'Other' && String(entry.category_detail || '').trim()) {
+            return `Other: ${String(entry.category_detail).trim()}`;
+        }
+        return base;
+    }
+
+    const job = (myJobs || []).find((j) => String(j.job_number) === String(entry.job_id));
+    const st = (job?.subtasks || []).find((s) => String(s?._id || s?.id) === String(entry.subtask_id));
+    return st?.category || st?.title || entry.subtask_title || '-';
+};
+
+const totalHours = myEntriesForMonth.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
+const totalOvertimeHours = myEntriesForMonth.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
+const totalProductiveHours = myEntriesForMonth.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
+const totalNonProductiveHours = myEntriesForMonth.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
+
+if (!user) return null;
+
+return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <header className="bg-slate-800/90 backdrop-blur-lg border-b border-yellow-500/20 sticky top-0 z-10">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-yellow-400 p-2 rounded-lg">
+                            <Wrench className="w-6 h-6 text-slate-800" />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold text-yellow-400">EPIROC</h1>
+                            <p className="text-slate-400 text-xs">Technician Portal</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 text-white">
+                            <div className="w-8 h-8 rounded-full bg-yellow-400 flex items-center justify-center text-slate-800 font-bold text-sm">
+                                {user.name?.charAt(0)}
+                            </div>
+                            <div className="hidden sm:block">
+                                <p className="text-sm font-medium">{user.name}</p>
+                                <p className="text-xs text-slate-400">{user.employee_id}</p>
+                            </div>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={handleLogout} className="text-slate-400 hover:text-white">
+                            <LogOut className="w-5 h-5" />
+                        </Button>
                     </div>
                 </div>
-            </header>
+            </div>
+        </header>
 
-            <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-                {pendingJobs.length > 0 && (
-                    <Card className="border-0 shadow-lg bg-gradient-to-r from-yellow-50 to-amber-50 border-l-4 border-l-yellow-500 mb-6">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="flex items-center gap-2 text-amber-700 text-lg">
-                                <Briefcase className="w-5 h-5" />
-                                Pending Job Assignments ({pendingJobs.length})
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+            {allMyJobs.length > 0 && (
+                <Card className="border-0 shadow-lg bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-l-green-500 mb-6">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="flex items-center gap-2 text-green-700 text-lg">
+                            <CheckCircle className="w-5 h-5" />
+                            Active Job Assignments ({allMyJobs.length})
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-3">
+                            {allMyJobs.filter(job => (
+                                <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <p className="font-semibold text-slate-800">{job.job_number}</p>
+                                        <p className="text-sm text-slate-600">{job.description}</p>
+                                        <div className="flex gap-4 mt-2 text-sm">
+                                            <span className="text-blue-600">Allocated: {job.allocated_hours}h</span>
+                                        </div>
+                                    </div>
+                                    <Button 
+                                        onClick={() => confirmJobMutation.mutate(job.id)}
+                                        className="bg-green-500 hover:bg-green-600 text-white"
+                                        disabled={confirmJobMutation.isPending}
+                                    >
+                                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                                        Accept Job
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                <Card className="border-0 bg-gradient-to-br from-blue-500 to-blue-600">
+                    <CardContent className="p-4 text-white">
+                        <p className="text-sm text-white/80">Total Hours</p>
+                        <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
+                        <p className="text-xs text-white/60">Logged</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-0 bg-gradient-to-br from-green-500 to-green-600">
+                    <CardContent className="p-4 text-white">
+                        <p className="text-sm text-white/80">Productive Hours</p>
+                        <p className="text-2xl font-bold">{totalProductiveHours.toFixed(1)}h</p>
+                        <p className="text-xs text-white/60">Job hours</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-0 bg-gradient-to-br from-yellow-400 to-yellow-500">
+                    <CardContent className="p-4 text-slate-800">
+                        <p className="text-sm text-slate-700">Overtime</p>
+                        <p className="text-2xl font-bold">{totalOvertimeHours.toFixed(1)}h</p>
+                        <p className="text-xs text-slate-600">Overtime</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-0 bg-gradient-to-br from-slate-500 to-slate-600">
+                    <CardContent className="p-4 text-white">
+                        <p className="text-sm text-white/80">Non-Productive</p>
+                        <p className="text-2xl font-bold">{totalNonProductiveHours.toFixed(1)}h</p>
+                        <p className="text-xs text-white/60">IDLE hours</p>
+                    </CardContent>
+                </Card>
+            </div>
+
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="text-sm text-slate-300 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Viewing month
+                </div>
+                <div className="flex items-center gap-2">
+                    <Input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => {
+                            const next = e.target.value;
+                            if (!next) return;
+                            setSelectedMonth(next);
+
+                            const todayMonth = format(new Date(), 'yyyy-MM');
+                            const nextDate = next === todayMonth
+                                ? format(new Date(), 'yyyy-MM-dd')
+                                : `${next}-01`;
+                            setFormData((prev) => ({ ...prev, date: nextDate, end_date: '' }));
+                        }}
+                        className="w-44 bg-white"
+                    />
+                </div>
+            </div>
+
+            <Tabs defaultValue="log" className="space-y-6">
+                <TabsList className="bg-slate-700/50 p-1 rounded-xl border border-slate-600">
+                    <TabsTrigger value="log" className="text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800">
+                        <Clock className="w-4 h-4 mr-2" />
+                        Log Hours
+                    </TabsTrigger>
+                    <TabsTrigger value="jobs" className="text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800">
+                        <Briefcase className="w-4 h-4 mr-2" />
+                        My Jobs
+                    </TabsTrigger>
+                    <TabsTrigger value="history" className="text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        History
+                    </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="log">
+                    <Card className="border-0 shadow-lg bg-white/95 backdrop-blur">
+                        <CardHeader className="pb-4 border-b border-slate-100">
+                            <CardTitle className="flex items-center gap-2 text-slate-800">
+                                <Clock className="w-5 h-5 text-yellow-500" />
+                                Log Daily Hours
                             </CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <div className="space-y-3">
-                                {pendingJobs.map(job => (
-                                    <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm flex items-center justify-between">
-                                        <div>
-                                            <p className="font-semibold text-slate-800">{job.job_number}</p>
-                                            <p className="text-sm text-slate-600">{job.description}</p>
+                        <CardContent className="pt-6">
+                            <form onSubmit={handleSubmit} className="space-y-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Date</Label>
+                                        <Input
+                                            type="date"
+                                            value={formData.date}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                                            className="border-slate-300"
+                                        />
                                             <div className="flex gap-4 mt-2 text-sm">job_number
                                                 <span className="text-blue-600">Allocated: {job.allocated_hours}h</span>
                                             </div>
