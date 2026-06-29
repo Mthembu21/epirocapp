@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import epirocLogo from '../assets/epirocLogo.png';
 import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO, getDay, isSameDay, addDays, isAfter, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
@@ -761,7 +762,7 @@ export default function TechnicianPortal() {
                             <div className="flex items-center gap-3">
                             <div className="p-1 rounded-xl bg-yellow-400/20 backdrop-blur">
                                 <img
-                                    src="/src/assets/epirocLogo.png"
+                                    src={epirocLogo}
                                     alt="Epiroc"
                                     className="h-10 w-10 object-contain"
                                 />

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import epirocLogo from '../assets/epirocLogo.png';
 import { base44 } from '@/api/apiClient';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +62,7 @@ export default function WorkshopLogin() {
                 <div className="inline-flex items-center gap-3 mb-4">
                     <div className="p-1 rounded-xl bg-yellow-400/20 backdrop-blur">
                         <img
-                            src="/src/assets/epirocLogo.png"
+                            src={epirocLogo}
                             alt="Epiroc"
                             className="h-14 w-14 object-contain"
                         />

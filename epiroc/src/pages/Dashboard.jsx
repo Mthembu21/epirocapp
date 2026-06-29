@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import epirocLogo from '../assets/epirocLogo.png';
 import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -799,7 +800,7 @@ export default function Dashboard() {
                                 <div className="flex items-center gap-3">
                                 <div className="p-1 rounded-xl bg-yellow-400/20 backdrop-blur">
                                     <img
-                                        src="/src/assets/epirocLogo.png"
+                                        src={epirocLogo}
                                         alt="Epiroc"
                                         className="h-12 w-12 object-contain"
                                     />
