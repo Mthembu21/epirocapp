@@ -1,188 +1,129 @@
-import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
+import React, { useEffect, useRef } from 'react';
+import { format, startOfMonth, endOfMonth, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { base44 } from '@/api/apiClient';
+import { normalizeKpis } from '@/utils/normalizeKpis';
+import { guardRequires } from '@/utils/kpiUtils';
 
-export default function OperationalMetricsFetcher({ technicians, onOperationalMetricsUpdate, onMonthlySummariesUpdate }) {
-    const [monthlySummaries, setMonthlySummaries] = useState([]);
-    const [isFetching, setIsFetching] = useState(false);
+/**
+ * Render-null component that drives KPI state for the supervisor dashboard.
+ *
+ * Owns the entire fetch → validate → normalize pipeline so no other component
+ * needs to understand the raw API response shape.
+ *
+ * Props:
+ *   supervisorKey         — required; aborts with a visible warning when absent
+ *   technicians           — list of technician objects; aborts when empty
+ *   timeView              — 'daily' | 'weekly' | 'monthly'
+ *   selectedMonth         — 'YYYY-MM' string used for monthly view
+ *   weekStart / weekEnd   — Date-like values used for weekly view
+ *   onOperationalMetricsUpdate(normalized)  — receives the normalized KPI object
+ *   onMonthlySummariesUpdate(series[])      — receives time-series data if present
+ */
+export default function OperationalMetricsFetcher({
+  technicians,
+  selectedMonth,
+  timeView = 'monthly',
+  onOperationalMetricsUpdate,
+  onMonthlySummariesUpdate,
+  weekStart,
+  weekEnd,
+  supervisorKey,
+  refreshKey = 0,
+}) {
+  // Ref guard: prevents concurrent fetches without triggering re-renders
+  // (using useState here would cause an infinite loop — state change → re-render
+  //  → effect re-runs → fetch starts again).
+  const isFetchingRef = useRef(false);
 
-    useEffect(() => {
-        const fetchOperationalMetrics = async () => {
-            if (isFetching) return; // Prevent excessive requests
-            
-            try {
-                setIsFetching(true);
-                const dateRange = format(new Date(), 'yyyy-MM');
-                console.log('OperationalMetricsFetcher: Fetching data for dateRange:', dateRange, 'techId: all');
-                
-                // Use existing working API calls instead of failing utilization endpoint
-                // Get daily time entries which we know work
-                const timeEntries = await base44.entities.DailyTimeEntry.list('-log_date', 500);
-                console.log('OperationalMetricsFetcher: Using timeEntries data instead:', timeEntries.length, 'items');
-                
-                // Filter entries for current month and calculate metrics
-                const currentMonthEntries = timeEntries.filter(entry => {
-                    const entryDate = new Date(entry.log_date);
-                    const entryMonth = format(entryDate, 'yyyy-MM');
-                    return entryMonth === dateRange;
-                });
-                
-                console.log('OperationalMetricsFetcher: Current month entries:', currentMonthEntries.length);
-                
-                // Convert time entries to utilization format with half-hour deduction rule
-                const aggregatedData = currentMonthEntries.reduce((acc, entry) => {
-                    const dateKey = format(new Date(entry.log_date), 'yyyy-MM-dd');
-                    if (!acc[dateKey]) {
-                        acc[dateKey] = {
-                            date: dateKey,
-                            productiveHours: 0,
-                            nonProductiveHours: 0,
-                            idleHours: 0,
-                            notAvailableHours: 0,
-                            totalHours: 0,
-                            entries: [] // Store entries for half-hour rule calculation
-                        };
-                    }
-                    
-                    const day = acc[dateKey];
-                    day.totalHours += Number(entry.hours_logged || 0);
-                    day.entries.push(entry); // Store entry for later processing
-                    
-                    if (entry.is_idle) {
-                        day.idleHours += Number(entry.hours_logged || 0);
-                    } else if (entry.is_productive === false) {
-                        // Training and other non-productive work count as utilized but not productive
-                        day.nonProductiveHours += Number(entry.hours_logged || 0);
-                    } else {
-                        // Only actual productive work counts here
-                        day.productiveHours += Number(entry.hours_logged || 0);
-                    }
-                    
-                    return acc;
-                }, {});
-                
-                // Apply half-hour deduction rule to each day
-                const processedData = Object.values(aggregatedData).map(day => {
-                    const dayOfWeek = new Date(day.date).getDay(); // 0 = Sunday, 6 = Saturday
-                    const isFriday = dayOfWeek === 5;
-                    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // Mon-Fri
-                    
-                    // Enhanced debugging for user's test case
-                    console.log(`Processing ${day.date}: Day ${dayOfWeek}, Friday: ${isFriday}, Weekday: ${isWeekday}`);
-                    console.log(`Hours - Productive: ${day.productiveHours}, Non-productive: ${day.nonProductiveHours}, Idle: ${day.idleHours}, Total: ${day.totalHours}`);
-                    
-                    // Only apply half-hour rule on weekdays
-                    if (isWeekday && day.idleHours === 0) {
-                        // Check if technician booked full day on job
-                        const fullDayHours = isFriday ? 7 : 7.5; // 7 hours Friday, 7.5 hours Mon-Thu
-                        const totalWorkHours = day.productiveHours + day.nonProductiveHours;
-                        
-                        console.log(`Half-hour rule check: TotalWorkHours=${totalWorkHours}, FullDayHours=${fullDayHours}, IdleHours=${day.idleHours}`);
-                        
-                        // Apply half-hour deduction only if:
-                        // 1. No idle hours
-                        // 2. Total work hours equal or exceed full day hours
-                        if (totalWorkHours >= fullDayHours) {
-                            console.log(`✅ APPLYING half-hour deduction for ${day.date}: ${totalWorkHours}h >= ${fullDayHours}h, no idle hours`);
-                            // Deduct 0.5 hours from total available hours for utilization calculation
-                            day.halfHourDeduction = 0.5;
-                        } else {
-                            console.log(`❌ NO half-hour deduction for ${day.date}: ${totalWorkHours}h < ${fullDayHours}h or has idle hours`);
-                            day.halfHourDeduction = 0;
-                        }
-                    } else {
-                        // No deduction on weekends or if has idle hours
-                        day.halfHourDeduction = 0;
-                        if (day.idleHours > 0) {
-                            console.log(`No half-hour deduction for ${day.date}: has ${day.idleHours}h idle hours`);
-                        } else if (!isWeekday) {
-                            console.log(`No half-hour deduction for ${day.date}: weekend`);
-                        }
-                    }
-                    
-                    return day;
-                });
-                
-                const data = processedData;
-                console.log('OperationalMetricsFetcher: Processed utilization data:', data);
-                console.log('OperationalMetricsFetcher: Data type:', typeof data);
-                console.log('OperationalMetricsFetcher: Is array?', Array.isArray(data));
-                
-                // Normalize to always be an array
-                const dataArray = Array.isArray(data) ? data : [];
-                console.log('OperationalMetricsFetcher: Normalized data array length:', dataArray.length);
-                console.log('OperationalMetricsFetcher: Sample data item:', dataArray[0]);
-                console.log('OperationalMetricsFetcher: onOperationalMetricsUpdate exists?', !!onOperationalMetricsUpdate);
-                console.log('OperationalMetricsFetcher: onMonthlySummariesUpdate exists?', !!onMonthlySummariesUpdate);
-                setMonthlySummaries(dataArray);
-                
-                // Update Dashboard with monthly summaries for charts
-                if (onMonthlySummariesUpdate) {
-                    console.log('OperationalMetricsFetcher: Calling onMonthlySummariesUpdate callback with', dataArray.length, 'items');
-                    onMonthlySummariesUpdate(dataArray);
-                }
-                
-                // Calculate operational metrics and share with Dashboard
-                if (onOperationalMetricsUpdate && dataArray.length > 0) {
-                    console.log('OperationalMetricsFetcher: Processing operational metrics from', dataArray.length, 'items');
-                    
-                    const aggregateMetrics = dataArray.reduce((acc, day) => {
-                        acc.productiveHours += day.productiveHours || 0;
-                        acc.nonProductiveHours += day.nonProductiveHours || 0;
-                        acc.idleHours += day.idleHours || 0;
-                        acc.notAvailableHours += day.notAvailableHours || 0;
-                        acc.totalContractedHours += day.totalHours || 0;
-                        return acc;
-                    }, {
-                        productiveHours: 0,
-                        nonProductiveHours: 0,
-                        idleHours: 0,
-                        notAvailableHours: 0,
-                        totalContractedHours: 0
-                    });
-                    
-                    // Calculate final percentages with half-hour deduction rule
-                    const totalHalfHourDeductions = dataArray.reduce((sum, day) => sum + (day.halfHourDeduction || 0), 0);
-                    const adjustedAvailableHours = aggregateMetrics.totalContractedHours - aggregateMetrics.notAvailableHours - totalHalfHourDeductions;
-                    // Utilization includes both productive and non-productive work (including training)
-                    const utilizedHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
-                    const utilization = adjustedAvailableHours > 0 ? (utilizedHours / adjustedAvailableHours) * 100 : 0;
-                    const workingHours = aggregateMetrics.productiveHours + aggregateMetrics.nonProductiveHours;
-                    const productivity = workingHours > 0 ? (aggregateMetrics.productiveHours / workingHours) * 100 : 0;
-                    const idlePercentage = adjustedAvailableHours > 0 ? (aggregateMetrics.idleHours / adjustedAvailableHours) * 100 : 0;
-                    
-                    const metrics = {
-                        utilization,
-                        productivity,
-                        idlePercentage,
-                        ...aggregateMetrics
-                    };
-                    
-                    console.log('OperationalMetricsFetcher: Calculated operational metrics:', metrics);
-                    console.log('OperationalMetricsFetcher: Calling onOperationalMetricsUpdate callback');
-                    
-                    onOperationalMetricsUpdate(metrics);
-                } else {
-                    console.log('OperationalMetricsFetcher: No data or callback available');
-                }
-            } catch (error) {
-                console.error('OperationalMetricsFetcher: Failed to fetch daily productivity:', error);
-                console.error('OperationalMetricsFetcher: Error details:', error.message);
-                // Don't retry on authentication errors
-                if (error.message?.includes('Authentication required')) {
-                    console.log('OperationalMetricsFetcher: Authentication error detected, skipping retry');
-                    return;
-                }
-            } finally {
-                setIsFetching(false);
-            }
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      // ── Observable guards (fail loudly, not silently) ──────────────────────
+      if (!guardRequires(supervisorKey, 'supervisorKey', '[KPI Fetcher]')) return;
+      if (!technicians || technicians.length === 0) {
+        console.warn('[KPI Fetcher] technicians list is empty — fetch skipped');
+        return;
+      }
+      if (isFetchingRef.current) {
+        console.warn('[KPI Fetcher] fetch already in flight — skipped');
+        return;
+      }
+
+      isFetchingRef.current = true;
+
+      // ── Build date range from current time view ─────────────────────────────
+      const today = new Date();
+      let filters = {};
+
+      if (timeView === 'daily') {
+        const todayStr = format(today, 'yyyy-MM-dd');
+        filters = { start_date: todayStr, end_date: todayStr };
+
+      } else if (timeView === 'weekly') {
+        const ws = weekStart ? new Date(weekStart) : startOfWeek(today, { weekStartsOn: 1 });
+        const we = weekEnd   ? new Date(weekEnd)   : endOfWeek(today,   { weekStartsOn: 1 });
+        filters = {
+          start_date: format(ws, 'yyyy-MM-dd'),
+          end_date:   format(we, 'yyyy-MM-dd'),
         };
 
-        if (technicians.length > 0) {
-            fetchOperationalMetrics();
-        }
-    }, [technicians, onOperationalMetricsUpdate]);
+      } else {
+        const base = selectedMonth ? parseISO(`${selectedMonth}-01`) : today;
+        filters = {
+          start_date: format(startOfMonth(base), 'yyyy-MM-dd'),
+          end_date:   format(endOfMonth(base),   'yyyy-MM-dd'),
+        };
+      }
 
-    // This component doesn't render anything visible
-    return null;
+      console.log('[KPI Fetcher] Requesting', timeView, filters);
+
+      try {
+        // ── API call ─────────────────────────────────────────────────────────
+        const apiResponse = await base44.entities.KPI.dashboardOverview(supervisorKey, filters);
+        console.log('[KPI TRACE] OperationalMetricsFetcher — API response:', apiResponse);
+
+        // ── Centralized normalization (single place for shape logic) ──────────
+        const normalized = normalizeKpis(apiResponse);
+        console.log('[KPI TRACE] OperationalMetricsFetcher — after normalize:', normalized);
+
+        if (!normalized._kpiShapeValid) {
+          console.error('[KPI Fetcher] Response shape invalid — UI will show N/A for missing fields');
+        }
+
+        if (normalized.hasData === false) {
+          console.info('[KPI Fetcher] No data available for selected period:', filters);
+        }
+
+        // ── Push to state ──────────────────────────────────────────────────────
+        if (onOperationalMetricsUpdate) {
+          console.log('[KPI TRACE] OperationalMetricsFetcher — calling onOperationalMetricsUpdate');
+          onOperationalMetricsUpdate(normalized);
+        }
+
+        if (onMonthlySummariesUpdate) {
+          const outer = apiResponse?.data || apiResponse || {};
+          const series =
+            outer?.series ||
+            outer?.monthlySummaries ||
+            outer?.timeseries ||
+            [];
+          onMonthlySummariesUpdate(Array.isArray(series) ? series : []);
+        }
+
+      } catch (error) {
+        console.error('[KPI Fetcher] Fetch failed:', error, { supervisorKey, timeView, filters });
+      } finally {
+        isFetchingRef.current = false;
+      }
+    };
+
+    fetchMetrics();
+    // Re-run when any data-driving param changes.
+    // refreshKey is incremented by Dashboard mutations (approve/delete/update time entries)
+    // to force an immediate re-fetch without waiting for the next natural dep change.
+    // Callback props are excluded intentionally: inline lambdas in Dashboard
+    // are recreated every render and would cause an infinite loop if included.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supervisorKey, timeView, selectedMonth, weekStart, weekEnd, technicians, refreshKey]);
+
+  return null;
 }

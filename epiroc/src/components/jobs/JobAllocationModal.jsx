@@ -145,8 +145,8 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-                <Button className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 h-10 px-4">
-                    <Plus className="w-4 h-4 mr-2" />
+                <Button className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 h-10 px-4 flex items-center gap-2">
+                    <Plus className="w-4 h-4" />
                     Create Job
                 </Button>
             </DialogTrigger>

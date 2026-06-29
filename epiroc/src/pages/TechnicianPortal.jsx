@@ -15,6 +15,12 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle, CheckCircle2, Pencil, Trash2, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
+import JobPauseResumeForm from '@/components/downtime/JobPauseResumeForm.jsx';
+import TechnicianKPIHeader from '@/components/kpi/TechnicianKPIHeader.jsx';
+import AlertsList from '@/components/alerts/AlertsList.jsx';
+import { normalizeKpis } from '@/utils/normalizeKpis';
+
+
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -38,8 +44,10 @@ export default function TechnicianPortal() {
         subtask_id: '',
         hours_logged: '',
         category: '',
+        // Use category_detail as the technician-provided note/description for Training + Other
         category_detail: ''
     });
+
     const [reportData, setReportData] = useState({
         work_completed: '',
         has_bottleneck: false,
@@ -48,7 +56,34 @@ export default function TechnicianPortal() {
         bottleneck_time_lost_hours: ''
     });
 
-    const [editingEntryId, setEditingEntryId] = useState(null);
+  const [editingEntryId, setEditingEntryId] = useState(null);
+
+  // Downtime (pause/resume) - UI wired; backend wiring pending
+  const [isPaused, setIsPaused] = useState(false);
+  const [downtimeLogDraft, setDowntimeLogDraft] = useState({
+    category: '',
+    duration_hours: '',
+    note: ''
+  });
+  const [isDowntimeLogging, setIsDowntimeLogging] = useState(false);
+  
+  // Job-specific pause/resume tracking
+  const [pausedJobs, setPausedJobs] = useState({}); // { jobId: { pause_reason, duration_hours, paused_at, ... } }
+  const [isPauseJobLoading, setIsPauseJobLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Restore paused-job state from the backend so it survives page refreshes
+  useEffect(() => {
+    if (!user?.supervisor_key || !user?.id) return;
+    base44.entities.Downtime.getActivePauses(user.supervisor_key, user.id)
+      .then(result => {
+        if (result?.data && Object.keys(result.data).length > 0) {
+          setPausedJobs(result.data);
+        }
+      })
+      .catch(err => console.error('Failed to load active pauses:', err));
+  }, [user?.supervisor_key, user?.id]);
+
     const [editEntryDraft, setEditEntryDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
     const queryClient = useQueryClient();
 
@@ -57,6 +92,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+            queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
             setEditingEntryId(null);
             setEditEntryDraft({ hours_logged: '', category: '', category_detail: '' });
         }
@@ -67,6 +103,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+            queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
         }
     });
 
@@ -121,6 +158,7 @@ export default function TechnicianPortal() {
     };
 
     const { data: myJobs = [] } = useQuery({
+
         queryKey: ['myJobs', getTechnicianId()],
         queryFn: async () => {
             const techId = getTechnicianId();
@@ -212,6 +250,7 @@ export default function TechnicianPortal() {
     });
 
     const { data: idleInfo } = useQuery({
+
         queryKey: ['idleCategories'],
         queryFn: () => base44.entities.DailyTimeEntry.idleCategories(),
         enabled: !!getTechnicianId()
@@ -223,6 +262,9 @@ export default function TechnicianPortal() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+            // Re-fetch time entries — completing a stage may change job status and
+            // affects which entries the technician can still edit.
+            queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
         },
         onError: (e) => {
             alert(e?.message || 'Failed to mark stage complete');
@@ -296,6 +338,7 @@ export default function TechnicianPortal() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+            queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
             setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '', end_date: '' }));
             setReportData({
                 work_completed: '',
@@ -309,6 +352,57 @@ export default function TechnicianPortal() {
 
     const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
     const monthEnd = endOfMonth(parseISO(`${selectedMonth}-01`));
+
+    // Technician KPI fetch (drives KPI header + loading state)
+    // const {
+    //     data: kpiResponse,
+    //     isLoading: kpiLoading,
+    // } = useQuery({
+    //     queryKey: ['technicianKPIs', user?.supervisor_key, selectedMonth],
+    //     queryFn: async () => {
+            
+    //         return await base44.entities.KPI.getDashboardOverview(
+    //             user.supervisor_key,
+    //             {
+    //                 start_date: format(monthStart, 'yyyy-MM-dd'),
+    //                 end_date: format(monthEnd, 'yyyy-MM-dd'),
+    //                   technician_id: getTechnicianId() //
+    //             }
+    //         );
+    //     },
+    //     enabled: !!user?.supervisor_key,
+    //     staleTime: 0,
+    //     refetchInterval: 30000,
+    // });
+    const {
+  data: kpiResponse,
+  isLoading: kpiLoading,
+} = useQuery({
+  queryKey: ['technicianKPIs', user?.supervisor_key, selectedMonth],
+  queryFn: async () => {
+    const filters = {
+      start_date: format(monthStart, 'yyyy-MM-dd'),
+      end_date: format(monthEnd, 'yyyy-MM-dd'),
+      technician_id: getTechnicianId()
+    };
+    console.log('🔍 KPI REQUEST:', {
+      supervisor: user.supervisor_key,
+      filters
+    });
+    const response = await base44.entities.KPI.dashboardOverview(
+      user.supervisor_key,
+      filters
+    );
+    console.log('✅ KPI RESPONSE:', response);
+    return response;
+  },
+  enabled: !!user?.supervisor_key && !!getTechnicianId(),
+});
+
+    // Centralized normalization — single call replaces all manual unwrapping.
+    // Fields missing in the response become null (not 0) so the UI shows "N/A".
+    const utilizationOverview = normalizeKpis(kpiResponse);
+
     const myEntriesForMonth = myEntries.filter((e) => {
         if (!e?.log_date) return false;
         const d = parseISO(e.log_date);
@@ -333,7 +427,8 @@ export default function TechnicianPortal() {
         selectedJob?.remaining_hours ?? (Number(selectedJob?.allocated_hours || 0) - Number(selectedJob?.consumed_hours || 0))
     );
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
-    const isOtherIdleSelected = isIdleSelected && formData.category === 'Other';
+    const isIdleCategorySelected = isIdleSelected && formData.category === 'Idle';
+    const isOtherIdleSelected = isIdleSelected && formData.category === 'Other'; // legacy backward-compat
     const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
     const isSickSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'sick';
     const isMultiDayLeave = isLeaveSelected || isSickSelected;
@@ -382,6 +477,20 @@ export default function TechnicianPortal() {
 
         if (!isIdleSelected && !formData.subtask_id) return;
         if (isIdleSelected && !formData.category) return;
+
+        // Require sub_reason when Idle category is selected
+        if (isIdleSelected && formData.category === 'Idle' && !String(formData.category_detail || '').trim()) {
+            alert('Please select a reason for idle time');
+            return;
+        }
+        // Require note when Training
+        if (isIdleSelected && formData.category === 'Training') {
+            if (!String(formData.category_detail || '').trim()) {
+                alert('Training Note is required');
+                return;
+            }
+        }
+
 
         if (isMultiDayLeave) {
             const start = parseISO(formData.date);
@@ -505,8 +614,12 @@ export default function TechnicianPortal() {
         if (!entry) return '-';
         if (entry.is_idle) {
             const base = entry.category || '-';
-            if (base === 'Other' && String(entry.category_detail || '').trim()) {
-                return `Other: ${String(entry.category_detail).trim()}`;
+            const detail = String(entry.category_detail || '').trim();
+            if (base === 'Idle' && detail) {
+                return `Idle – ${detail}`;
+            }
+            if (base === 'Other' && detail) {
+                return `Other: ${detail}`;
             }
             return base;
         }
@@ -523,14 +636,135 @@ export default function TechnicianPortal() {
 
     if (!user) return null;
 
+    // utilizationOverview is already normalized by normalizeKpis().
+    // Fields are null (not 0) for missing values so TechnicianKPIHeader shows "N/A".
+    const safeMetrics = utilizationOverview;
+    console.log('[KPI TRACE] TechnicianPortal — safeMetrics state:', safeMetrics);
+
+
+
+
+    const downtimeCategoryOptions = [
+      { value: 'maintenance', label: 'Maintenance' },
+      { value: 'waiting_for_parts', label: 'Waiting for Parts' },
+      { value: 'equipment_failure', label: 'Equipment Failure' },
+      { value: 'technical_complexity', label: 'Technical Complexity' },
+      { value: 'other', label: 'Other' },
+    ];
+
+    const handlePause = () => setIsPaused(true);
+    const handleResume = () => setIsPaused(false);
+
+    const handleLogDowntime = async () => {
+      // Wire UI to backend pause-resume routes.
+      // NOTE: backend expects { technician_id, reason, description }.
+      // UI uses: logDraft.category, logDraft.duration_hours, logDraft.note.
+      try {
+        setIsDowntimeLogging(true);
+
+        const supervisorKey = user?.supervisor_key;
+        if (!supervisorKey) {
+          alert('Missing supervisor key for downtime logging');
+          return;
+        }
+
+        // Use selected job for downtime context.
+        // If technician is logging downtime while no real job is selected, disable.
+        const jobId = formData?.job_id && formData.job_id !== IDLE_JOB_ID ? formData.job_id : null;
+        if (!jobId) {
+          alert('Select a real job to pause/resume');
+          return;
+        }
+
+        const reason = downtimeLogDraft.category;
+        const description = downtimeLogDraft.note || '';
+        if (!reason) {
+          alert('Select a downtime category');
+          return;
+        }
+
+        await base44.entities.Downtime.pauseJob(supervisorKey, jobId, {
+          technician_id: getTechnicianId(),
+          reason,
+          description
+        });
+
+        setIsPaused(false);
+        setDowntimeLogDraft({ category: '', duration_hours: '', note: '' });
+
+      } catch (e) {
+        alert(e?.message || 'Failed to save downtime');
+      } finally {
+        setIsDowntimeLogging(false);
+      }
+    };
+
+    const handlePauseJob = async (pauseData) => {
+      setIsPauseJobLoading(true);
+      try {
+        const supervisorKey = user?.supervisor_key;
+        if (!supervisorKey) throw new Error('Missing supervisor key');
+
+        await base44.entities.Downtime.pauseJob(supervisorKey, pauseData.job_id, {
+          technician_id: getTechnicianId(),
+          pause_reason: pauseData.pause_reason,
+          description: pauseData.description,
+        });
+
+        setPausedJobs(prev => ({
+          ...prev,
+          [pauseData.job_id]: pauseData
+        }));
+
+        queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+        // Alert is shown by JobPauseResumeForm — don't duplicate it here
+      } catch (error) {
+        console.error('Error pausing job:', error);
+        throw error; // let JobPauseResumeForm's catch block show the alert
+      } finally {
+        setIsPauseJobLoading(false);
+      }
+    };
+
+    const handleResumeJob = async (resumeData) => {
+      setIsPauseJobLoading(true);
+      try {
+        const supervisorKey = user?.supervisor_key;
+        if (!supervisorKey) throw new Error('Missing supervisor key');
+
+        await base44.entities.Downtime.resumeJob(supervisorKey, resumeData.job_id, {
+          technician_id: getTechnicianId(),
+        });
+
+        setPausedJobs(prev => {
+          const updated = { ...prev };
+          delete updated[resumeData.job_id];
+          return updated;
+        });
+
+        queryClient.invalidateQueries({ queryKey: ['myJobs'] });
+        // Alert is shown by JobPauseResumeForm — don't duplicate it here
+      } catch (error) {
+        console.error('Error resuming job:', error);
+        throw error; // let JobPauseResumeForm's catch block show the alert
+      } finally {
+        setIsPauseJobLoading(false);
+      }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+
             <header className="bg-slate-800/90 backdrop-blur-lg border-b border-yellow-500/20 sticky top-0 z-10">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-yellow-400 p-2 rounded-lg">
-                                <Wrench className="w-6 h-6 text-slate-800" />
+                            <div className="flex items-center gap-3">
+                            <div className="p-1 rounded-xl bg-yellow-400/20 backdrop-blur">
+                                <img
+                                    src="/src/assets/epirocLogo.png"
+                                    alt="Epiroc"
+                                    className="h-10 w-10 object-contain"
+                                />
                             </div>
                             <div>
                                 <h1 className="text-xl font-bold text-yellow-400">EPIROC</h1>
@@ -556,6 +790,20 @@ export default function TechnicianPortal() {
             </header>
 
             <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+                {/* KPI Header - Performance Metrics */}
+                <div className="mb-8">
+                    <TechnicianKPIHeader
+                        metricsData={safeMetrics}
+                        hasData={safeMetrics?.hasData ?? null}
+                        isLoading={kpiLoading}
+                        selectedDate={format(new Date(formData.date), 'MMM dd, yyyy')}
+                    />
+                </div>
+
+
+
+
+
                 {allMyJobs.length > 0 && (
                     <Card className="border-0 shadow-lg bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-l-green-500 mb-6">
                         <CardHeader className="pb-2">
@@ -656,36 +904,7 @@ export default function TechnicianPortal() {
                     </Card>
                 )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-                    <Card className="border-0 bg-gradient-to-br from-blue-500 to-blue-600">
-                        <CardContent className="p-4 text-white">
-                            <p className="text-sm text-white/80">Total Hours</p>
-                            <p className="text-2xl font-bold">{totalHours.toFixed(1)}h</p>
-                            <p className="text-xs text-white/60">Logged</p>
-                        </CardContent>
-                    </Card>
-                    <Card className="border-0 bg-gradient-to-br from-green-500 to-green-600">
-                        <CardContent className="p-4 text-white">
-                            <p className="text-sm text-white/80">Productive Hours</p>
-                            <p className="text-2xl font-bold">{totalProductiveHours.toFixed(1)}h</p>
-                            <p className="text-xs text-white/60">Job hours</p>
-                        </CardContent>
-                    </Card>
-                    <Card className="border-0 bg-gradient-to-br from-yellow-400 to-yellow-500">
-                        <CardContent className="p-4 text-slate-800">
-                            <p className="text-sm text-slate-700">Overtime</p>
-                            <p className="text-2xl font-bold">{totalOvertimeHours.toFixed(1)}h</p>
-                            <p className="text-xs text-slate-600">Overtime</p>
-                        </CardContent>
-                    </Card>
-                    <Card className="border-0 bg-gradient-to-br from-slate-500 to-slate-600">
-                        <CardContent className="p-4 text-white">
-                            <p className="text-sm text-white/80">Non-Productive</p>
-                            <p className="text-2xl font-bold">{totalNonProductiveHours.toFixed(1)}h</p>
-                            <p className="text-xs text-white/60">IDLE hours</p>
-                        </CardContent>
-                    </Card>
-                </div>
+
 
                 <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="text-sm text-slate-300 flex items-center gap-2">
@@ -729,7 +948,17 @@ export default function TechnicianPortal() {
                     </TabsList>
 
                     <TabsContent value="log">
+                        <div className="space-y-6">
+                            {/* Unified Job Pause/Resume Form */}
+                            <JobPauseResumeForm
+                                activeJobs={activeJobs}
+                                pausedJobs={pausedJobs}
+                                onPauseJob={handlePauseJob}
+                                onResumeJob={handleResumeJob}
+                                isLoading={isPauseJobLoading}
+                            />
                         <Card className="border-0 shadow-lg bg-white/95 backdrop-blur">
+
                             <CardHeader className="pb-4 border-b border-slate-100">
                                 <CardTitle className="flex items-center gap-2 text-slate-800">
                                     <Clock className="w-5 h-5 text-yellow-500" />
@@ -738,6 +967,7 @@ export default function TechnicianPortal() {
                             </CardHeader>
                             <CardContent className="pt-6">
                                 <form onSubmit={handleSubmit} className="space-y-6">
+
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                             <Label>Date</Label>
@@ -787,16 +1017,50 @@ export default function TechnicianPortal() {
                                                     </SelectContent>
                                                 </Select>
                                             </div>
-                                            {isOtherIdleSelected && (
+                                            {/* Sub-reason dropdown for Idle */}
+                                            {isIdleCategorySelected && (
                                                 <div className="space-y-2">
-                                                    <Label>Other (describe)</Label>
-                                                    <Input
+                                                    <Label>Reason *</Label>
+                                                    <Select
+                                                        value={formData.category_detail}
+                                                        onValueChange={(value) => setFormData(prev => ({ ...prev, category_detail: value }))}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Select reason" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {(idleInfo?.idle_sub_reasons || ['Housekeeping', 'Waiting', 'No Work', 'Other']).map((r) => (
+                                                                <SelectItem key={r} value={r}>{r}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            )}
+                                            {/* Notes textbox for Training */}
+                                            {isIdleSelected && formData.category === 'Training' && (
+                                                <div className="space-y-2">
+                                                    <Label>Training Note (specific details) *</Label>
+                                                    <Textarea
                                                         value={formData.category_detail}
                                                         onChange={(e) => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
-                                                        className="border-slate-300"
+                                                        placeholder="What training did you complete? Which topics/practices did you cover?"
+                                                        className="h-24 border-slate-300"
                                                     />
                                                 </div>
                                             )}
+                                            {/* Legacy Other free text */}
+                                            {isOtherIdleSelected && (
+                                                <div className="space-y-2">
+                                                    <Label>Other (describe)</Label>
+                                                    <Textarea
+                                                        value={formData.category_detail}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
+                                                        placeholder="Describe other non-productive work..."
+                                                        className="h-24 border-slate-300"
+                                                    />
+                                                </div>
+                                            )}
+
 
                                             {isMultiDayLeave && (
                                                 <div className="space-y-2">
@@ -1005,15 +1269,16 @@ export default function TechnicianPortal() {
                                     <Button 
                                         type="submit" 
                                         className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold"
-                                        disabled={
+                                            disabled={
                                             createEntryMutation.isPending ||
                                             !formData.job_id ||
                                             (!isMultiDayLeave && !formData.hours_logged) ||
                                             (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                             (isIdleSelected && !formData.category) ||
-                                            (isOtherIdleSelected && !String(formData.category_detail || '').trim()) ||
+                                            ((isIdleSelected && (formData.category === 'Idle' || formData.category === 'Training')) && !String(formData.category_detail || '').trim()) ||
                                             (!isMultiDayLeave && (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24))
                                         }
+
                                     >
                                         <Save className="w-4 h-4 mr-2" />
                                         {createEntryMutation.isPending ? 'Saving...' : 'Submit Hours'}
@@ -1021,6 +1286,7 @@ export default function TechnicianPortal() {
                                 </form>
                             </CardContent>
                         </Card>
+                        </div>
                     </TabsContent>
 
                     <TabsContent value="jobs">
@@ -1061,99 +1327,6 @@ export default function TechnicianPortal() {
                                                     <div className="flex justify-between text-xs text-slate-500 mt-1">
                                                         <span>{(job.aggregated_progress_percentage ?? job.progress_percentage ?? 0).toFixed(0)}% complete</span>
                                                         <span>{(job.remaining_hours ?? (job.allocated_hours - job.consumed_hours) ?? 0).toFixed(1)}h remaining</span>
-                                                    </div>
-                                                </div>
-
-                                                {(job.subtasks || []).length > 0 && (
-                                                    <div className="mt-3 space-y-2">
-                                                        <p className="text-sm font-medium text-slate-700">Subtasks</p>
-                                                        <div className="space-y-2">
-                                                            {(job.subtasks || []).map((st) => {
-                                                                const subtaskId = st.id || st._id;
-
-                                                                const assigned = Array.isArray(st?.assigned_technicians) ? st.assigned_technicians : [];
-                                                                const myAssignedRow = assigned.find((a) => String(a?.technician_id) === String(getTechnicianId())) || null;
-                                                                if (!myAssignedRow) return null;
-
-                                                                const myProgressObj = (st.progress_by_technician || []).find(p => String(p.technician_id) === String(getTechnicianId())) || null;
-                                                                const myProgress = Number(myProgressObj?.progress_percentage || 0);
-                                                                const isStageCompleted = Boolean(myProgressObj?.completed) || myProgress >= 100 - 1e-9;
-                                                                if (isStageCompleted) return null;
-
-                                                                const stageAllocated = Number(
-                                                                    typeof myAssignedRow?.allocated_hours !== 'undefined' && myAssignedRow?.allocated_hours !== null
-                                                                        ? myAssignedRow.allocated_hours
-                                                                        : (st.allocated_hours || 0)
-                                                                );
-                                                                const stageConsumed = Number(st.consumed_hours || 0);
-                                                                const stageRemaining = Number(
-                                                                    typeof st.remaining_hours !== 'undefined' && st.remaining_hours !== null
-                                                                        ? st.remaining_hours
-                                                                        : Math.max(0, stageAllocated - stageConsumed)
-                                                                );
-
-                                                                return (
-                                                                    <div key={subtaskId} className="bg-slate-50 rounded p-3">
-                                                                        <div className="flex items-center justify-between gap-2">
-                                                                            <div className="min-w-0">
-                                                                                <p className="text-sm font-semibold text-slate-800 truncate">{st.title}</p>
-                                                                                <p className="text-xs text-slate-500">My progress: {Number(myProgress).toFixed(0)}%</p>
-                                                                            </div>
-                                                                            <div className="w-24 text-right text-sm font-semibold text-slate-700">
-                                                                                {Number(myProgress).toFixed(0)}%
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="mt-2 flex justify-end">
-                                                                            <Button
-                                                                                variant="outline"
-                                                                                className="h-8"
-                                                                                disabled={manualCompleteStageMutation.isPending}
-                                                                                onClick={() => {
-                                                                                    if (!job?.job_number) return;
-                                                                                    if (!window.confirm('Mark this stage as completed?')) return;
-                                                                                    manualCompleteStageMutation.mutate({
-                                                                                        jobNumber: job.job_number,
-                                                                                        subtaskId: String(subtaskId)
-                                                                                    });
-                                                                                }}
-                                                                            >
-                                                                                Mark Completed
-                                                                            </Button>
-                                                                        </div>
-
-                                                                        <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                                                                            <div className="rounded bg-white border border-slate-200 p-2 text-center">
-                                                                                <div className="text-slate-500">Allocated</div>
-                                                                                <div className="font-semibold text-slate-800">{stageAllocated.toFixed(1)}h</div>
-                                                                            </div>
-                                                                            <div className="rounded bg-white border border-slate-200 p-2 text-center">
-                                                                                <div className="text-slate-500">Logged</div>
-                                                                                <div className="font-semibold text-blue-700">{stageConsumed.toFixed(1)}h</div>
-                                                                            </div>
-                                                                            <div className="rounded bg-white border border-slate-200 p-2 text-center">
-                                                                                <div className="text-slate-500">Remaining</div>
-                                                                                <div className="font-semibold text-green-700">{stageRemaining.toFixed(1)}h</div>
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div className="grid grid-cols-3 gap-2 text-sm">
-                                                    <div className="bg-slate-50 rounded p-2 text-center">
-                                                        <p className="text-slate-500 text-xs">Allocated</p>
-                                                        <p className="font-medium">{job.allocated_hours}h</p>
-                                                    </div>
-                                                    <div className="bg-slate-50 rounded p-2 text-center">
-                                                        <p className="text-slate-500 text-xs">Consumed</p>
-                                                        <p className="font-medium text-blue-600">{(job.consumed_hours || 0).toFixed(1)}h</p>
-                                                    </div>
-                                                    <div className="bg-slate-50 rounded p-2 text-center">
-                                                        <p className="text-slate-500 text-xs">Remaining</p>
-                                                        <p className="font-medium text-green-600">{(Number(job.remaining_hours ?? (Number(job.allocated_hours || 0) - Number(job.consumed_hours || 0)))).toFixed(1)}h</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1199,6 +1372,8 @@ export default function TechnicianPortal() {
                                                 {myEntriesForMonth.map((entry) => {
                                                     const isEditing = editingEntryId === entry.id;
                                                     const isIdle = !!entry.is_idle;
+                                                    const editCat = isEditing ? editEntryDraft.category : entry.category;
+                                                    const showIdleSubReason = isIdle && editCat === 'Idle';
                                                     const showOtherDetail = isIdle && (editEntryDraft.category === 'Other' || entry.category === 'Other');
                                                     const multiplier = Number(entry.overtime_multiplier || 1);
                                                     const payable = Number(entry.payable_hours || (Number(entry.hours_logged || 0) * multiplier));
@@ -1229,6 +1404,21 @@ export default function TechnicianPortal() {
                                                                                     ))}
                                                                                 </SelectContent>
                                                                             </Select>
+                                                                            {showIdleSubReason && (
+                                                                                <Select
+                                                                                    value={String(editEntryDraft.category_detail ?? '')}
+                                                                                    onValueChange={(v) => setEditEntryDraft(prev => ({ ...prev, category_detail: v }))}
+                                                                                >
+                                                                                    <SelectTrigger className="h-8">
+                                                                                        <SelectValue placeholder="Reason" />
+                                                                                    </SelectTrigger>
+                                                                                    <SelectContent>
+                                                                                        {(idleInfo?.idle_sub_reasons || ['Housekeeping', 'Waiting', 'No Work', 'Other']).map(r => (
+                                                                                            <SelectItem key={r} value={r}>{r}</SelectItem>
+                                                                                        ))}
+                                                                                    </SelectContent>
+                                                                                </Select>
+                                                                            )}
                                                                             {showOtherDetail && (
                                                                                 <Input
                                                                                     className="h-8"
@@ -1364,3 +1554,4 @@ export default function TechnicianPortal() {
         </div>
     );
 }
+

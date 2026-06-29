@@ -295,11 +295,8 @@ function GlobalTechnicianSelector({
         <>
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogHeader>
-                    <DialogTitle className="text-slate-800">Select Technician</DialogTitle>
-                    <DialogDescription>
-                        Search for existing technicians, select from your assigned technicians, or create a new technician.
-                    </DialogDescription>
                 </DialogHeader>
+
                 
                 <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
                     <div className="space-y-6 mt-4">

@@ -3,9 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, Award } from 'lucide-react';
+import { clampPercent } from '@/utils/kpiUtils';
 
-const HR_HOURS_PER_DAY = 8.5;
-const PRODUCTIVE_HOURS_PER_DAY = 7.5;
 
 const getPerformanceCategory = (efficiency) => {
     if (efficiency >= 95) return { label: 'Excellent', color: 'bg-green-100 text-green-700' };
@@ -14,97 +13,28 @@ const getPerformanceCategory = (efficiency) => {
     return { label: 'Needs Improvement', color: 'bg-red-100 text-red-700' };
 };
 
-export default function TechnicianPerformance({ technicians, jobs, timeEntries, month }) {
-    const getStandardProductiveHoursForDate = (dateStr) => {
-        if (!dateStr) return 0;
-        const d = new Date(dateStr);
-        if (Number.isNaN(d.getTime())) return 0;
-        const dayIndex = d.getDay();
-        if (dayIndex === 5) return 6;
-        return 7;
-    };
+export default function TechnicianPerformance({ technicians = [], kpiData = {} }) {
+    // Component expects kpiData from backend with pre-calculated KPIs
+    // Do not calculate KPIs in frontend - all calculations must come from backend
 
-    // Calculate performance metrics for each technician
     const performanceData = technicians.map(tech => {
-        const isTechOnJob = (job) => {
-            if (!job) return false;
-            if ((job.technicians || []).some((t) => String(t?.technician_id) === String(tech.id))) return true;
-            return (job.subtasks || []).some((st) => (st.assigned_technicians || []).some((a) => String(a?.technician_id) === String(tech.id)));
-        };
-
-        const techJobsCompleted = jobs.filter((j) => j.status === 'completed' && isTechOnJob(j));
-
-        // Get time entries for this technician in the selected month
-        const techEntries = timeEntries.filter(e => 
-            e.technician_id === tech.id &&
-            (month ? e.log_date?.startsWith(month) : true)
-        );
-
-        const getAllocatedForTechOnJob = (job) => {
-            // Prefer stage allocations if present, else fall back to job allocated hours.
-            const allocatedFromStages = (job?.subtasks || []).reduce((sum, st) => {
-                const a = (st?.assigned_technicians || []).find((x) => String(x?.technician_id) === String(tech.id));
-                return sum + Number(a?.allocated_hours || 0);
-            }, 0);
-            if (allocatedFromStages > 0) return allocatedFromStages;
-            return Number(job?.allocated_hours || 0);
-        };
-
-        const totalAllocatedHours = techJobsCompleted.reduce((sum, j) => sum + getAllocatedForTechOnJob(j), 0);
-        const totalHours = techEntries.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
-        const totalOvertimeHours = techEntries.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
-        const productiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
-        const nonProductiveHours = techEntries.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
-
-        const productivityDenom = productiveHours + nonProductiveHours;
-        const productivityRaw = productivityDenom > 0 ? (productiveHours / productivityDenom) * 100 : 0;
-        const productivity = Math.max(0, Math.min(100, productivityRaw));
-
-        const daily = new Map();
-        for (const e of techEntries) {
-            const dateKey = e?.log_date ? String(e.log_date).slice(0, 10) : '';
-            if (!dateKey) continue;
-            const prev = daily.get(dateKey) || { productive: 0, hr: 0 };
-            prev.productive += (e.is_idle ? 0 : Number(e.hours_logged || 0));
-            prev.hr += Number(e.hours_logged || 0);
-            daily.set(dateKey, prev);
-        }
-
-        // Get total hours utilized from completed jobs
-        // Hours utilized for efficiency should be the technician's productive hours on those completed jobs
-        const totalHoursUtilized = techEntries
-            .filter((e) => !e.is_idle)
-            .filter((e) => techJobsCompleted.some((j) => String(j.job_number) === String(e.job_id)))
-            .reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
-
-        const utilizationRaw = totalAllocatedHours > 0 ? (totalHoursUtilized / totalAllocatedHours) * 100 : 0;
-        const utilization = Math.max(0, Math.min(100, utilizationRaw));
-
-        // Job Efficiency = (Allocated Hours / Hours Utilized) × 100
-        const jobEfficiencyRaw = totalHoursUtilized > 0 
-            ? (totalAllocatedHours / totalHoursUtilized) * 100 
-            : 0;
-        const jobEfficiency = Math.max(0, Math.min(100, jobEfficiencyRaw));
-
-        const activeJobs = jobs.filter(j => isTechOnJob(j) && ['active', 'in_progress'].includes(j.status)).length;
-
-        const jobsWithBottlenecks = jobs.filter(j => isTechOnJob(j) && j.bottleneck_count > 0).length;
+        const techKPI = kpiData[tech.id] || {};
 
         return {
             ...tech,
-            completedJobs: techJobsCompleted.length,
-            activeJobs,
-            jobsWithBottlenecks,
-            totalAllocatedHours,
-            totalHours,
-            totalOvertimeHours,
-            productiveHours,
-            nonProductiveHours,
-            totalHoursUtilized,
-            jobEfficiency,
-            utilization,
-            productivity,
-            performance: getPerformanceCategory(jobEfficiency)
+            jobsWithBottlenecks: 0,
+            activeJobs: techKPI.active_jobs || 0,
+            completedJobs: techKPI.completed_jobs || 0,
+            totalAllocatedHours: techKPI.total_allocated_hours || 0,
+            totalHours: techKPI.total_hours || 0,
+            totalOvertimeHours: techKPI.total_overtime_hours || 0,
+            productiveHours: techKPI.total_productive_hours || 0,
+            nonProductiveHours: techKPI.total_non_productive_hours || 0,
+            totalHoursUtilized: techKPI.total_hours_utilized || 0,
+            jobEfficiency: techKPI.efficiency_percent || 0,
+            utilization: techKPI.utilization_percent || 0,
+            productivity: techKPI.productivity_percent || 0,
+            performance: getPerformanceCategory(techKPI.efficiency_percent || 0)
         };
     });
 
@@ -183,8 +113,9 @@ export default function TechnicianPerformance({ technicians, jobs, timeEntries, 
                                         {tech.jobEfficiency.toFixed(0)}%
                                     </TableCell>
                                     <TableCell className="text-right text-slate-600">
-                                        {tech.utilization.toFixed(0)}%
+                                        {clampPercent(tech.utilization).toFixed(0)}%
                                     </TableCell>
+
                                     <TableCell className="text-right text-slate-600">
                                         {tech.productivity.toFixed(0)}%
                                     </TableCell>

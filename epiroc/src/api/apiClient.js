@@ -181,11 +181,23 @@ class APIClient {
                 method: 'PUT',
                 body: JSON.stringify(data)
             }),
+            completedReport: (params = {}) => {
+                const q = new URLSearchParams();
+                if (params.fromDate) q.set('fromDate', params.fromDate);
+                if (params.toDate) q.set('toDate', params.toDate);
+                if (params.limit) q.set('limit', String(params.limit));
+                const qs = q.toString();
+                return this.request(`/jobs/completed-report${qs ? `?${qs}` : ''}`);
+            },
             update: (id, data) => this.request(`/jobs/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)
             }),
-            delete: (id) => this.request(`/jobs/${id}`, { method: 'DELETE' })
+            delete: (id) => this.request(`/jobs/${id}`, { method: 'DELETE' }),
+            reopenByJobNumber: (jobNumber, { technician_id, reason } = {}) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/reopen`, {
+                method: 'PUT',
+                body: JSON.stringify({ technician_id, reason })
+            })
         },
 
         DailyTimeEntry: {
@@ -203,6 +215,7 @@ class APIClient {
                     if (params.start_date) q.set('start_date', params.start_date);
                     if (params.end_date) q.set('end_date', params.end_date);
                     if (params.technician_id) q.set('technician_id', params.technician_id);
+                    if (params.supervisor_key) q.set('supervisor_key', params.supervisor_key);
                     const qs = q.toString();
                     return this.request(`/time-entries/approvals/pending${qs ? `?${qs}` : ''}`);
                 },
@@ -266,6 +279,7 @@ class APIClient {
                 return this.request(`/overview/workshop${qs}`);
             }
         },
+        
 
         Utilization: {
             daily: (techId, dateRange) => {
@@ -275,6 +289,229 @@ class APIClient {
                 const qs = params.toString();
                 return this.request(`/metrics/utilization/daily${qs ? `?${qs}` : ''}`);
             }
+        },
+   // Testing
+
+        Downtime: {
+            pauseJob: (supervisorKey, jobId, { technician_id, reason, pause_reason, description } = {}) =>
+                this.request(`/pause-resume/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(jobId)}/pause`, {
+                    method: 'POST',
+                    body: JSON.stringify({ technician_id, reason: reason || pause_reason, description })
+                }),
+            resumeJob: (supervisorKey, jobId, { technician_id } = {}) =>
+                this.request(`/pause-resume/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(jobId)}/resume`, {
+                    method: 'POST',
+                    body: JSON.stringify({ technician_id })
+                }),
+            getJobDowntime: (supervisorKey, jobId, { technician_id, date } = {}) => {
+                const q = new URLSearchParams();
+                if (technician_id) q.set('technician_id', technician_id);
+                if (date) q.set('date', date);
+                const qs = q.toString();
+                return this.request(`/pause-resume/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(jobId)}/downtime${qs ? `?${qs}` : ''}`);
+            },
+            getTechnicianDowntimeSummary: (supervisorKey, technicianId, { date } = {}) => {
+                const q = new URLSearchParams();
+                if (date) q.set('date', date);
+                const qs = q.toString();
+                return this.request(`/pause-resume/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}/downtime-summary${qs ? `?${qs}` : ''}`);
+            },
+            getActivePauses: (supervisorKey, technicianId) =>
+                this.request(`/pause-resume/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}/active-pauses`),
+        },
+
+        Training: {
+            log: (supervisorKey, data) =>
+                this.request(`/training/${encodeURIComponent(supervisorKey)}/log`, {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                }),
+            getLogs: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.status) q.set('status', filters.status);
+                const qs = q.toString();
+                return this.request(`/training/${encodeURIComponent(supervisorKey)}/logs${qs ? `?${qs}` : ''}`);
+            },
+            getSummary: (supervisorKey, technicianId) =>
+                this.request(`/training/${encodeURIComponent(supervisorKey)}/summary/technician/${encodeURIComponent(technicianId)}`),
+            getOrgSummary: (supervisorKey) =>
+                this.request(`/training/${encodeURIComponent(supervisorKey)}/summary/organization`),
+            approve: (supervisorKey, trainingLogId) =>
+                this.request(`/training/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(trainingLogId)}/approve`, {
+                    method: 'POST'
+                })
+        },
+
+        Overtime: {
+            log: (supervisorKey, data) =>
+                this.request(`/overtime/${encodeURIComponent(supervisorKey)}/log`, {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                }),
+            getLogs: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.status) q.set('status', filters.status);
+                const qs = q.toString();
+                return this.request(`/overtime/${encodeURIComponent(supervisorKey)}/logs${qs ? `?${qs}` : ''}`);
+            },
+            getSummary: (supervisorKey, technicianId) =>
+                this.request(`/overtime/${encodeURIComponent(supervisorKey)}/summary/technician/${encodeURIComponent(technicianId)}`),
+            approve: (supervisorKey, overtimeLogId) =>
+                this.request(`/overtime/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(overtimeLogId)}/approve`, {
+                    method: 'POST'
+                }),
+            reject: (supervisorKey, overtimeLogId, { reason } = {}) =>
+                this.request(`/overtime/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(overtimeLogId)}/reject`, {
+                    method: 'POST',
+                    body: JSON.stringify({ reason })
+                })
+        },
+
+        KPI: {
+            dailyKPIs: (supervisorKey, technicianId, date) =>
+                this.request(`/kpi/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}/day/${encodeURIComponent(date)}`),
+            weeklyKPIs: (supervisorKey, technicianId, weekNum, year) =>
+                this.request(`/kpi/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}/week/${weekNum}/${year}`),
+            monthlyKPIs: (supervisorKey, technicianId, month, year) =>
+                this.request(`/kpi/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}/month/${month}/${year}`),
+            dashboardOverview: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                const qs = q.toString();
+                return this.request(`/kpi/${encodeURIComponent(supervisorKey)}/dashboard/overview${qs ? `?${qs}` : ''}`);
+            },
+            utilizationTrends: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                const qs = q.toString();
+                return this.request(`/kpi/${encodeURIComponent(supervisorKey)}/trends/utilization${qs ? `?${qs}` : ''}`);
+            },
+            productivityTrends: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                const qs = q.toString();
+                return this.request(`/kpi/${encodeURIComponent(supervisorKey)}/trends/productivity${qs ? `?${qs}` : ''}`);
+            },
+            efficiencyTrends: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                const qs = q.toString();
+                return this.request(`/kpi/${encodeURIComponent(supervisorKey)}/trends/efficiency${qs ? `?${qs}` : ''}`);
+            },
+            overtimeTrends: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                const qs = q.toString();
+                return this.request(`/kpi/${encodeURIComponent(supervisorKey)}/trends/overtime${qs ? `?${qs}` : ''}`);
+            }
+        },
+
+        Alerts: {
+            getTechnicianAlerts: (supervisorKey, technicianId, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.alert_type) q.set('alert_type', filters.alert_type);
+                if (filters.severity) q.set('severity', filters.severity);
+                if (filters.resolved) q.set('resolved', filters.resolved);
+                const qs = q.toString();
+                return this.request(`/alerts/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}${qs ? `?${qs}` : ''}`);
+            },
+            getSupervisorAlerts: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.alert_type) q.set('alert_type', filters.alert_type);
+                if (filters.severity) q.set('severity', filters.severity);
+                if (filters.resolved) q.set('resolved', filters.resolved);
+                const qs = q.toString();
+                return this.request(`/alerts/${encodeURIComponent(supervisorKey)}/supervisor${qs ? `?${qs}` : ''}`);
+            },
+            markAsResolved: (supervisorKey, alertId) =>
+                this.request(`/alerts/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(alertId)}/resolve`, {
+                    method: 'PUT'
+                })
+        },
+
+        JobManagement: {
+            getActive: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                if (filters.workshop_id) q.set('workshop_id', filters.workshop_id);
+                const qs = q.toString();
+                return this.request(`/job-management/${encodeURIComponent(supervisorKey)}/active${qs ? `?${qs}` : ''}`);
+            },
+            getCompleted: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                const qs = q.toString();
+                return this.request(`/job-management/${encodeURIComponent(supervisorKey)}/completed${qs ? `?${qs}` : ''}`);
+            },
+            getAtRisk: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.risk_level) q.set('risk_level', filters.risk_level);
+                if (filters.technician_id) q.set('technician_id', filters.technician_id);
+                const qs = q.toString();
+                return this.request(`/job-management/${encodeURIComponent(supervisorKey)}/at-risk${qs ? `?${qs}` : ''}`);
+            },
+            getJobRisk: (supervisorKey, jobId) =>
+                this.request(`/job-management/${encodeURIComponent(supervisorKey)}/job/${encodeURIComponent(jobId)}/risk`),
+            updateJobStatus: (supervisorKey, jobId, { status, note } = {}) =>
+                this.request(`/job-management/${encodeURIComponent(supervisorKey)}/job/${encodeURIComponent(jobId)}/status`, {
+                    method: 'POST',
+                    body: JSON.stringify({ status, note })
+                }),
+            getComplexityDistribution: (supervisorKey) =>
+                this.request(`/job-management/${encodeURIComponent(supervisorKey)}/complexity-distribution`)
+        },
+
+        Reports: {
+            getJobCompletion: (supervisorKey, jobId) =>
+                this.request(`/reports/${encodeURIComponent(supervisorKey)}/job/${encodeURIComponent(jobId)}/completion`),
+            getTechnicianPerformance: (supervisorKey, technicianId, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                const qs = q.toString();
+                return this.request(`/reports/${encodeURIComponent(supervisorKey)}/technician/${encodeURIComponent(technicianId)}/performance${qs ? `?${qs}` : ''}`);
+            },
+            getPerformanceSummary: (supervisorKey, filters = {}) => {
+                const q = new URLSearchParams();
+                if (filters.start_date) q.set('start_date', filters.start_date);
+                if (filters.end_date) q.set('end_date', filters.end_date);
+                if (filters.workshop_id) q.set('workshop_id', filters.workshop_id);
+                const qs = q.toString();
+                return this.request(`/reports/${encodeURIComponent(supervisorKey)}/performance-summary${qs ? `?${qs}` : ''}`);
+            }
+        },
+
+        SystemFixes: {
+            verifyJobVisibility: (supervisorKey, technicianId) =>
+                this.request(`/system-fixes/verify-job-visibility/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(technicianId)}`),
+            fixAllocationVisibility: (supervisorKey, technicianId) =>
+                this.request(`/system-fixes/fix-allocation-visibility/${encodeURIComponent(supervisorKey)}/${encodeURIComponent(technicianId)}`, {
+                    method: 'POST'
+                }),
+            verifySupervisorAssignment: (supervisorKey) =>
+                this.request(`/system-fixes/verify-supervisor-assignment/${encodeURIComponent(supervisorKey)}`),
+            fixOrphanedAssignments: (supervisorKey) =>
+                this.request(`/system-fixes/fix-orphaned-assignments/${encodeURIComponent(supervisorKey)}`, {
+                    method: 'POST'
+                })
         }
     };
 }

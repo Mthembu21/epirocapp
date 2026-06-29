@@ -1,0 +1,261 @@
+.jobs-at-risk-container {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 24px;
+}
+
+.jobs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.jobs-header h2 {
+  margin: 0;
+  color: #1f2937;
+}
+
+.job-count {
+  color: #9ca3af;
+  font-size: 14px;
+  margin: 0;
+}
+
+.controls {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-group,
+.sort-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-group label,
+.sort-group label {
+  font-weight: 600;
+  color: #374151;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.filter-group select,
+.sort-group select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.btn-refresh {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-refresh:hover {
+  background: #1d4ed8;
+  transform: scale(1.05);
+}
+
+.jobs-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 20px;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.jobs-table thead {
+  background: #f3f4f6;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.jobs-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.jobs-table td {
+  padding: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.job-row {
+  transition: background-color 0.2s;
+}
+
+.job-row:hover {
+  background-color: #f9fafb;
+}
+
+.job-row.risk-green {
+  border-left: 4px solid #10b981;
+}
+
+.job-row.risk-orange {
+  border-left: 4px solid #f59e0b;
+}
+
+.job-row.risk-red {
+  border-left: 4px solid #ef4444;
+}
+
+.status-cell {
+  font-size: 18px;
+}
+
+.status-badge {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  text-align: center;
+  line-height: 24px;
+}
+
+.job-number {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.job-description {
+  color: #6b7280;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.complexity {
+  text-align: center;
+}
+
+.allocated-hours,
+.consumed-hours {
+  text-align: right;
+  font-weight: 600;
+}
+
+.efficiency {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: right;
+}
+
+.efficiency-bar {
+  width: 60px;
+  height: 6px;
+  background: #f3f4f6;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.efficiency-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.days-remaining {
+  text-align: center;
+  font-weight: 600;
+}
+
+.days-remaining .positive {
+  color: #10b981;
+}
+
+.days-remaining .negative {
+  color: #ef4444;
+}
+
+.risk-score {
+  font-weight: 700;
+  text-align: center;
+}
+
+.risk-score .score.green {
+  color: #10b981;
+}
+
+.risk-score .score.orange {
+  color: #f59e0b;
+}
+
+.risk-score .score.red {
+  color: #ef4444;
+}
+
+.no-data {
+  text-align: center;
+  padding: 24px;
+  color: #9ca3af;
+}
+
+.risk-legend {
+  display: flex;
+  gap: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+.risk-legend p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7280;
+}
+
+.legend-green,
+.legend-orange,
+.legend-red {
+  font-size: 16px;
+}
+
+.loading {
+  text-align: center;
+  padding: 24px;
+  color: #9ca3af;
+}
+
+@media (max-width: 768px) {
+  .controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .jobs-table {
+    font-size: 12px;
+  }
+
+  .jobs-table th,
+  .jobs-table td {
+    padding: 8px;
+  }
+
+  .job-description {
+    max-width: 100px;
+  }
+}

@@ -1,0 +1,120 @@
+.pause-resume-widget {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 24px;
+}
+
+.pause-resume-widget h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: #1f2937;
+}
+
+.pause-controls,
+.resume-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pause-reason-select {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.pause-reason-select:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.pause-controls textarea {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.btn-pause,
+.btn-resume {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+}
+
+.btn-pause {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+.btn-pause:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.btn-pause:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-resume {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+.btn-resume:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.pause-info {
+  background: #fef3c7;
+  border-left: 4px solid #f59e0b;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.pause-reason,
+.pause-time {
+  margin: 4px 0;
+  color: #92400e;
+  font-size: 14px;
+}
+
+.downtime-info {
+  background: #d1fae5;
+  border-left: 4px solid #10b981;
+  padding: 12px;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+.downtime-info p {
+  margin: 4px 0;
+  color: #065f46;
+  font-size: 14px;
+}
+
+.downtime-info .downtime-hours {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.downtime-info .downtime-note {
+  font-size: 12px;
+  font-style: italic;
+  color: #0d7045;
+}

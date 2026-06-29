@@ -20,6 +20,9 @@ import OperationalMetricsFetcher from '@/components/dashboard/OperationalMetrics
 import PerformanceCharts from '../components/dashboard/PerformanceCharts';
 import HRExportButton from '../components/dashboard/HRExportButton';
 import MonthlyArchiveManager from '../components/dashboard/MonthlyArchiveManager';
+import ManagementKPIHeader from '@/components/kpi/ManagementKPIHeader.jsx';
+import DateRangeFilter from '@/components/filters/DateRangeFilter.jsx';
+import AlertsList from '@/components/alerts/AlertsList.jsx';
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -49,15 +52,106 @@ export default function Dashboard() {
     const [techStageAllocDraft, setTechStageAllocDraft] = useState({});
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
+    const [completedJobsReportOpen, setCompletedJobsReportOpen] = useState(false);
+    const [selectedJobReport, setSelectedJobReport] = useState(null);
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [operationalMetrics, setOperationalMetrics] = useState(null);
+    const [lastOperationalMetrics, setLastOperationalMetrics] = useState(null);
     const [showAtRiskDetails, setShowAtRiskDetails] = useState(false);
+    const [showOvertimeDetails, setShowOvertimeDetails] = useState(false);
+    const [showProductiveDetails, setShowProductiveDetails] = useState(false);
+    const [showUtilizationDetails, setShowUtilizationDetails] = useState(false);
+    const [showNonProductiveDetails, setShowNonProductiveDetails] = useState(false);
+    const [showEfficiencyDetails, setShowEfficiencyDetails] = useState(false);
+    const [showAvailabilityDetails, setShowAvailabilityDetails] = useState(false);
     const [monthlySummaries, setMonthlySummaries] = useState([]);
+    // Incrementing this triggers an immediate KPI re-fetch after any mutation that
+    // changes hours (approve/decline/delete time entries, job deletion, etc.).
+    const [kpiRefreshKey, setKpiRefreshKey] = useState(0);
+
+    // Dashboard filters
+    const [selectedView, setSelectedView] = useState('daily'); // daily, weekly, monthly
+    const [selectedWorkshop, setSelectedWorkshop] = useState(null);
+
+    // Clear KPI metrics immediately when time view changes so stale data isn't shown
+    const handleViewChange = React.useCallback((view) => {
+        setSelectedView(view);
+        setOperationalMetrics(null);
+        setLastOperationalMetrics(null);
+    }, []);
+
+    // Stable week boundaries — computed once per session (current week doesn't change
+    // while the dashboard is open). Using useMemo prevents new Date objects on every
+    // render, which would make OperationalMetricsFetcher's useEffect dep array see a
+    // "change" every render and trigger an infinite fetch loop.
+    const weekStart = React.useMemo(() => {
+        const now = new Date();
+        const diffToMonday = (now.getDay() + 6) % 7;
+        const d = new Date(now);
+        d.setDate(now.getDate() - diffToMonday);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }, []);
+
+    const weekEnd = React.useMemo(() => {
+        const now = new Date();
+        const diffToMonday = (now.getDay() + 6) % 7;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - diffToMonday);
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + 6);
+        d.setHours(23, 59, 59, 999);
+        return d;
+    }, []);
+
+    // Period label for the KPI header and detail dialogs.
+    const periodLabel = React.useMemo(() => {
+        if (selectedView === 'daily') return 'Today';
+        if (selectedView === 'weekly') return 'This Week';
+        if (selectedMonth) {
+            try { return new Date(selectedMonth + '-01').toLocaleString('default', { month: 'long', year: 'numeric' }); }
+            catch { return selectedMonth; }
+        }
+        return 'This Month';
+    }, [selectedView, selectedMonth]);
+
+    // Stable callbacks — excluded from OperationalMetricsFetcher's dep array by design,
+    // but wrapping in useCallback keeps them from being recreated on every render anyway.
+    const handleOperationalMetricsUpdate = React.useCallback((metrics) => {
+        setOperationalMetrics(metrics);
+        setLastOperationalMetrics(metrics);
+    }, []);
+
+    const handleMonthlySummariesUpdate = React.useCallback((summaries) => {
+        setMonthlySummaries(summaries);
+    }, []);
+
+    const handleProductiveClick    = React.useCallback(() => setShowProductiveDetails(true),    []);
+    const handleUtilizationClick   = React.useCallback(() => setShowUtilizationDetails(true),   []);
+    const handleNonProductiveClick = React.useCallback(() => setShowNonProductiveDetails(true), []);
+    const handleEfficiencyClick    = React.useCallback(() => setShowEfficiencyDetails(true),    []);
+    const handleAvailabilityClick  = React.useCallback(() => setShowAvailabilityDetails(true),  []);
+
+    const [dashboardAlerts, setDashboardAlerts] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
     
-    // Debug operationalMetrics changes
     React.useEffect(() => {
-        console.log('Dashboard: operationalMetrics state changed:', operationalMetrics);
+        console.log('[KPI TRACE] Dashboard — operationalMetrics state updated:', {
+            hasData: operationalMetrics?.hasData,
+            _kpiShapeValid: operationalMetrics?._kpiShapeValid,
+            metrics: operationalMetrics,
+        });
     }, [operationalMetrics]);
+
+    // Temporary user/debug logging to trace why supervisor_key is missing
+
+    React.useEffect(() => {
+        console.log('Current User:', currentUser);
+        console.log('Supervisor Key:', currentUser?.supervisor_key);
+        console.log('User ID:', currentUser?.id);
+        console.log('User Role:', currentUser?.role);
+    }, [currentUser]);
+
     const queryClient = useQueryClient();
 
     // Clear selected technician when job modal closes
@@ -99,7 +193,7 @@ export default function Dashboard() {
     // Operational metrics are now provided by PerformanceCharts component via callback
     // No separate API call needed - PerformanceCharts handles the data fetching
 
-    const supervisorKey = currentUser?.supervisor_key || 'component';
+    const supervisorKey = currentUser?.supervisor_key;
     const supervisorRole = currentUser?.role || 'supervisor';
     const supervisorAccess = Array.isArray(currentUser?.access) ? currentUser.access : [];
 
@@ -129,7 +223,9 @@ export default function Dashboard() {
         ? 'REBUILD DASHBOARD'
         : supervisorKey === 'pdis'
             ? 'PDIS DASHBOARD'
-            : 'COMPONENT DASHBOARD';
+            : supervisorKey === 'kathu'
+                ? 'KATHU DASHBOARD'
+                : 'COMPONENT DASHBOARD';
 
     const handleLogout = async () => {
         try { await base44.auth.logout(); } catch {}
@@ -181,18 +277,26 @@ export default function Dashboard() {
         enabled: isAuthenticated
     });
 
+    const { data: completedJobsReport = [], isFetching: isFetchingCompletedJobsReport } = useQuery({
+        queryKey: ['completedJobsReport', supervisorKey],
+        queryFn: () => base44.entities.Job.completedReport({ limit: 500 }),
+        enabled: isAuthenticated && completedJobsReportOpen,
+        keepPreviousData: true,
+        staleTime: 1000 * 60
+    });
+
     const isForeman = currentUser?.type === 'supervisor' && ['foreman', 'manager'].includes(currentUser?.role);
     const isComponentSupervisor = currentUser?.type === 'supervisor' && currentUser?.supervisor_key === 'component';
     
     // Enable approvals for component supervisors and foreman (but different scopes)
-    const approvalEnabled = isAuthenticated && (isComponentSupervisor || isForeman);
+    const approvalEnabled = isAuthenticated && (isComponentSupervisor || isForeman) && !!currentUser?.supervisor_key;
 
     const { data: pendingApprovals = [], error: approvalError } = useQuery({
         queryKey: ['pendingApprovals', currentUser?.supervisor_key],
         queryFn: async () => {
             console.log('🔍 Fetching pending approvals for supervisor:', currentUser?.supervisor_key, currentUser?.name);
             try {
-                const result = await base44.entities.DailyTimeEntry.approvals.pending();
+                const result = await base44.entities.DailyTimeEntry.approvals.pending({ supervisor_key: currentUser?.supervisor_key });
                 console.log('✅ Pending approvals API response:', result);
                 console.log('📊 Pending approvals count:', Array.isArray(result) ? result.length : 'Not an array');
                 return result;
@@ -261,7 +365,13 @@ export default function Dashboard() {
 
     const deleteJobMutation = useMutation({
         mutationFn: (id) => base44.entities.Job.delete(id),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
+        onSuccess: () => {
+            // Backend cascade deletes the job's TimeLogs and JobReports too.
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+            queryClient.invalidateQueries({ queryKey: ['completedJobsReport'] });
+            setKpiRefreshKey(k => k + 1);
+        }
     });
 
     const updateTimeLogMutation = useMutation({
@@ -269,8 +379,12 @@ export default function Dashboard() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            setKpiRefreshKey(k => k + 1);
             setEditingLogId(null);
             setEditLogDraft({ hours_logged: '', category: '', category_detail: '' });
+        },
+        onError: (error) => {
+            alert(`Failed to update time log: ${error?.message || 'Unknown error'}`);
         }
     });
 
@@ -279,6 +393,7 @@ export default function Dashboard() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            setKpiRefreshKey(k => k + 1);
         }
     });
 
@@ -288,6 +403,10 @@ export default function Dashboard() {
             queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] });
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
             queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+            setKpiRefreshKey(k => k + 1);
+        },
+        onError: (error) => {
+            alert(`Failed to approve: ${error?.message || 'Unknown error'}`);
         }
     });
 
@@ -297,6 +416,10 @@ export default function Dashboard() {
             queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] });
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
             queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+            setKpiRefreshKey(k => k + 1);
+        },
+        onError: (error) => {
+            alert(`Failed to decline: ${error?.message || 'Unknown error'}`);
         }
     });
 
@@ -459,11 +582,25 @@ export default function Dashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });
 
-    const activeJobs = jobs.filter(j =>
-        ['pending_confirmation', 'active', 'in_progress', 'at_risk', 'over_allocated', 'reopened'].includes(j.status)
-        || Number(j.bottleneck_count || 0) >= 2
-        || (j.status === 'completed' && Number(j.remaining_hours ?? (j.allocated_hours - j.consumed_hours) ?? 0) > 0)
-    );
+    // Jobs list should show only jobs that are still pending/active (exclude completed)
+    // Active states in our domain:
+    // - pending_confirmation
+    // - active
+    // - in_progress
+    // - at_risk
+    // - over_allocated
+    // - reopened
+    //
+    // Also keep bottleneck>=2 jobs visible even if status isn't in the explicit list.
+    const activeJobs = jobs.filter((j) => {
+        const status = j?.status;
+        if (!status) return false;
+        if (String(status) === 'completed') return false;
+
+        const isActiveState = ['pending_confirmation', 'active', 'in_progress', 'at_risk', 'over_allocated', 'reopened'].includes(status);
+        const hasBottleneck = Number(j?.bottleneck_count || 0) >= 2;
+        return isActiveState || hasBottleneck;
+    });
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
 
@@ -474,54 +611,35 @@ export default function Dashboard() {
         return acc;
     }, {});
 
-    const completedStageRows = React.useMemo(() => {
-        const rows = [];
-        for (const j of (completedJobs || [])) {
-            const jobNumber = j?.job_number || '';
-            const jobCompletedAt = j?.actual_completion_date ? new Date(j.actual_completion_date) : null;
+    // Normalize the completed jobs report API response to a flat array.
+    // The new /completed-report endpoint returns a plain array of enriched job objects.
+    const completedJobsData = React.useMemo(() => {
+        const raw = completedJobsReport;
+        const arr = Array.isArray(raw) ? raw
+            : Array.isArray(raw?.data) ? raw.data
+            : [];
+        return arr.filter(j => j?.job_number).sort((a, b) => {
+            const at = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+            const bt = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+            return bt - at;
+        });
+    }, [completedJobsReport]);
 
-            for (const st of (j?.subtasks || [])) {
-                const stageTitle = st?.title || '';
-                const progressEntries = Array.isArray(st?.progress_by_technician) ? st.progress_by_technician : [];
-                for (const p of progressEntries) {
-                    const pct = Number(p?.progress_percentage || 0);
-                    const completed = Boolean(p?.completed) || pct >= 100 - 1e-9;
-                    if (!completed) continue;
-
-                    const completionTime = p?.completed_at ? new Date(p.completed_at) : jobCompletedAt;
-                    rows.push({
-                        job_number: jobNumber,
-                        technician_id: p?.technician_id,
-                        stage: stageTitle,
-                        completed_at: completionTime
-                    });
-                }
-            }
-
-            if (!rows.some((r) => String(r.job_number) === String(jobNumber)) && jobCompletedAt) {
-                const techNames = (j?.technicians || []).map((t) => t?.technician_name).filter(Boolean).join(', ');
-                rows.push({
-                    job_number: jobNumber,
-                    technician_id: techNames || null,
-                    stage: '- ',
-                    completed_at: jobCompletedAt
-                });
-            }
-        }
-
-        return rows
-            .filter((r) => r.job_number)
-            .sort((a, b) => {
-                const at = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-                const bt = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-                return bt - at;
-            });
-    }, [completedJobs, technicians]);
     
     const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
     const monthEnd = endOfMonth(parseISO(`${selectedMonth}-01`));
+    const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+    const weekStartStr = format(weekStart, 'yyyy-MM-dd');
+    const weekEndStr   = format(weekEnd,   'yyyy-MM-dd');
     const timeLogsForMonth = (timeLogs || []).filter((e) => {
         if (!e?.log_date) return false;
+        const logLocalDate = format(new Date(e.log_date), 'yyyy-MM-dd');
+        if (selectedView === 'daily') {
+            return logLocalDate === todayDateStr;
+        }
+        if (selectedView === 'weekly') {
+            return logLocalDate >= weekStartStr && logLocalDate <= weekEndStr;
+        }
         const d = parseISO(e.log_date);
         return isWithinInterval(d, { start: monthStart, end: monthEnd });
     });
@@ -531,7 +649,105 @@ export default function Dashboard() {
     const totalProductiveHours = timeLogsForMonth.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
     const totalNonProductiveHours = timeLogsForMonth.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
+    const overtimeRowsForMonth = React.useMemo(() => {
+        // overtime_hours on time log rows (already scoped to selectedMonth by timeLogsForMonth)
+        const rows = (timeLogsForMonth || [])
+            .filter((l) => Number(l?.overtime_hours || 0) > 0)
+            .map((l) => {
+                const techId = l?.technician_id;
+                const technicianName =
+                    l?.technician_name ||
+                    technicianNameById[String(techId ?? '')] ||
+                    (typeof techId === 'string' ? techId : '');
+
+                const logDate = l?.log_date ? parseISO(l.log_date) : null;
+                const dateLabel = logDate ? logDate.toISOString().slice(0, 10) : '-';
+
+                return {
+                    id: l?.id || l?._id || `${techId}-${l?.log_date || ''}-${l?.job_id || ''}`,
+                    technician_id: techId,
+                    technician_name: technicianName,
+                    date: dateLabel,
+                    overtime_hours: Number(l?.overtime_hours || 0),
+                    job_id: l?.job_id || l?.job_number || ''
+                };
+            });
+
+        // Sort desc by date, then by technician name
+        return rows.sort((a, b) => {
+            const ad = a.date === '-' ? '' : a.date;
+            const bd = b.date === '-' ? '' : b.date;
+            return bd.localeCompare(ad) || String(a.technician_name || '').localeCompare(String(b.technician_name || ''));
+        });
+    }, [timeLogsForMonth, technicianNameById]);
+
+    const overtimeByTechnician = React.useMemo(() => {
+        const map = new Map();
+        for (const r of overtimeRowsForMonth) {
+            const key = String(r?.technician_id ?? '');
+            if (!map.has(key)) {
+                map.set(key, {
+                    technician_id: r?.technician_id,
+                    technician_name: r?.technician_name,
+                    total_overtime_hours: 0,
+                    entries: []
+                });
+            }
+            const item = map.get(key);
+            item.total_overtime_hours += Number(r.overtime_hours || 0);
+            item.entries.push(r);
+        }
+
+        return Array.from(map.values()).sort((a, b) => b.total_overtime_hours - a.total_overtime_hours);
+    }, [overtimeRowsForMonth]);
+
+    const techKpiData = React.useMemo(() => {
+        const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+        if (!kpiDetails?.technicians?.length) return {};
+
+        const result = {};
+        for (const td of kpiDetails.technicians) {
+            const id = String(td.technician_id);
+
+            let activeJobs = 0;
+            let completedJobs = 0;
+            let totalAllocatedHours = 0;
+            for (const job of (jobs || [])) {
+                const techEntry = (job.technicians || []).find(
+                    t => String(t.technician_id) === id
+                );
+                if (!techEntry) continue;
+                if (job.status === 'completed') {
+                    completedJobs++;
+                } else {
+                    activeJobs++;
+                }
+                totalAllocatedHours += Number(techEntry.allocated_hours || 0);
+            }
+
+            const overtimeHours = (timeLogsForMonth || [])
+                .filter(e => String(e.technician_id?._id || e.technician_id || '') === id)
+                .reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0);
+
+            result[id] = {
+                active_jobs:               activeJobs,
+                completed_jobs:            completedJobs,
+                total_allocated_hours:     totalAllocatedHours,
+                total_hours:               td.available_hours,
+                total_overtime_hours:      overtimeHours,
+                total_productive_hours:    td.productive_hours,
+                total_non_productive_hours: td.non_productive_hours + td.idle_hours,
+                total_hours_utilized:      td.productive_hours + td.training_hours,
+                efficiency_percent:        td.efficiency_percent,
+                utilization_percent:       td.utilization_percent,
+                productivity_percent:      td.productivity_percent,
+            };
+        }
+        return result;
+    }, [operationalMetrics, lastOperationalMetrics, jobs, timeLogsForMonth]);
+
     const selectedJobIssues = selectedJobDetails
+
         ? (jobReports || []).filter((r) => {
             if (!r?.has_bottleneck) return false;
             const rid = String(r?.job_id || '');
@@ -543,6 +759,14 @@ export default function Dashboard() {
 
     const selectedJobWorkLogs = selectedJobDetails
         ? (timeLogs || []).filter((l) => !l?.is_idle && String(l?.job_id) === String(selectedJobDetails?.job_number))
+        : [];
+
+    const selectedJobReportEntries = selectedJobDetails
+        ? (jobReports || []).filter((r) => {
+            const rid = String(r?.job_id || '');
+            const jobNumber = String(selectedJobDetails?.job_number || '');
+            return rid && jobNumber && rid === jobNumber;
+        })
         : [];
 
     const getSubtaskTitle = (subtaskId) => {
@@ -571,10 +795,14 @@ export default function Dashboard() {
             <header className="bg-slate-800/90 backdrop-blur-lg border-b border-yellow-500/20 sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-yellow-400 p-3 rounded-xl shadow-lg">
-                                    <Wrench className="w-8 h-8 text-slate-800" />
+                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                <div className="p-1 rounded-xl bg-yellow-400/20 backdrop-blur">
+                                    <img
+                                        src="/src/assets/epirocLogo.png"
+                                        alt="Epiroc"
+                                        className="h-12 w-12 object-contain"
+                                    />
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-bold text-yellow-400 tracking-tight">EPIROC</h1>
@@ -662,127 +890,784 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-                    <StatsCard
-                        title="Technicians"
-                        value={technicians.filter(t => t.status === 'active').length}
-                        subtitle="Active workers"
-                        icon={Users}
-                        color="slate"
-                    />
-                    <StatsCard
-                        title="Active Jobs"
-                        value={activeJobs.length}
-                        subtitle="In progress"
-                        icon={Briefcase}
-                        color="blue"
-                    />
-                    <StatsCard
-                        title="At Risk"
-                        value={atRiskJobs.length}
-                        subtitle="Need attention"
-                        icon={AlertTriangle}
-                        color="red"
-                    />
-                    <StatsCard
-                        title="Completed"
-                        value={completedJobs.length}
-                        subtitle="This period"
-                        icon={TrendingUp}
-                        color="green"
-                        onClick={() => setCompletedDialogOpen(true)}
-                    />
-                    <StatsCard
-                        title="Total Hours"
-                        value={`${totalHours.toFixed(0)}h`}
-                        subtitle="All logged"
-                        icon={Clock}
-                        color="blue"
-                    />
-                    <StatsCard
-                        title="Productive"
-                        value={`${totalProductiveHours.toFixed(0)}h`}
-                        subtitle="Workshop jobs"
-                        icon={Clock}
-                        color="green"
-                    />
-                    <StatsCard
-                        title="Non-Prod"
-                        value={`${totalNonProductiveHours.toFixed(0)}h`}
-                        subtitle="IDLE categories"
-                        icon={Clock}
-                        color="slate"
-                    />
-                    <StatsCard
-                        title="Overtime"
-                        value={`${totalOvertimeHours.toFixed(0)}h`}
-                        subtitle="Above daily limit"
-                        icon={Clock}
-                        color="yellow"
-                    />
-                    <StatsCard
-                        title="Utilization"
-                        value={`${operationalMetrics?.utilization?.toFixed(0) || 0}%`}
-                        subtitle="Productive / Available"
-                        icon={TrendingUp}
-                        color="blue"
-                    />
-                    <StatsCard
-                        title="Productivity"
-                        value={`${operationalMetrics?.productivity?.toFixed(0) || 0}%`}
-                        subtitle="Operational Efficiency"
-                        icon={Award}
-                        color="green"
-                    />
-                    <StatsCard
-                        title="Idle %"
-                        value={`${operationalMetrics?.idlePercentage?.toFixed(0) || 0}%`}
-                        subtitle="Capacity Loss"
-                        icon={AlertTriangle}
-                        color="red"
+                {/* Management KPI Header */}
+                <div className="mb-8">
+                    {(() => {
+                        const m          = operationalMetrics ?? lastOperationalMetrics;
+                        const kpiHasData = m?.hasData ?? null;
+
+                        console.log('[KPI TRACE] Dashboard — rendering KPI header', { hasData: kpiHasData, periodLabel, m });
+
+                        const showEmptyBanner = !isLoading && operationalMetrics !== null && kpiHasData === false;
+
+                        return (
+                            <>
+                                {showEmptyBanner && (
+                                    <div className="flex items-start gap-2 p-4 mb-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+                                        <span className="mt-0.5 flex-shrink-0 text-lg" role="img" aria-label="warning">!</span>
+                                        <span>
+                                            {selectedView === 'daily' && new Date().getHours() < 10
+                                                ? "No data yet - it's still early in the day. KPIs will update as activity is recorded."
+                                                : `No activity data recorded yet for ${periodLabel}. KPIs will appear once work is logged.`
+                                            }
+                                        </span>
+                                    </div>
+                                )}
+
+                                <ManagementKPIHeader
+                                    metricsData={{
+                                        productive_percent:     m?.productivity_percent    ?? null,
+                                        non_productive_percent: m?.non_productive_percent  ?? null,
+                                        idle_percent:           m?.idle_percent            ?? null,
+                                        efficiency_percent:     m?.efficiency_percent      ?? null,
+                                        availability_percent:   m?.availability_percent    ?? null,
+                                        utilization_percent:    m?.utilization_percent     ?? null,
+                                        active_jobs:       activeJobs.length,
+                                        completed_jobs:    completedJobs.length,
+                                        jobs_at_risk:      atRiskJobs.length,
+                                        overtime_hours:    totalOvertimeHours,
+                                        total_technicians: technicians.filter(t => t.status === 'active').length,
+                                    }}
+                                    hasData={kpiHasData}
+                                    isLoading={isLoading || operationalMetrics === null}
+                                    currentUser={currentUser}
+                                    selectedDate={periodLabel}
+                                    onJobsAtRiskClick={() => { setShowAtRiskDetails(true); }}
+                                    onCompletedJobsClick={() => { setCompletedDialogOpen(true); }}
+                                    onOvertimeHoursClick={() => { setShowOvertimeDetails(true); }}
+                                    onProductiveHoursClick={handleProductiveClick}
+                                    onUtilizationClick={handleUtilizationClick}
+                                    onNonProductiveClick={handleNonProductiveClick}
+                                    onEfficiencyClick={handleEfficiencyClick}
+                                    onAvailabilityClick={handleAvailabilityClick}
+                                />
+                            </>
+                        );
+                    })()}
+                </div>
+
+                {/* Date Range Filters */}
+                <div className="mb-8">
+                    <DateRangeFilter
+                        selectedView={selectedView}
+                        onViewChange={handleViewChange}
+                        workshopId={selectedWorkshop}
+                        onWorkshopChange={setSelectedWorkshop}
+                        compact={false}
                     />
                 </div>
 
-                {atRiskJobs.length > 0 && (
-                    <Card className="mb-6 border-orange-200 bg-orange-50/50">
-                        <CardHeader className="pb-3">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg text-orange-800 flex items-center gap-2">
-                                    <AlertTriangle className="w-5 h-5" />
-                                    Jobs at Risk ({atRiskJobs.length})
-                                </CardTitle>
-                                <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={() => setShowAtRiskDetails(!showAtRiskDetails)}
-                                    className="border-orange-300 text-orange-700 hover:bg-orange-100"
-                                >
-                                    {showAtRiskDetails ? 'Hide' : 'Show'} Details
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        {showAtRiskDetails && (
-                            <CardContent className="pt-0">
-                                <AtRiskJobs jobs={jobs} jobReports={jobReports} onSelectJob={setSelectedJobDetails} />
-                            </CardContent>
-                        )}
-                    </Card>
-                )}
+
+
+
+
+
 
                 {/* Hidden component to fetch operational metrics for KPI cards */}
                 <div style={{ display: 'none' }}>
-                    <OperationalMetricsFetcher 
+                    <OperationalMetricsFetcher
                         technicians={technicians}
-                        onOperationalMetricsUpdate={(metrics) => {
-                            console.log('Dashboard: Received operational metrics from OperationalMetricsFetcher:', metrics);
-                            setOperationalMetrics(metrics);
-                        }}
-                        onMonthlySummariesUpdate={(summaries) => {
-                            console.log('Dashboard: Received monthly summaries from OperationalMetricsFetcher:', summaries);
-                            setMonthlySummaries(summaries);
-                        }}
+                        selectedMonth={selectedMonth}
+                        supervisorKey={supervisorKey}
+                        timeView={selectedView === 'daily' ? 'daily' : selectedView === 'weekly' ? 'weekly' : 'monthly'}
+                        weekStart={weekStart}
+                        weekEnd={weekEnd}
+                        onOperationalMetricsUpdate={handleOperationalMetricsUpdate}
+                        onMonthlySummariesUpdate={handleMonthlySummariesUpdate}
+                        refreshKey={kpiRefreshKey}
                     />
                 </div>
+
+
+                <Dialog open={showAtRiskDetails} onOpenChange={setShowAtRiskDetails}>
+                    <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-hidden">
+                        <DialogHeader>
+                            <DialogTitle className="text-slate-800">Jobs at Risk</DialogTitle>
+                            <DialogDescription className="sr-only">
+                                List of jobs that require supervisor attention.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="overflow-y-auto max-h-[calc(85vh-6rem)]">
+                            {atRiskJobs.length === 0 ? (
+                                <div className="p-6 text-center text-slate-500">
+                                    No jobs at risk.
+                                </div>
+                            ) : (
+                                <AtRiskJobs
+                                    jobs={atRiskJobs}
+                                    jobReports={jobReports}
+                                    onSelectJob={(job) => {
+                                        openJobDetails(job);
+                                        setShowAtRiskDetails(false);
+                                    }}
+                                />
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog open={showOvertimeDetails} onOpenChange={setShowOvertimeDetails}>
+                    <DialogContent className="sm:max-w-5xl max-h-[85vh] overflow-hidden">
+                        <DialogHeader>
+                            <DialogTitle className="text-slate-800">Overtime Details</DialogTitle>
+                            <DialogDescription className="sr-only">
+                                List of technicians and overtime hours booked during the selected month.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="overflow-y-auto max-h-[calc(85vh-6rem)]">
+                            {overtimeByTechnician.length === 0 ? (
+                                <div className="p-6 text-center text-slate-500">
+                                    No overtime booked in this month.
+                                </div>
+                            ) : (
+                                <div className="space-y-6">
+                                    {overtimeByTechnician.map((t) => (
+                                        <div key={String(t?.technician_id ?? '')} className="rounded-lg border border-slate-200 bg-white/95">
+                                            <div className="p-4 border-b border-slate-100 flex items-baseline justify-between gap-3">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-slate-800">
+                                                        {t?.technician_name || 'Technician'}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500">Technician overtime summary</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-lg font-bold text-orange-700">
+                                                        {Number(t?.total_overtime_hours || 0).toFixed(1)} hrs
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="p-4">
+                                                <div className="overflow-x-auto">
+                                                    <Table>
+                                                        <TableHeader>
+                                                            <TableRow className="bg-slate-50">
+                                                                <TableHead>Date</TableHead>
+                                                                <TableHead className="text-right">Overtime Hours</TableHead>
+                                                                <TableHead className="text-right">Job ID</TableHead>
+                                                            </TableRow>
+                                                        </TableHeader>
+                                                        <TableBody>
+                                                            {Array.isArray(t?.entries) && t.entries.length > 0 ? (
+                                                                t.entries
+                                                                    .slice()
+                                                                    .sort((a, b) => String(b?.date || '').localeCompare(String(a?.date || '')))
+                                                                    .map((r, idx) => (
+                                                                        <TableRow key={String(r?.id || `${t?.technician_id}-${idx}`)}>
+                                                                            <TableCell>{r?.date || '-'}</TableCell>
+                                                                            <TableCell className="text-right">{Number(r?.overtime_hours || 0).toFixed(1)}h</TableCell>
+                                                                            <TableCell className="text-right font-mono text-xs">{r?.job_id || '-'}</TableCell>
+                                                                        </TableRow>
+                                                                    ))
+                                                            ) : (
+                                                                <TableRow>
+                                                                    <TableCell colSpan={3} className="text-center text-slate-500 py-6">
+                                                                        No overtime entries.
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )}
+                                                        </TableBody>
+                                                    </Table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* ── Productive Hours — per-technician performance ──────────── */}
+                {(() => {
+                    const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+                    const techs = (kpiDetails?.technicians || [])
+                        .filter(t => t.productive_hours > 0 || t.available_productive_hours > 0)
+                        .sort((a, b) => b.productivity_percent - a.productivity_percent);
+                    return (
+                        <Dialog open={showProductiveDetails} onOpenChange={setShowProductiveDetails}>
+                            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-hidden">
+                                <DialogHeader>
+                                    <DialogTitle className="text-slate-800">Productive Hours — {periodLabel}</DialogTitle>
+                                    <DialogDescription className="text-slate-500 text-sm">
+                                        Productivity % = Productive ÷ Available Productive hours. Sorted highest to lowest.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="overflow-y-auto max-h-[calc(85vh-7rem)] space-y-5">
+                                    {techs.length === 0 ? (
+                                        <div className="p-6 text-center text-slate-500">No productive hours recorded for this period.</div>
+                                    ) : (
+                                        <>
+                                            {/* ── Per-technician summary ── */}
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                        <TableHead>Technician</TableHead>
+                                                        <TableHead className="text-right">Productive hrs</TableHead>
+                                                        <TableHead className="text-right">Available hrs</TableHead>
+                                                        <TableHead className="text-right font-semibold">Productivity %</TableHead>
+                                                        <TableHead className="text-right">Status</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {techs.map(t => {
+                                                        const pct = Number(t.productivity_percent ?? 0);
+                                                        const color = pct >= 85 ? 'text-green-700' : pct >= 70 ? 'text-yellow-600' : 'text-red-600';
+                                                        const badge = pct >= 85 ? 'Excellent' : pct >= 70 ? 'Good' : 'Low';
+                                                        const badgeBg = pct >= 85 ? 'bg-green-100 text-green-800' : pct >= 70 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                                                        return (
+                                                            <TableRow key={t.technician_id}>
+                                                                <TableCell className="font-medium">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</TableCell>
+                                                                <TableCell className="text-right text-green-700 font-medium">{Number(t.productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-500">{Number(t.available_productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className={`text-right font-bold ${color}`}>{pct.toFixed(1)}%</TableCell>
+                                                                <TableCell className="text-right"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeBg}`}>{badge}</span></TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                    {techs.length > 0 && (() => {
+                                                        const prod   = techs.reduce((s, t) => s + Number(t.productive_hours ?? 0), 0);
+                                                        const avProd = techs.reduce((s, t) => s + Number(t.available_productive_hours ?? 0), 0);
+                                                        const pct = avProd > 0 ? (prod / avProd * 100) : 0;
+                                                        return (
+                                                            <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                                <TableCell className="font-bold text-slate-800">TEAM TOTAL</TableCell>
+                                                                <TableCell className="text-right text-green-800">{prod.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-700">{avProd.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-800 font-bold">{pct.toFixed(1)}%</TableCell>
+                                                                <TableCell />
+                                                            </TableRow>
+                                                        );
+                                                    })()}
+                                                </TableBody>
+                                            </Table>
+
+                                            {/* ── Per-technician entry detail ── */}
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide px-1">Entry Detail</p>
+                                                {techs.filter(t => t.productive_hours > 0).map(t => (
+                                                    <div key={t.technician_id} className="rounded-lg border border-slate-200 bg-white/95">
+                                                        <div className="px-4 py-2 border-b border-slate-100 flex items-baseline justify-between">
+                                                            <span className="font-semibold text-slate-800 text-sm">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</span>
+                                                            <span className="text-sm font-bold text-green-700">{Number(t.productive_hours).toFixed(1)}h</span>
+                                                        </div>
+                                                        <div className="p-3">
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow className="bg-slate-50">
+                                                                        <TableHead>Date</TableHead>
+                                                                        <TableHead>Job ID</TableHead>
+                                                                        <TableHead className="text-right">Hours</TableHead>
+                                                                    </TableRow>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {(t.productive_entries || []).map((e, i) => (
+                                                                        <TableRow key={i}>
+                                                                            <TableCell>{e.date}</TableCell>
+                                                                            <TableCell className="font-mono text-sm">{e.job_id || '—'}</TableCell>
+                                                                            <TableCell className="text-right">{Number(e.hours).toFixed(1)}h</TableCell>
+                                                                        </TableRow>
+                                                                    ))}
+                                                                </TableBody>
+                                                            </Table>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
+
+                {/* ── Utilization — per-technician performance ───────────────── */}
+                {(() => {
+                    const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+                    const techs = [...(kpiDetails?.technicians || [])]
+                        .sort((a, b) => b.utilization_percent - a.utilization_percent);
+                    return (
+                        <Dialog open={showUtilizationDetails} onOpenChange={setShowUtilizationDetails}>
+                            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-hidden">
+                                <DialogHeader>
+                                    <DialogTitle className="text-slate-800">Utilization Breakdown — {periodLabel}</DialogTitle>
+                                    <DialogDescription className="text-slate-500 text-sm">
+                                        Utilization % = (Productive + Training) ÷ Available Productive hours. Sorted highest to lowest.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="overflow-y-auto max-h-[calc(85vh-7rem)] space-y-5">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                <TableHead>Technician</TableHead>
+                                                <TableHead className="text-right">Productive</TableHead>
+                                                <TableHead className="text-right">Training</TableHead>
+                                                <TableHead className="text-right">Non-Prod</TableHead>
+                                                <TableHead className="text-right">Idle</TableHead>
+                                                <TableHead className="text-right">Leave</TableHead>
+                                                <TableHead className="text-right">Scheduled</TableHead>
+                                                <TableHead className="text-right font-semibold">Utilization %</TableHead>
+                                                <TableHead className="text-right">Status</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {techs.map(t => {
+                                                const pct = Number(t.utilization_percent ?? 0);
+                                                const color = pct >= 85 ? 'text-green-700' : pct >= 70 ? 'text-yellow-600' : 'text-red-600';
+                                                const badge = pct >= 85 ? 'Excellent' : pct >= 70 ? 'Good' : 'Low';
+                                                const badgeBg = pct >= 85 ? 'bg-green-100 text-green-800' : pct >= 70 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                                                return (
+                                                    <TableRow key={t.technician_id}>
+                                                        <TableCell className="font-medium">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</TableCell>
+                                                        <TableCell className="text-right text-green-700 font-medium">{Number(t.productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-blue-700">{Number(t.training_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-orange-700">{Number(t.non_productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-slate-500">{Number(t.idle_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-red-500">{Number(t.not_available_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-slate-500">{Number(t.scheduled_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        <TableCell className={`text-right font-bold ${color}`}>{pct.toFixed(1)}%</TableCell>
+                                                        <TableCell className="text-right"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeBg}`}>{badge}</span></TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                            {techs.length > 0 && (() => {
+                                                const prod  = techs.reduce((s, t) => s + Number(t.productive_hours     ?? 0), 0);
+                                                const train = techs.reduce((s, t) => s + Number(t.training_hours       ?? 0), 0);
+                                                const np    = techs.reduce((s, t) => s + Number(t.non_productive_hours ?? 0), 0);
+                                                const idle  = techs.reduce((s, t) => s + Number(t.idle_hours           ?? 0), 0);
+                                                const leave = techs.reduce((s, t) => s + Number(t.not_available_hours  ?? 0), 0);
+                                                const sched = techs.reduce((s, t) => s + Number(t.scheduled_hours      ?? 0), 0);
+                                                const pct = sched > 0 ? ((prod + train) / sched * 100) : 0;
+                                                return (
+                                                    <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                        <TableCell className="font-bold text-slate-800">TEAM TOTAL</TableCell>
+                                                        <TableCell className="text-right text-green-800">{prod.toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-blue-800">{train.toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-orange-800">{np.toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-slate-700">{idle.toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-red-700">{leave.toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-slate-700">{sched.toFixed(1)}h</TableCell>
+                                                        <TableCell className="text-right text-slate-800 font-bold">{pct.toFixed(1)}%</TableCell>
+                                                        <TableCell />
+                                                    </TableRow>
+                                                );
+                                            })()}
+                                        </TableBody>
+                                    </Table>
+
+                                    {/* ── Entry detail: job + training entries (utilization numerator) ── */}
+                                    {techs.some(t => (t.productive_hours ?? 0) > 0 || (t.training_hours ?? 0) > 0) && (
+                                        <div className="space-y-3">
+                                            <p className="text-xs text-slate-400 uppercase tracking-wide px-1">Entry Detail — Value-Adding Time</p>
+                                            {techs
+                                                .filter(t => (t.productive_hours ?? 0) > 0 || (t.training_hours ?? 0) > 0)
+                                                .map(t => {
+                                                    const combined = [
+                                                        ...(t.productive_entries || []).map(e => ({ ...e, _type: 'productive' })),
+                                                        ...(t.training_entries   || []).map(e => ({ ...e, _type: 'training'  })),
+                                                    ].sort((a, b) => a.date.localeCompare(b.date));
+                                                    return (
+                                                        <div key={t.technician_id} className="rounded-lg border border-slate-200 bg-white/95">
+                                                            <div className="px-4 py-2 border-b border-slate-100 flex items-baseline justify-between gap-3">
+                                                                <span className="font-semibold text-slate-800 text-sm">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</span>
+                                                                <div className="flex gap-3 text-xs">
+                                                                    {(t.productive_hours ?? 0) > 0 && <span className="text-green-700">{Number(t.productive_hours).toFixed(1)}h productive</span>}
+                                                                    {(t.training_hours ?? 0) > 0  && <span className="text-blue-700">{Number(t.training_hours).toFixed(1)}h training</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="p-3">
+                                                                <Table>
+                                                                    <TableHeader>
+                                                                        <TableRow className="bg-slate-50">
+                                                                            <TableHead>Date</TableHead>
+                                                                            <TableHead>Job / Category</TableHead>
+                                                                            <TableHead>Type</TableHead>
+                                                                            <TableHead className="text-right">Hours</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {combined.map((e, i) => (
+                                                                            <TableRow key={i}>
+                                                                                <TableCell>{e.date}</TableCell>
+                                                                                <TableCell>
+                                                                                    <span className={e._type === 'training' ? 'text-blue-700 font-medium' : 'text-green-700 font-medium'}>
+                                                                                        {e._type === 'training' ? (e.category || 'Training') : (e.job_id || '—')}
+                                                                                    </span>
+                                                                                </TableCell>
+                                                                                <TableCell className="text-xs text-slate-400 capitalize">
+                                                                                    {e._type === 'training' ? 'Training' : 'Productive'}
+                                                                                </TableCell>
+                                                                                <TableCell className="text-right">{Number(e.hours).toFixed(1)}h</TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                        </div>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
+
+                {/* ── Non-Productive — per-technician performance ────────────── */}
+                {(() => {
+                    const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+                    const techs = (kpiDetails?.technicians || [])
+                        .filter(t => (t.training_hours + t.non_productive_hours + t.idle_hours) > 0)
+                        .sort((a, b) => b.non_productive_percent - a.non_productive_percent);
+                    return (
+                        <Dialog open={showNonProductiveDetails} onOpenChange={setShowNonProductiveDetails}>
+                            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-hidden">
+                                <DialogHeader>
+                                    <DialogTitle className="text-slate-800">Non-Productive & Idle Hours — {periodLabel}</DialogTitle>
+                                    <DialogDescription className="text-slate-500 text-sm">
+                                        Non-Productive % = (Training + Non-Productive + Idle) ÷ Available productive hours (7.5h Mon-Thu, 6h Fri). Sorted highest (worst) first.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="overflow-y-auto max-h-[calc(85vh-7rem)] space-y-5">
+                                    {techs.length === 0 ? (
+                                        <div className="p-6 text-center text-slate-500">No non-productive or idle hours recorded for this period.</div>
+                                    ) : (
+                                        <>
+                                            {/* ── Per-technician summary ── */}
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                        <TableHead>Technician</TableHead>
+                                                        <TableHead className="text-right text-blue-700">Training</TableHead>
+                                                        <TableHead className="text-right text-orange-700">Non-Productive</TableHead>
+                                                        <TableHead className="text-right text-slate-500">Idle</TableHead>
+                                                        <TableHead className="text-right">Available</TableHead>
+                                                        <TableHead className="text-right font-semibold">Non-Prod %</TableHead>
+                                                        <TableHead className="text-right">Status</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {techs.map(t => {
+                                                        const pct = Number(t.non_productive_percent ?? 0);
+                                                        const color = pct <= 20 ? 'text-green-700' : pct <= 35 ? 'text-yellow-600' : 'text-red-600';
+                                                        const badge = pct <= 20 ? 'Good' : pct <= 35 ? 'Moderate' : 'High';
+                                                        const badgeBg = pct <= 20 ? 'bg-green-100 text-green-800' : pct <= 35 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                                                        return (
+                                                            <TableRow key={t.technician_id}>
+                                                                <TableCell className="font-medium">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</TableCell>
+                                                                <TableCell className="text-right text-blue-700">{Number(t.training_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-orange-700">{Number(t.non_productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-500">{Number(t.idle_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-500">{Number(t.available_productive_hours ?? t.available_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className={`text-right font-bold ${color}`}>{pct.toFixed(1)}%</TableCell>
+                                                                <TableCell className="text-right"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeBg}`}>{badge}</span></TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                    {techs.length > 0 && (() => {
+                                                        const train = techs.reduce((s, t) => s + Number(t.training_hours       ?? 0), 0);
+                                                        const np    = techs.reduce((s, t) => s + Number(t.non_productive_hours ?? 0), 0);
+                                                        const idle  = techs.reduce((s, t) => s + Number(t.idle_hours           ?? 0), 0);
+                                                        const avHrs = techs.reduce((s, t) => s + Number(t.available_productive_hours ?? t.available_hours ?? 0), 0);
+                                                        const pct = avHrs > 0 ? ((train + np + idle) / avHrs * 100) : 0;
+                                                        return (
+                                                            <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                                <TableCell className="font-bold text-slate-800">TEAM TOTAL</TableCell>
+                                                                <TableCell className="text-right text-blue-800">{train.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-orange-800">{np.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-700">{idle.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-700">{avHrs.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-800 font-bold">{pct.toFixed(1)}%</TableCell>
+                                                                <TableCell />
+                                                            </TableRow>
+                                                        );
+                                                    })()}
+                                                </TableBody>
+                                            </Table>
+
+                                            {/* ── Per-technician entry detail ── */}
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide px-1">Entry Detail</p>
+                                                {techs.map(t => {
+                                                    const combined = [
+                                                        ...(t.training_entries       || []).map(e => ({ ...e, _type: 'training' })),
+                                                        ...(t.non_productive_entries || []).map(e => ({ ...e, _type: 'non_productive' })),
+                                                        ...(t.idle_entries           || []).map(e => ({ ...e, _type: 'idle' })),
+                                                    ].sort((a, b) => a.date.localeCompare(b.date));
+                                                    return (
+                                                        <div key={t.technician_id} className="rounded-lg border border-slate-200 bg-white/95">
+                                                            <div className="px-4 py-2 border-b border-slate-100 flex items-baseline justify-between gap-3">
+                                                                <span className="font-semibold text-slate-800 text-sm">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</span>
+                                                                <div className="flex gap-3 text-xs">
+                                                                    {t.training_hours > 0 && <span className="text-blue-700">{Number(t.training_hours).toFixed(1)}h training</span>}
+                                                                    {t.non_productive_hours > 0 && <span className="text-orange-700">{Number(t.non_productive_hours).toFixed(1)}h non-prod</span>}
+                                                                    {t.idle_hours > 0 && <span className="text-slate-500">{Number(t.idle_hours).toFixed(1)}h idle</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="p-3">
+                                                                <Table>
+                                                                    <TableHeader>
+                                                                        <TableRow className="bg-slate-50">
+                                                                            <TableHead>Date</TableHead>
+                                                                            <TableHead>Category</TableHead>
+                                                                            <TableHead>Type</TableHead>
+                                                                            <TableHead className="text-right">Hours</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {combined.map((e, i) => (
+                                                                            <TableRow key={i}>
+                                                                                <TableCell>{e.date}</TableCell>
+                                                                                <TableCell>
+                                                                                    <span className={
+                                                                                        e._type === 'training' ? 'text-blue-700 font-medium'
+                                                                                        : e._type === 'idle'   ? 'text-slate-500'
+                                                                                        : 'text-orange-700'
+                                                                                    }>
+                                                                                        {e._type === 'idle' && e.sub_reason ? `${e.category} – ${e.sub_reason}` : e.category}
+                                                                                    </span>
+                                                                                </TableCell>
+                                                                                <TableCell className="text-xs text-slate-400 capitalize">
+                                                                                    {e._type === 'training' ? 'Training' : e._type === 'idle' ? 'Idle' : 'Non-Productive'}
+                                                                                </TableCell>
+                                                                                <TableCell className="text-right">{Number(e.hours).toFixed(1)}h</TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
+
+                {/* ── Efficiency — per-technician performance ────────────────── */}
+                {(() => {
+                    const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+                    const techs = [...(kpiDetails?.technicians || [])]
+                        .sort((a, b) => b.efficiency_percent - a.efficiency_percent);
+                    return (
+                        <Dialog open={showEfficiencyDetails} onOpenChange={setShowEfficiencyDetails}>
+                            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-hidden">
+                                <DialogHeader>
+                                    <DialogTitle className="text-slate-800">Efficiency Breakdown — {periodLabel}</DialogTitle>
+                                    <DialogDescription className="text-slate-500 text-sm">
+                                        Efficiency % = Productive ÷ All Logged hours (productive + training + non-productive + idle). Sorted highest to lowest.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="overflow-y-auto max-h-[calc(85vh-7rem)]">
+                                    {techs.length === 0 ? (
+                                        <div className="p-6 text-center text-slate-500">No data recorded for this period.</div>
+                                    ) : (
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                    <TableHead>Technician</TableHead>
+                                                    <TableHead className="text-right text-green-700">Productive</TableHead>
+                                                    <TableHead className="text-right text-blue-700">Training</TableHead>
+                                                    <TableHead className="text-right text-orange-700">Non-Productive</TableHead>
+                                                    <TableHead className="text-right text-slate-500">Idle</TableHead>
+                                                    <TableHead className="text-right">Total Logged</TableHead>
+                                                    <TableHead className="text-right font-semibold">Efficiency %</TableHead>
+                                                    <TableHead className="text-right">Status</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {techs.map(t => {
+                                                    const prod  = Number(t.productive_hours      ?? 0);
+                                                    const train = Number(t.training_hours        ?? 0);
+                                                    const np    = Number(t.non_productive_hours  ?? 0);
+                                                    const idle  = Number(t.idle_hours            ?? 0);
+                                                    const total = prod + train + np + idle;
+                                                    const pct   = Number(t.efficiency_percent ?? 0);
+                                                    const color = pct >= 85 ? 'text-green-700' : pct >= 70 ? 'text-yellow-600' : 'text-red-600';
+                                                    const badge = pct >= 85 ? 'Excellent' : pct >= 70 ? 'Good' : 'Low';
+                                                    const badgeBg = pct >= 85 ? 'bg-green-100 text-green-800' : pct >= 70 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                                                    return (
+                                                        <TableRow key={t.technician_id}>
+                                                            <TableCell className="font-medium">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</TableCell>
+                                                            <TableCell className="text-right text-green-700 font-medium">{prod.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-blue-700">{train.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-orange-700">{np.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-slate-500">{idle.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-slate-600">{total.toFixed(1)}h</TableCell>
+                                                            <TableCell className={`text-right font-bold ${color}`}>{pct.toFixed(1)}%</TableCell>
+                                                            <TableCell className="text-right"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeBg}`}>{badge}</span></TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                                {techs.length > 0 && (() => {
+                                                    const prod  = techs.reduce((s, t) => s + Number(t.productive_hours     ?? 0), 0);
+                                                    const train = techs.reduce((s, t) => s + Number(t.training_hours       ?? 0), 0);
+                                                    const np    = techs.reduce((s, t) => s + Number(t.non_productive_hours ?? 0), 0);
+                                                    const idle  = techs.reduce((s, t) => s + Number(t.idle_hours           ?? 0), 0);
+                                                    const total = prod + train + np + idle;
+                                                    const pct   = total > 0 ? (prod / total * 100) : 0;
+                                                    return (
+                                                        <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                            <TableCell className="font-bold text-slate-800">TEAM TOTAL</TableCell>
+                                                            <TableCell className="text-right text-green-800">{prod.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-blue-800">{train.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-orange-800">{np.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-slate-700">{idle.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-slate-700">{total.toFixed(1)}h</TableCell>
+                                                            <TableCell className="text-right text-slate-800 font-bold">{pct.toFixed(1)}%</TableCell>
+                                                            <TableCell />
+                                                        </TableRow>
+                                                    );
+                                                })()}
+                                            </TableBody>
+                                        </Table>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
+
+                {/* ── Availability — per-technician leave/sick/training ──────── */}
+                {(() => {
+                    const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+                    const techs = (kpiDetails?.technicians || [])
+                        .filter(t => (t.not_available_hours ?? 0) > 0 || (t.training_hours ?? 0) > 0)
+                        .sort((a, b) => {
+                            const pctA = (a.scheduled_hours ?? 0) > 0 ? ((a.available_hours ?? 0) / a.scheduled_hours * 100) : 100;
+                            const pctB = (b.scheduled_hours ?? 0) > 0 ? ((b.available_hours ?? 0) / b.scheduled_hours * 100) : 100;
+                            return pctA - pctB; // lowest availability first (worst first)
+                        });
+                    return (
+                        <Dialog open={showAvailabilityDetails} onOpenChange={setShowAvailabilityDetails}>
+                            <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-hidden">
+                                <DialogHeader>
+                                    <DialogTitle className="text-slate-800">Availability Breakdown — {periodLabel}</DialogTitle>
+                                    <DialogDescription className="text-slate-500 text-sm">
+                                        Availability % = Available hours ÷ Scheduled hours. Sorted lowest (worst) first.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="overflow-y-auto max-h-[calc(85vh-7rem)] space-y-5">
+                                    {techs.length === 0 ? (
+                                        <div className="p-6 text-center text-slate-500">No leave, sick, or training hours recorded for this period.</div>
+                                    ) : (
+                                        <>
+                                            {/* ── Per-technician summary ── */}
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                        <TableHead>Technician</TableHead>
+                                                        <TableHead className="text-right text-red-600">Leave / Sick</TableHead>
+                                                        <TableHead className="text-right text-blue-700">Training</TableHead>
+                                                        <TableHead className="text-right">Scheduled</TableHead>
+                                                        <TableHead className="text-right font-semibold">Availability %</TableHead>
+                                                        <TableHead className="text-right">Status</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {techs.map(t => {
+                                                        const avPct = (t.scheduled_hours ?? 0) > 0
+                                                            ? ((t.available_hours ?? 0) / t.scheduled_hours * 100)
+                                                            : 100;
+                                                        const color  = avPct >= 95 ? 'text-green-700' : avPct >= 80 ? 'text-yellow-600' : 'text-red-600';
+                                                        const badge  = avPct >= 95 ? 'Excellent' : avPct >= 80 ? 'Good' : 'Low';
+                                                        const badgeBg = avPct >= 95 ? 'bg-green-100 text-green-800' : avPct >= 80 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                                                        return (
+                                                            <TableRow key={t.technician_id}>
+                                                                <TableCell className="font-medium">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</TableCell>
+                                                                <TableCell className="text-right text-red-600 font-medium">{Number(t.not_available_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-blue-700">{Number(t.training_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-500">{Number(t.scheduled_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className={`text-right font-bold ${color}`}>{avPct.toFixed(1)}%</TableCell>
+                                                                <TableCell className="text-right"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeBg}`}>{badge}</span></TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
+                                                    {techs.length > 0 && (() => {
+                                                        const leave   = techs.reduce((s, t) => s + Number(t.not_available_hours ?? 0), 0);
+                                                        const train   = techs.reduce((s, t) => s + Number(t.training_hours       ?? 0), 0);
+                                                        const sched   = techs.reduce((s, t) => s + Number(t.scheduled_hours      ?? 0), 0);
+                                                        const avail   = techs.reduce((s, t) => s + Number(t.available_hours      ?? 0), 0);
+                                                        const pct     = sched > 0 ? (avail / sched * 100) : 100;
+                                                        return (
+                                                            <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                                <TableCell className="font-bold text-slate-800">TEAM TOTAL</TableCell>
+                                                                <TableCell className="text-right text-red-700">{leave.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-blue-800">{train.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-700">{sched.toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-800 font-bold">{pct.toFixed(1)}%</TableCell>
+                                                                <TableCell />
+                                                            </TableRow>
+                                                        );
+                                                    })()}
+                                                </TableBody>
+                                            </Table>
+
+                                            {/* ── Per-technician entry detail ── */}
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide px-1">Entry Detail</p>
+                                                {techs.map(t => {
+                                                    const combined = [
+                                                        ...(t.not_available_entries || []).map(e => ({ ...e, _type: 'leave'    })),
+                                                        ...(t.training_entries      || []).map(e => ({ ...e, _type: 'training' })),
+                                                    ].sort((a, b) => a.date.localeCompare(b.date));
+                                                    if (combined.length === 0) return null;
+                                                    return (
+                                                        <div key={t.technician_id} className="rounded-lg border border-slate-200 bg-white/95">
+                                                            <div className="px-4 py-2 border-b border-slate-100 flex items-baseline justify-between gap-3">
+                                                                <span className="font-semibold text-slate-800 text-sm">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</span>
+                                                                <div className="flex gap-3 text-xs">
+                                                                    {(t.not_available_hours ?? 0) > 0 && <span className="text-red-600">{Number(t.not_available_hours).toFixed(1)}h leave/sick</span>}
+                                                                    {(t.training_hours      ?? 0) > 0 && <span className="text-blue-700">{Number(t.training_hours).toFixed(1)}h training</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="p-3">
+                                                                <Table>
+                                                                    <TableHeader>
+                                                                        <TableRow className="bg-slate-50">
+                                                                            <TableHead>Date</TableHead>
+                                                                            <TableHead>Category</TableHead>
+                                                                            <TableHead>Type</TableHead>
+                                                                            <TableHead className="text-right">Hours</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {combined.map((e, i) => (
+                                                                            <TableRow key={i}>
+                                                                                <TableCell>{e.date}</TableCell>
+                                                                                <TableCell>
+                                                                                    <span className={e._type === 'training' ? 'text-blue-700 font-medium' : 'text-red-600 font-medium'}>
+                                                                                        {e.category || (e._type === 'training' ? 'Training' : 'Leave')}
+                                                                                    </span>
+                                                                                </TableCell>
+                                                                                <TableCell className="text-xs text-slate-400 capitalize">
+                                                                                    {e._type === 'training' ? 'Training' : (e.full_day ? 'Full day' : 'Partial')}
+                                                                                </TableCell>
+                                                                                <TableCell className="text-right">{Number(e.hours).toFixed(1)}h</TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
 
                 <Tabs defaultValue="jobs" className="space-y-6">
                     <TabsList className="bg-slate-700/50 p-1 rounded-xl border border-slate-600">
@@ -828,6 +1713,28 @@ export default function Dashboard() {
 
                     <TabsContent value="jobs" className="mt-6">
                         <div className="space-y-6">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <div className="font-semibold text-slate-800">Completed jobs report</div>
+                                    <p className="text-sm text-slate-500">View every completed job with full logged work, technician hours, and notes.</p>
+                                </div>
+                                <Button
+onClick={() => {
+                                        console.log('View Completed Jobs Report clicked', {
+                                            completedJobsReportOpen,
+                                            supervisorKey,
+                                            isFetchingCompletedJobsReport,
+                                        });
+                                        // Open the actual dialog (completedDialogOpen) so the button has visible effect
+                                        setCompletedDialogOpen(true);
+                                        // Also enable the report query (completedJobsReportOpen) if used elsewhere
+                                        setCompletedJobsReportOpen(true);
+                                    }}
+                                    disabled={isFetchingCompletedJobsReport}
+                                >
+                                    {isFetchingCompletedJobsReport ? 'Loading report...' : 'View Completed Jobs Report'}
+                                </Button>
+                            </div>
                             <JobList 
                                 jobs={activeJobs}
                                 technicians={technicians}
@@ -838,132 +1745,283 @@ export default function Dashboard() {
                                 isReassigning={reassignJobMutation.isPending}
                                 isAddingTechnician={addTechnicianMutation.isPending}
                             />
-                            
-                            {/* Job Status Distribution Chart */}
-                            <Card className="border-0 shadow-lg bg-white/95">
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
-                                        <Award className="w-5 h-5 text-yellow-500" />
-                                        Job Status Distribution
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    {(() => {
-                                        const statusDistribution = [
-                                            { name: 'Active', value: jobs.filter(j => j.status === 'active').length, color: '#22c55e' },
-                                            { name: 'In Progress', value: jobs.filter(j => j.status === 'in_progress').length, color: '#facc15' },
-                                            { name: 'Completed', value: jobs.filter(j => j.status === 'completed').length, color: '#3b82f6' },
-                                            { name: 'On Hold', value: jobs.filter(j => j.status === 'on_hold').length, color: '#ef4444' }
-                                        ].filter(item => item.value > 0);
-                                        
-                                        return statusDistribution.length > 0 ? (
-                                            <div className="flex items-center">
-                                                <ResponsiveContainer width="100%" height={200}>
-                                                    <PieChart>
-                                                        <Pie
-                                                            data={statusDistribution}
-                                                            cx="50%"
-                                                            cy="50%"
-                                                            outerRadius={80}
-                                                            fill="#8884d8"
-                                                            dataKey="value"
-                                                            label={({ name, value }) => `${name}: ${value}`}
-                                                        >
-                                                            {statusDistribution.map((entry, index) => (
-                                                                <Cell key={`cell-${index}`} fill={entry.color} />
-                                                            ))}
-                                                        </Pie>
-                                                        <Tooltip />
-                                                    </PieChart>
-                                                </ResponsiveContainer>
-                                            </div>
-                                        ) : (
-                                            <div className="h-[200px] flex items-center justify-center text-slate-400">No job data</div>
-                                        );
-                                    })()}
-                                </CardContent>
-                            </Card>
+
                         </div>
                     </TabsContent>
 
-                    <Dialog open={completedDialogOpen} onOpenChange={setCompletedDialogOpen}>
-                        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-hidden">
-                            <DialogHeader>
-                                <DialogTitle className="text-slate-800">Completed Jobs</DialogTitle>
-                                <DialogDescription className="sr-only">
-                                    Completed job and stage list.
-                                </DialogDescription>
+
+                    <Dialog open={completedDialogOpen} onOpenChange={(open) => { setCompletedDialogOpen(open); if (!open) setSelectedJobReport(null); }}>
+                        <DialogContent className="sm:max-w-7xl max-h-[92vh] overflow-hidden flex flex-col">
+                            <DialogHeader className="flex-shrink-0">
+                                <DialogTitle className="text-slate-800 flex items-center gap-3">
+                                    {selectedJobReport ? (
+                                        <>
+                                            <button
+                                                onClick={() => setSelectedJobReport(null)}
+                                                className="flex items-center gap-1 text-sm font-normal text-slate-500 hover:text-slate-700 border border-slate-200 rounded px-2 py-1"
+                                            >
+                                                ← Jobs
+                                            </button>
+                                            <span className="font-mono text-slate-700">{selectedJobReport.job_number}</span>
+                                            <span className="text-slate-500 font-normal text-base truncate max-w-sm">{selectedJobReport.description}</span>
+                                        </>
+                                    ) : (
+                                        <>Completed Jobs Report {isFetchingCompletedJobsReport && <span className="text-sm font-normal text-slate-400 ml-2">Loading…</span>}</>
+                                    )}
+                                </DialogTitle>
+                                <DialogDescription className="sr-only">Completed job report</DialogDescription>
                             </DialogHeader>
 
-                            <div className="border border-slate-200 rounded-lg overflow-hidden">
-                                <div className="max-h-[65vh] overflow-auto">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow className="bg-slate-50 sticky top-0 z-10">
-                                                <TableHead>Job #</TableHead>
-                                                <TableHead>Technician</TableHead>
-                                                <TableHead>Stage</TableHead>
-                                                <TableHead>Completion Time</TableHead>
-                                                <TableHead>Actions</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {completedStageRows.length === 0 ? (
-                                                <TableRow>
-                                                    <TableCell colSpan={5} className="text-center text-slate-500 py-10">
-                                                        No completed jobs found
-                                                    </TableCell>
-                                                </TableRow>
-                                            ) : (
-                                                completedStageRows.map((r, idx) => {
-                                                    const techLabel = technicianNameById[String(r.technician_id)]
-                                                        || (typeof r.technician_id === 'string' ? r.technician_id : '')
-                                                        || '-';
-                                                    const timeLabel = r.completed_at ? new Date(r.completed_at).toLocaleString() : '-';
-                                                    return (
-                                                        <TableRow key={`${r.job_number}-${idx}`}>
-                                                            <TableCell className="font-mono font-semibold">{r.job_number}</TableCell>
-                                                            <TableCell>{techLabel}</TableCell>
-                                                            <TableCell>{r.stage || '-'}</TableCell>
-                                                            <TableCell>{timeLabel}</TableCell>
-                                                            <TableCell>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        const job = jobs.find(j => j.job_number === r.job_number);
-                                                                        const remainingHours = Number(job?.remaining_hours ?? (job?.allocated_hours - job?.consumed_hours) ?? 0);
-                                                                        if (remainingHours > 0) {
-                                                                            if (window.confirm(`Recover job ${r.job_number}? This job has ${remainingHours.toFixed(1)} hours remaining and will be reopened for additional work.`)) {
-                                                                                reopenJobMutation.mutate(r.job_number);
-                                                                            }
-                                                                        } else {
-                                                                            alert('This job has no remaining hours to recover.');
-                                                                        }
-                                                                    }}
-                                                                    disabled={reopenJobMutation.isPending}
-                                                                    className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
-                                                                >
-                                                                    Recover Job
-                                                                </Button>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    );
-                                                })
-                                            )}
-                                        </TableBody>
-                                    </Table>
+                            <div className="flex-1 overflow-y-auto min-h-0">
+                            {/* ── LIST VIEW ── */}
+                            {!selectedJobReport && (
+                                <div className="space-y-2 py-2">
+                                    {completedJobsData.length === 0 ? (
+                                        <div className="py-16 text-center text-slate-400">
+                                            {isFetchingCompletedJobsReport ? 'Fetching report…' : 'No completed jobs found.'}
+                                        </div>
+                                    ) : completedJobsData.map(j => {
+                                        const ts = j.time_summary || {};
+                                        const total = Number(ts.total_hours ?? 0);
+                                        const prod  = Number(ts.productive_hours ?? 0);
+                                        const prodPct = total > 0 ? (prod / total * 100).toFixed(0) : '—';
+                                        const endLabel = j.completed_at ? new Date(j.completed_at).toLocaleDateString() : (j.last_log_date ? new Date(j.last_log_date).toLocaleDateString() : '—');
+                                        const remaining = Number(j.remaining_hours ?? 0);
+                                        return (
+                                            <div key={j.job_number} className="flex items-center gap-3 px-4 py-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-baseline gap-2">
+                                                        <span className="font-mono font-semibold text-slate-800">{j.job_number}</span>
+                                                        <span className="text-slate-600 text-sm truncate">{j.description}</span>
+                                                    </div>
+                                                    <div className="flex gap-4 mt-1 text-xs text-slate-500">
+                                                        <span>Completed {endLabel}</span>
+                                                        <span>{total.toFixed(1)}h logged</span>
+                                                        <span className={prod > 0 ? 'text-green-700 font-medium' : ''}>{prod.toFixed(1)}h productive ({prodPct}%)</span>
+                                                        {(j.hours_by_technician || []).length > 0 && (
+                                                            <span>{j.hours_by_technician.length} technician{j.hours_by_technician.length !== 1 ? 's' : ''}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <Button size="sm" variant="outline" className="text-xs h-7 px-3" onClick={() => setSelectedJobReport(j)}>
+                                                        Full Report
+                                                    </Button>
+                                                    {remaining > 0 && (
+                                                        <Button
+                                                            size="sm" variant="outline"
+                                                            className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                                            disabled={reopenJobMutation.isPending}
+                                                            onClick={() => {
+                                                                if (window.confirm(`Recover job ${j.job_number}? It has ${remaining.toFixed(1)}h remaining.`)) {
+                                                                    reopenJobMutation.mutate(j.job_number);
+                                                                }
+                                                            }}
+                                                        >
+                                                            Recover
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
+                            )}
+
+                            {/* ── DETAIL VIEW ── */}
+                            {selectedJobReport && (() => {
+                                const j  = selectedJobReport;
+                                const ts = j.time_summary || {};
+                                const prod   = Number(ts.productive_hours    ?? 0);
+                                const train  = Number(ts.training_hours      ?? 0);
+                                const np     = Number(ts.non_productive_hours ?? 0);
+                                const idle   = Number(ts.idle_hours          ?? 0);
+                                const total  = Number(ts.total_hours         ?? 0);
+                                const prodPct  = total > 0 ? (prod  / total * 100) : 0;
+                                const utilPct  = total > 0 ? ((prod + train) / total * 100) : 0;
+                                const npPct    = total > 0 ? ((np + idle + train) / total * 100) : 0;
+                                const startLabel = j.first_log_date ? new Date(j.first_log_date).toLocaleDateString() : (j.start_date ? new Date(j.start_date).toLocaleDateString() : '—');
+                                const endLabel   = j.last_log_date  ? new Date(j.last_log_date).toLocaleDateString()  : (j.completed_at ? new Date(j.completed_at).toLocaleDateString() : '—');
+                                const entries = (j.time_entries || []);
+                                const techRows = (j.hours_by_technician || []).sort((a, b) => (b.productive_hours ?? 0) - (a.productive_hours ?? 0));
+                                const notes = [
+                                    ...(j.job_reports || []).filter(r => r.bottleneck_description || r.notes),
+                                    ...entries.filter(e => e.notes),
+                                ];
+                                const idleReasons = entries
+                                    .filter(e => (e.classification === 'idle' || e.classification === 'non_productive') && (e.sub_reason || e.category))
+                                    .reduce((acc, e) => {
+                                        const key = e.sub_reason || e.category;
+                                        acc[key] = (acc[key] || 0) + Number(e.hours ?? 0);
+                                        return acc;
+                                    }, {});
+
+                                const classLabel  = { productive: 'Productive', training: 'Training', non_productive: 'Non-Productive', idle: 'Idle', not_available: 'Leave/Sick' };
+                                const classBadge  = { productive: 'bg-green-100 text-green-800', training: 'bg-blue-100 text-blue-800', non_productive: 'bg-orange-100 text-orange-800', idle: 'bg-slate-100 text-slate-600', not_available: 'bg-red-100 text-red-700' };
+
+                                return (
+                                    <div className="space-y-5 py-2">
+                                        {/* ── Header ── */}
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                            {[
+                                                { label: 'Allocated', value: `${Number(j.allocated_hours ?? 0).toFixed(1)}h` },
+                                                { label: 'Total Logged', value: `${total.toFixed(1)}h` },
+                                                { label: 'Start', value: startLabel },
+                                                { label: 'Completed', value: endLabel },
+                                            ].map(s => (
+                                                <div key={s.label} className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+                                                    <p className="text-xs text-slate-500 mb-0.5">{s.label}</p>
+                                                    <p className="text-base font-semibold text-slate-800">{s.value}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* ── KPI Summary ── */}
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {[
+                                                { label: 'Productivity', pct: prodPct, desc: `${prod.toFixed(1)}h productive / ${total.toFixed(1)}h total`, color: prodPct >= 70 ? 'text-green-700' : 'text-red-600' },
+                                                { label: 'Utilization',  pct: utilPct, desc: `${(prod + train).toFixed(1)}h (prod + training) / ${total.toFixed(1)}h`, color: utilPct >= 70 ? 'text-green-700' : 'text-yellow-600' },
+                                                { label: 'Non-Productive', pct: npPct, desc: `${(np + idle + train).toFixed(1)}h / ${total.toFixed(1)}h`, color: npPct <= 30 ? 'text-green-700' : 'text-red-600' },
+                                            ].map(k => (
+                                                <div key={k.label} className="bg-white border border-slate-200 rounded-lg px-4 py-3 text-center">
+                                                    <p className="text-xs text-slate-500 mb-1">{k.label}</p>
+                                                    <p className={`text-2xl font-bold ${k.color}`}>{k.pct.toFixed(1)}%</p>
+                                                    <p className="text-xs text-slate-400 mt-1">{k.desc}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* ── Time Distribution ── */}
+                                        <div>
+                                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Time Distribution</p>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {[
+                                                    { label: 'Productive',    hours: prod,  pct: prodPct,                       color: 'bg-green-100 text-green-800' },
+                                                    { label: 'Training',      hours: train, pct: total > 0 ? train/total*100 : 0, color: 'bg-blue-100 text-blue-800' },
+                                                    { label: 'Non-Productive',hours: np,    pct: total > 0 ? np/total*100 : 0,    color: 'bg-orange-100 text-orange-800' },
+                                                    { label: 'Idle',          hours: idle,  pct: total > 0 ? idle/total*100 : 0,  color: 'bg-slate-100 text-slate-700' },
+                                                ].map(b => (
+                                                    <div key={b.label} className={`rounded-lg px-3 py-2 text-center ${b.color}`}>
+                                                        <p className="text-xs font-medium">{b.label}</p>
+                                                        <p className="text-lg font-bold">{b.hours.toFixed(1)}h</p>
+                                                        <p className="text-xs">{b.pct.toFixed(1)}%</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* ── Technician Contribution ── */}
+                                        {techRows.length > 0 && (
+                                            <div>
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Technician Contribution</p>
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow className="bg-slate-50">
+                                                            <TableHead>Technician</TableHead>
+                                                            <TableHead className="text-right text-green-700">Productive</TableHead>
+                                                            <TableHead className="text-right text-blue-700">Training</TableHead>
+                                                            <TableHead className="text-right text-orange-700">Non-Prod</TableHead>
+                                                            <TableHead className="text-right text-slate-500">Idle</TableHead>
+                                                            <TableHead className="text-right font-semibold">Total</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {techRows.map(t => (
+                                                            <TableRow key={t.technician_id}>
+                                                                <TableCell className="font-medium">{t.technician_name || t.technician_id}</TableCell>
+                                                                <TableCell className="text-right text-green-700">{Number(t.productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-blue-700">{Number(t.training_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-orange-700">{Number(t.non_productive_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-slate-500">{Number(t.idle_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right font-semibold">{Number(t.total_hours ?? 0).toFixed(1)}h</TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        )}
+
+                                        {/* ── Full Log Timeline ── */}
+                                        <div>
+                                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Full Log Timeline ({entries.length} entries)</p>
+                                            {entries.length === 0 ? (
+                                                <p className="text-sm text-slate-400 py-4 text-center">No time entries recorded for this job.</p>
+                                            ) : (
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                            <TableHead>Date</TableHead>
+                                                            <TableHead>Technician</TableHead>
+                                                            <TableHead>Type</TableHead>
+                                                            <TableHead>Category / Reason</TableHead>
+                                                            <TableHead className="text-right">Hours</TableHead>
+                                                            <TableHead>Notes</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {entries.map((e, i) => {
+                                                            const dateStr = e.date ? new Date(e.date).toLocaleDateString() : '—';
+                                                            const catLabel = e.sub_reason ? `${e.category || ''} – ${e.sub_reason}` : (e.category || (e.classification === 'productive' ? 'Job Work' : '—'));
+                                                            return (
+                                                                <TableRow key={i} className={i % 2 === 0 ? '' : 'bg-slate-50/50'}>
+                                                                    <TableCell className="text-xs text-slate-600 whitespace-nowrap">{dateStr}</TableCell>
+                                                                    <TableCell className="text-sm font-medium">{e.technician_name || '—'}</TableCell>
+                                                                    <TableCell>
+                                                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${classBadge[e.classification] || 'bg-slate-100 text-slate-600'}`}>
+                                                                            {classLabel[e.classification] || e.classification || '—'}
+                                                                        </span>
+                                                                    </TableCell>
+                                                                    <TableCell className="text-sm text-slate-600">{catLabel}</TableCell>
+                                                                    <TableCell className="text-right font-medium">{Number(e.hours ?? 0).toFixed(1)}h</TableCell>
+                                                                    <TableCell className="text-xs text-slate-400 max-w-[160px] truncate">{e.notes || ''}</TableCell>
+                                                                </TableRow>
+                                                            );
+                                                        })}
+                                                    </TableBody>
+                                                </Table>
+                                            )}
+                                        </div>
+
+                                        {/* ── Issues & Notes ── */}
+                                        {(Object.keys(idleReasons).length > 0 || notes.length > 0) && (
+                                            <div>
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Issues & Notes</p>
+                                                <div className="space-y-3">
+                                                    {Object.keys(idleReasons).length > 0 && (
+                                                        <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
+                                                            <p className="text-xs font-semibold text-orange-700 mb-2">Delay / Idle Reasons</p>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {Object.entries(idleReasons).map(([reason, hrs]) => (
+                                                                    <span key={reason} className="text-xs bg-white border border-orange-200 text-orange-800 rounded px-2 py-1">
+                                                                        {reason}: {Number(hrs).toFixed(1)}h
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {notes.map((n, i) => (
+                                                        <div key={i} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                                                            {n.technician_name && <span className="font-semibold mr-2">{n.technician_name}</span>}
+                                                            {n.date && <span className="text-xs text-slate-400 mr-2">{new Date(n.date).toLocaleDateString()}</span>}
+                                                            {n.bottleneck_description && <span className="mr-2 text-red-600">[Bottleneck] {n.bottleneck_description}</span>}
+                                                            {n.notes || n.work_completed || ''}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             </div>
                         </DialogContent>
                     </Dialog>
 
                     <TabsContent value="performance" className="mt-6">
                         <div className="space-y-6">
-                            <TechnicianPerformance 
+                            <TechnicianPerformance
                                 technicians={technicians}
-                                jobs={jobs}
-                                timeEntries={timeLogsForMonth}
+                                kpiData={techKpiData}
                             />
                             
                             {/* Daily Productivity Chart */}
@@ -982,7 +2040,7 @@ export default function Dashboard() {
                                         const dailyData = summaries.map(day => ({
                                             date: format(new Date(day.date), 'MMM dd'),
                                             fullDate: day.date,
-                                            dailyProductivePercentage: day.totalHours > 0 ? (day.productiveHours / day.totalHours) * 100 : 0
+                                            dailyProductivePercentage: day.productivity_percent ?? (day.totalHours > 0 ? (day.productiveHours / day.totalHours) * 100 : 0)
                                         }));
                                         
                                         return dailyData.length > 0 ? (
@@ -1018,7 +2076,7 @@ export default function Dashboard() {
                                         const dailyData = summaries.map(day => ({
                                             date: format(new Date(day.date), 'MMM dd'),
                                             fullDate: day.date,
-                                            dailyUtilizationPercentage: day.totalHours > 0 ? ((day.totalHours - day.notAvailableHours) > 0 ? (day.productiveHours / (day.totalHours - day.notAvailableHours)) * 100 : 0) : 0
+                                            dailyUtilizationPercentage: day.utilization_percent ?? (day.totalHours > 0 ? ((day.totalHours - day.notAvailableHours) > 0 ? (day.productiveHours / (day.totalHours - day.notAvailableHours)) * 100 : 0) : 0)
                                         }));
                                         
                                         return dailyData.length > 0 ? (
@@ -1492,48 +2550,80 @@ export default function Dashboard() {
                                     )}
                                 </div>
 
-                                <div className="flex items-center gap-2">
-                                    {isEditingJob ? (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => {
-                                                    setIsEditingJob(false);
-                                                    setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
-                                                }}
-                                                disabled={updateJobByNumberMutation.isPending}
-                                            >
-                                                Cancel
-                                            </Button>
-                                            <Button
-                                                onClick={() => {
-                                                    const nextNumber = String(jobEditDraft.job_number || '').trim();
-                                                    if (!nextNumber) return;
-                                                    const rawAllocated = String(jobEditDraft.allocated_hours ?? '').trim();
-                                                    const nextAllocated = rawAllocated === '' ? null : Number(rawAllocated);
-                                                    const nextStatus = String(jobEditDraft.status || '').trim();
-                                                    const payload = {
-                                                        job_number: nextNumber,
-                                                        description: String(jobEditDraft.description || '').trim()
-                                                    };
+                            <div className="flex items-center gap-2">
+                                {isEditingJob ? (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setIsEditingJob(false);
+                                                setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                                            }}
+                                            disabled={updateJobByNumberMutation.isPending}
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                const nextNumber = String(jobEditDraft.job_number || '').trim();
+                                                if (!nextNumber) return;
+                                                const rawAllocated = String(jobEditDraft.allocated_hours ?? '').trim();
+                                                const nextAllocated = rawAllocated === '' ? null : Number(rawAllocated);
+                                                const nextStatus = String(jobEditDraft.status || '').trim();
+                                                const payload = {
+                                                    job_number: nextNumber,
+                                                    description: String(jobEditDraft.description || '').trim()
+                                                };
 
-                                                    if (nextStatus) payload.status = nextStatus;
-                                                    if (nextAllocated !== null && !Number.isNaN(nextAllocated)) {
-                                                        payload.allocated_hours = nextAllocated;
+                                                if (nextStatus) payload.status = nextStatus;
+                                                if (nextAllocated !== null && !Number.isNaN(nextAllocated)) {
+                                                    payload.allocated_hours = nextAllocated;
+                                                }
+
+                                                updateJobByNumberMutation.mutate({
+                                                    jobNumber: selectedJobDetails?.job_number,
+                                                    data: payload
+                                                });
+                                            }}
+                                            disabled={updateJobByNumberMutation.isPending}
+                                            className="bg-yellow-400 hover:bg-yellow-500 text-slate-800"
+                                        >
+                                            {updateJobByNumberMutation.isPending ? 'Saving...' : 'Save'}
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <>
+                                        {currentUser?.type === 'supervisor' && String(selectedJobDetails?.status || '') !== 'completed' && (
+                                            <Button
+                                                variant="default"
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                disabled={updateJobByNumberMutation.isPending}
+                                                onClick={async () => {
+                                                    try {
+                                                        if (!selectedJobDetails?.id) {
+                                                            alert('Job id missing');
+                                                            return;
+                                                        }
+                                                        if (!window.confirm(`Mark job ${selectedJobDetails.job_number} as completed?`)) return;
+
+                                                        await base44.entities.JobManagement.updateJobStatus(
+                                                            supervisorKey,
+                                                            selectedJobDetails.id,
+                                                            { status: 'completed' }
+                                                        );
+
+                                                        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+                                                        const latest = await base44.entities.Job.getByJobNumber(selectedJobDetails.job_number);
+                                                        setSelectedJobDetails(latest);
+                                                    } catch (e) {
+                                                        alert(e?.message || 'Failed to mark completed');
                                                     }
-
-                                                    updateJobByNumberMutation.mutate({
-                                                        jobNumber: selectedJobDetails?.job_number,
-                                                        data: payload
-                                                    });
                                                 }}
-                                                disabled={updateJobByNumberMutation.isPending}
-                                                className="bg-yellow-400 hover:bg-yellow-500 text-slate-800"
                                             >
-                                                {updateJobByNumberMutation.isPending ? 'Saving...' : 'Save'}
+                                                Mark Completed
                                             </Button>
-                                        </>
-                                    ) : (
+                                        )}
+
                                         <Button
                                             variant="outline"
                                             onClick={() => {
@@ -1544,12 +2634,25 @@ export default function Dashboard() {
                                                     allocated_hours: String(selectedJobDetails?.allocated_hours ?? ''),
                                                     status: selectedJobDetails?.status || 'in_progress'
                                                 });
+                                                // Pre-populate per-technician stage allocations so Save works immediately
+                                                const initDraft = {};
+                                                for (const st of (selectedJobDetails?.subtasks || [])) {
+                                                    const stId = String(st?._id || st?.id || '');
+                                                    for (const a of (st?.assigned_technicians || [])) {
+                                                        const techId = String(a?.technician_id || '');
+                                                        if (stId && techId) {
+                                                            initDraft[`${stId}:${techId}`] = String(a?.allocated_hours ?? 0);
+                                                        }
+                                                    }
+                                                }
+                                                setTechStageAllocDraft(initDraft);
                                             }}
                                         >
                                             Edit Job
                                         </Button>
-                                    )}
-                                </div>
+                                    </>
+                                )}
+                            </div>
                             </div>
 
                             {(selectedJobDetails?.technicians || []).length > 0 && (
@@ -1645,8 +2748,7 @@ export default function Dashboard() {
                                                                                 type="number"
                                                                                 step="0.5"
                                                                                 min="0"
-                                                                                value={draftVal}
-                                                                                placeholder={alloc.toFixed(1)}
+                                                                                value={draftVal !== '' ? draftVal : String(alloc)}
                                                                                 onChange={(e) => {
                                                                                     const v = e.target.value;
                                                                                     setTechStageAllocDraft((p) => ({ ...p, [draftKey]: v }));
@@ -1761,6 +2863,13 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
+                            {selectedJobDetails?.actual_completion_date && (
+                                <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 mb-6">
+                                    <div className="font-semibold text-slate-900">Completed At</div>
+                                    <div>{format(new Date(selectedJobDetails.actual_completion_date), 'yyyy-MM-dd HH:mm')}</div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-3 gap-4 mb-6">
                                 <div className="bg-slate-50 rounded p-3">
                                     <div className="text-slate-500">Technical Complexity</div>
@@ -1849,6 +2958,84 @@ export default function Dashboard() {
                                 </div>
                             )}
 
+                            {(selectedJobWorkLogs || []).length > 0 && (
+                                <Card className="border border-slate-200 bg-slate-50">
+                                    <CardHeader>
+                                        <CardTitle className="text-slate-800">Job Work Logs</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="overflow-x-auto">
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow className="bg-slate-100">
+                                                        <TableHead>Date</TableHead>
+                                                        <TableHead>Technician</TableHead>
+                                                        <TableHead>Stage</TableHead>
+                                                        <TableHead>Hours</TableHead>
+                                                        <TableHead>Normal</TableHead>
+                                                        <TableHead>Overtime</TableHead>
+                                                        <TableHead>Category</TableHead>
+                                                        <TableHead>Notes</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {selectedJobWorkLogs.map((log) => (
+                                                        <TableRow key={`${log.id || log._id}-${log.log_date}-${log.subtask_id}`}>
+                                                            <TableCell>{log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : '-'}</TableCell>
+                                                            <TableCell>
+                                                                {technicianNameById[String(log?.technician_id)]
+                                                                    || log?.technician_name
+                                                                    || (log?.technician_id?.name || log?.technician_id)
+                                                                    || 'Unknown'}
+                                                            </TableCell>
+                                                            <TableCell>{log?.subtask_title || getSubtaskTitle(log?.subtask_id) || '-'}</TableCell>
+                                                            <TableCell>{Number(log?.hours_logged || 0).toFixed(1)}h</TableCell>
+                                                            <TableCell>{Number(log?.normal_hours || 0).toFixed(1)}h</TableCell>
+                                                            <TableCell>{Number(log?.overtime_hours || 0).toFixed(1)}h</TableCell>
+                                                            <TableCell>{log?.category || log?.time_category || (log?.is_idle ? 'Idle' : 'Job')}</TableCell>
+                                                            <TableCell>{log?.category_detail || log?.approval_note || '-'}</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {(selectedJobReportEntries || []).length > 0 && (
+                                <Card className="border border-slate-200 bg-slate-50">
+                                    <CardHeader>
+                                        <CardTitle className="text-slate-800">Technician Job Reports</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        {selectedJobReportEntries.map((report) => (
+                                            <div key={`${report._id || report.id}-${report.date}`} className="rounded border border-slate-200 bg-white p-3">
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                                    <div>
+                                                        <div className="text-sm font-semibold text-slate-800">{report?.technician_name || 'Technician'}</div>
+                                                        <div className="text-xs text-slate-500">{report?.date ? format(new Date(report.date), 'yyyy-MM-dd') : 'No date'}</div>
+                                                    </div>
+                                                    <div className="text-xs text-slate-500">
+                                                        Bottleneck: {report?.has_bottleneck ? 'Yes' : 'No'}
+                                                    </div>
+                                                </div>
+                                                <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">
+                                                    {report?.work_completed || 'No work completed note provided.'}
+                                                </div>
+                                                {report?.has_bottleneck && (
+                                                    <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                                        <div><strong>Category:</strong> {report?.bottleneck_category || 'Unknown'}</div>
+                                                        <div><strong>Details:</strong> {report?.bottleneck_description || 'No description'}</div>
+                                                        <div><strong>Hours lost:</strong> {Number(report?.bottleneck_time_lost_hours || 0).toFixed(1)}h</div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </CardContent>
+                                </Card>
+                            )}
+
                             {selectedJobDetails?.status === 'at_risk' && (
                                 <div className="rounded border border-amber-200 bg-amber-50 p-4">
                                     <div className="flex items-center gap-2 font-semibold text-amber-900">
@@ -1934,34 +3121,17 @@ export default function Dashboard() {
                     </DialogContent>
                 </Dialog>
 
-                <div className="mt-8 bg-slate-800/60 backdrop-blur rounded-xl p-6 border border-slate-700">
-                    <h3 className="font-semibold text-yellow-400 mb-3">Hour Calculation Rules</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-                        <div>
-                            <h4 className="font-medium text-white mb-2">HR Hours (Payroll)</h4>
-                            <ul className="space-y-1 text-slate-400">
-                                <li>• Monday-Thursday = 8 hours</li>
-                                <li>• Friday = 7 hours</li>
-                                <li>• Includes 1 paid lunch hour</li>
-                                <li>• Used for attendance & payroll only</li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h4 className="font-medium text-white mb-2">Productive Hours (Jobs)</h4>
-                            <ul className="space-y-1 text-slate-400">
-                                <li>• Monday-Thursday = 7 hours/day</li>
-                                <li>• Friday = 6 hours/day</li>
-                                <li>• Excludes lunch</li>
-                                <li>• Used for job progress & efficiency</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
 
-                <footer className="mt-8 text-center text-slate-500 text-sm">
-                    <p>© {new Date().getFullYear()} Epiroc Workshop Management System</p>
-                </footer>
+
             </main>
+
         </div>
     );
 }
+
+
+
+
+
+
+

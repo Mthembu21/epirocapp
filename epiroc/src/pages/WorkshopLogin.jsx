@@ -40,8 +40,11 @@ export default function WorkshopLogin() {
             );
             localStorage.setItem('epiroc_user', JSON.stringify(result.user));
             const role = result?.user?.role || 'supervisor';
+            const supervisorKey = result?.user?.supervisor_key;
             if (role === 'manager') {
                 window.location.href = createPageUrl('WorkshopOverview');
+            } else if (supervisorKey === 'kathu') {
+                window.location.href = createPageUrl('KathuDashboard');
             } else {
                 window.location.href = createPageUrl('Dashboard');
             }
@@ -55,11 +58,15 @@ export default function WorkshopLogin() {
             <div className="w-full max-w-md">
                 {/* Logo */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center gap-3 mb-4">
-                        <div className="bg-yellow-400 p-3 rounded-xl">
-                            <Wrench className="w-10 h-10 text-slate-800" />
-                        </div>
+                <div className="inline-flex items-center gap-3 mb-4">
+                    <div className="p-1 rounded-xl bg-yellow-400/20 backdrop-blur">
+                        <img
+                            src="/src/assets/epirocLogo.png"
+                            alt="Epiroc"
+                            className="h-14 w-14 object-contain"
+                        />
                     </div>
+                </div>
                     <h1 className="text-3xl font-bold text-yellow-400 tracking-tight">EPIROC</h1>
                     <p className="text-slate-400 text-sm tracking-widest mt-1">WORKSHOP LABOUR MANAGEMENT</p>
                 </div>
