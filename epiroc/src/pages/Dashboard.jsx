@@ -885,6 +885,7 @@ export default function Dashboard() {
                                 const next = e.target.value;
                                 if (!next) return;
                                 setSelectedMonth(next);
+                                handleViewChange('monthly');
                             }}
                             className="w-44 bg-white"
                         />

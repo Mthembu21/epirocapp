@@ -73,7 +73,7 @@ export default function WorkshopOverview() {
     const utilization = Number(data?.labour_utilization_percentage || 0);
     const appliedMonth = data?.month || selectedMonth;
 
-    const workshops = ['component', 'pdis', 'rebuild']
+    const workshops = ['component', 'pdis', 'rebuild', 'kathu']
         .map((k) => data?.by_workshop?.[k])
         .filter(Boolean);
 
