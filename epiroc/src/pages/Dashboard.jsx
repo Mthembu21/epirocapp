@@ -240,6 +240,16 @@ export default function Dashboard() {
         enabled: isAuthenticated
     });
 
+    // Technicians can log hours on jobs owned by other workshops (temporary
+    // assignments), so their record may not be in the current tenant's
+    // `technicians` list above. Fetch the global list too so names still
+    // resolve instead of falling back to the raw technician_id.
+    const { data: allTechniciansGlobal = [] } = useQuery({
+        queryKey: ['technicians', 'all'],
+        queryFn: () => base44.entities.Technician.getAll(),
+        enabled: isAuthenticated
+    });
+
     const updateSubtaskMutation = useMutation({
         mutationFn: async ({ jobNumber, subtaskId, data }) => base44.entities.Job.subtasks.update(jobNumber, subtaskId, data),
         onSuccess: async (_updatedSubtask, vars) => {
@@ -612,7 +622,7 @@ export default function Dashboard() {
     const atRiskJobs = jobs.filter(j => j.status === 'at_risk' || j.bottleneck_count >= 2);
     const completedJobs = jobs.filter(j => j.status === 'completed');
 
-    const technicianNameById = (technicians || []).reduce((acc, t) => {
+    const technicianNameById = [...(allTechniciansGlobal || []), ...(technicians || [])].reduce((acc, t) => {
         const id = String(t?.id || t?._id || t?.technician_id || '');
         if (!id) return acc;
         acc[id] = t?.name || t?.technician_name || acc[id];
