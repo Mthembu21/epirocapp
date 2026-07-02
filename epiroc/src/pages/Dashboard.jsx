@@ -344,16 +344,23 @@ export default function Dashboard() {
     });
 
     const deleteTechnicianMutation = useMutation({
-        mutationFn: async (id) => {
-            // Delete all time entries for this technician
-            const techEntries = timeLogs.filter(e => e.technician_id === id);
-            for (const entry of techEntries) {
-                await base44.entities.DailyTimeEntry.delete(entry.id);
-            }
-            // Delete the technician
-            await base44.entities.Technician.delete(id);
+        // The backend already cascades deletion of time entries/time logs/job reports
+        // for this technician in one atomic call - no need to delete them one by one here.
+        mutationFn: (id) => base44.entities.Technician.delete(id),
+        onMutate: async (id) => {
+            await queryClient.cancelQueries({ queryKey: ['technicians'] });
+            const previousTechnicians = queryClient.getQueryData(['technicians']);
+            // Remove instantly from the UI instead of waiting on a refetch
+            queryClient.setQueryData(['technicians'], (old = []) => old.filter((t) => t.id !== id));
+            return { previousTechnicians };
         },
-        onSuccess: () => {
+        onError: (error, _id, context) => {
+            if (context?.previousTechnicians) {
+                queryClient.setQueryData(['technicians'], context.previousTechnicians);
+            }
+            alert(error?.message || 'Failed to delete technician');
+        },
+        onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['technicians'] });
             queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
         }

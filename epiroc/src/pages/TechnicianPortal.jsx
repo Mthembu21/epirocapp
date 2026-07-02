@@ -418,8 +418,8 @@ export default function TechnicianPortal() {
     const totalOvertimeForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.overtime_hours) || 0), 0);
 
     const requiredNormalForDay = selectedDateObj
-        ? (getDay(selectedDateObj) === 5 ? 7 : 8)
-        : 8;
+        ? (getDay(selectedDateObj) === 5 ? 6 : 7.5)
+        : 7.5;
 
     const belowRequiredNormalForDay = totalLoggedHoursForDate > 0 && totalLoggedHoursForDate < requiredNormalForDay;
 
