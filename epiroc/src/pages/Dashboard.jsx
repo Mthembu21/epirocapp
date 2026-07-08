@@ -262,7 +262,7 @@ export default function Dashboard() {
         }
     });
 
-    const { data: jobs = [] } = useQuery({
+    const { data: jobs = [], isError: isJobsError, error: jobsError, isFetching: isFetchingJobs } = useQuery({
         queryKey: ['jobs'],
         queryFn: () => base44.entities.Job.list('-created_date', 200),
         enabled: isAuthenticated,
@@ -378,7 +378,12 @@ export default function Dashboard() {
 
     const createJobMutation = useMutation({
         mutationFn: (data) => base44.entities.Job.create(data),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+        onError: (error) => {
+            // JobAllocationModal shows this inline via its own try/catch around mutateAsync;
+            // this just makes sure it's also visible in server logs / browser console.
+            console.error('Job creation failed:', error);
+        }
     });
 
     const deleteJobMutation = useMutation({
@@ -1754,7 +1759,22 @@ onClick={() => {
                                     {isFetchingCompletedJobsReport ? 'Loading report...' : 'View Completed Jobs Report'}
                                 </Button>
                             </div>
-                            <JobList 
+                            {isJobsError && (
+                                <div className="flex items-center justify-between gap-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                    <span>
+                                        Couldn't load jobs: {jobsError?.message || 'Unknown error'}. The list below may be out of date.
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        className="h-8 px-3 border-red-300 text-red-700 hover:bg-red-100"
+                                        onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs'] })}
+                                        disabled={isFetchingJobs}
+                                    >
+                                        {isFetchingJobs ? 'Retrying...' : 'Retry'}
+                                    </Button>
+                                </div>
+                            )}
+                            <JobList
                                 jobs={activeJobs}
                                 technicians={technicians}
                                 onDelete={deleteJobMutation.mutate}

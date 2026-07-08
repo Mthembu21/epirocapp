@@ -60,9 +60,12 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
             technician_id: preselectedTechnician?.id || ''
         }))
     });
+    const [submitError, setSubmitError] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setSubmitError('');
 
         const tech = technicians.find(t => t.id === formData.assigned_technician_id);
 
@@ -85,7 +88,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
 
         const totalSubtaskAllocated = normalizedSubtasks.reduce((sum, st) => sum + (st.allocated_hours || 0), 0);
         if (Number.isFinite(allocatedTotal) && allocatedTotal > 0 && totalSubtaskAllocated > allocatedTotal) {
-            alert('Sum of subtask allocated hours cannot exceed job allocated hours');
+            setSubmitError('Sum of subtask allocated hours cannot exceed job allocated hours');
             return;
         }
 
@@ -102,6 +105,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
             return t ? { technician_id: t.id, technician_name: t.name } : null;
         }).filter(Boolean);
 
+        setIsSubmitting(true);
         try {
             await onSubmit({
                 ...formData,
@@ -129,9 +133,12 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
                     technician_id: preselectedTechnician?.id || ''
                 }))
             });
+            setSubmitError('');
             setIsOpen(false);
         } catch (err) {
-            alert(err?.message || 'Failed to create job');
+            setSubmitError(err?.message || 'Failed to create job. Please try again.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -143,7 +150,7 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
     }, {});
 
     return (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if (open) setSubmitError(''); }}>
             <DialogTrigger asChild>
                 <Button className="bg-yellow-400 hover:bg-yellow-500 text-slate-800 h-10 px-4 flex items-center gap-2">
                     <Plus className="w-4 h-4" />
@@ -158,6 +165,11 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
                     </DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="mt-4 max-h-[75vh] overflow-y-auto pr-1 space-y-6">
+                    {submitError && (
+                        <div className="rounded-lg border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+                            {submitError}
+                        </div>
+                    )}
                     <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -342,8 +354,8 @@ export default function JobAllocationModal({ technicians, existingJobs, onSubmit
                         <Button type="button" variant="outline" onClick={() => setIsOpen(false)} className="border-slate-700 text-slate-200 hover:bg-slate-800">
                             Cancel
                         </Button>
-                        <Button type="submit" className="bg-yellow-400 hover:bg-yellow-500 text-slate-900">
-                            Create Job
+                        <Button type="submit" disabled={isSubmitting} className="bg-yellow-400 hover:bg-yellow-500 text-slate-900">
+                            {isSubmitting ? 'Creating...' : 'Create Job'}
                         </Button>
                     </div>
                 </form>
