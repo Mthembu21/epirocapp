@@ -620,7 +620,7 @@ export default function Dashboard() {
         if (!status) return false;
         if (String(status) === 'completed') return false;
 
-        const isActiveState = ['pending_confirmation', 'active', 'in_progress', 'at_risk', 'over_allocated', 'reopened'].includes(status);
+        const isActiveState = ['pending_confirmation', 'active', 'in_progress', 'at_risk', 'over_allocated', 'overrun', 'reopened'].includes(status);
         const hasBottleneck = Number(j?.bottleneck_count || 0) >= 2;
         return isActiveState || hasBottleneck;
     });

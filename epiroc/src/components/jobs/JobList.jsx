@@ -15,7 +15,8 @@ const statusConfig = {
     in_progress: { label: 'In Progress', color: 'bg-indigo-100 text-indigo-700', icon: Briefcase },
     completed: { label: 'Completed', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
     at_risk: { label: 'At Risk', color: 'bg-red-100 text-red-700', icon: AlertTriangle },
-    over_allocated: { label: 'Over-Allocated', color: 'bg-orange-100 text-orange-700', icon: XCircle }
+    over_allocated: { label: 'Over-Allocated', color: 'bg-orange-100 text-orange-700', icon: XCircle },
+    overrun: { label: 'Overrun', color: 'bg-orange-100 text-orange-700', icon: AlertTriangle }
 };
 
 export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, onSelectJob, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false }) {
