@@ -46,7 +46,9 @@ export default function TechnicianPortal() {
         hours_logged: '',
         category: '',
         // Use category_detail as the technician-provided note/description for Training + Other
-        category_detail: ''
+        category_detail: '',
+        // Free-text explanation of what was actually done, required for Housekeeping/Other idle reasons
+        category_note: ''
     });
 
     const [reportData, setReportData] = useState({
@@ -85,7 +87,7 @@ export default function TechnicianPortal() {
       .catch(err => console.error('Failed to load active pauses:', err));
   }, [user?.supervisor_key, user?.id]);
 
-    const [editEntryDraft, setEditEntryDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
+    const [editEntryDraft, setEditEntryDraft] = useState({ hours_logged: '', category: '', category_detail: '', category_note: '' });
     const queryClient = useQueryClient();
 
     const updateEntryMutation = useMutation({
@@ -95,7 +97,7 @@ export default function TechnicianPortal() {
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
             queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
             setEditingEntryId(null);
-            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '' });
+            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '', category_note: '' });
         }
     });
 
@@ -340,7 +342,7 @@ export default function TechnicianPortal() {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
             queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
-            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '', end_date: '' }));
+            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '', category_note: '', end_date: '' }));
             setReportData({
                 work_completed: '',
                 has_bottleneck: false,
@@ -430,6 +432,10 @@ export default function TechnicianPortal() {
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
     const isIdleCategorySelected = isIdleSelected && formData.category === 'Idle';
     const isOtherIdleSelected = isIdleSelected && formData.category === 'Other'; // legacy backward-compat
+    // Housekeeping/Other idle reasons have no job number to describe the work,
+    // so the technician must explain what they actually did.
+    const idleSubReasonsRequiringNote = idleInfo?.idle_sub_reasons_requiring_note || ['Housekeeping', 'Other'];
+    const isIdleNoteRequired = isIdleCategorySelected && idleSubReasonsRequiringNote.includes(formData.category_detail);
     const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
     const isSickSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'sick';
     const isMultiDayLeave = isLeaveSelected || isSickSelected;
@@ -482,6 +488,11 @@ export default function TechnicianPortal() {
         // Require sub_reason when Idle category is selected
         if (isIdleSelected && formData.category === 'Idle' && !String(formData.category_detail || '').trim()) {
             alert('Please select a reason for idle time');
+            return;
+        }
+        // Require explanation when the idle reason has no job number to describe the work
+        if (isIdleNoteRequired && !String(formData.category_note || '').trim()) {
+            alert(`Please explain what you were actually doing during "${formData.category_detail}" idle time`);
             return;
         }
         // Require note when Training
@@ -547,6 +558,7 @@ export default function TechnicianPortal() {
             is_idle: isIdleSelected,
             category: isIdleSelected ? formData.category : null,
             category_detail: isIdleSelected ? (formData.category_detail || '') : '',
+            category_note: isIdleSelected ? (formData.category_note || '') : '',
             // Ensure entry goes to approval system
             approval_status: 'pending',
             approved_hours: null,
@@ -616,8 +628,9 @@ export default function TechnicianPortal() {
         if (entry.is_idle) {
             const base = entry.category || '-';
             const detail = String(entry.category_detail || '').trim();
+            const note = String(entry.category_note || '').trim();
             if (base === 'Idle' && detail) {
-                return `Idle – ${detail}`;
+                return note ? `Idle – ${detail}: ${note}` : `Idle – ${detail}`;
             }
             if (base === 'Other' && detail) {
                 return `Other: ${detail}`;
@@ -983,7 +996,7 @@ export default function TechnicianPortal() {
                                             <Label>Job / Work Number</Label>
                                             <Select
                                                 value={formData.job_id}
-                                                onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, subtask_id: '', category: '', category_detail: '', end_date: '' }))}
+                                                onValueChange={(value) => setFormData(prev => ({ ...prev, job_id: value, subtask_id: '', category: '', category_detail: '', category_note: '', end_date: '' }))}
                                             >
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select job" />
@@ -1006,7 +1019,7 @@ export default function TechnicianPortal() {
                                                 <Label>Category</Label>
                                                 <Select
                                                     value={formData.category}
-                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, category: value, category_detail: '', end_date: '' }))}
+                                                    onValueChange={(value) => setFormData(prev => ({ ...prev, category: value, category_detail: '', category_note: '', end_date: '' }))}
                                                 >
                                                     <SelectTrigger>
                                                         <SelectValue placeholder="Select category" />
@@ -1024,7 +1037,7 @@ export default function TechnicianPortal() {
                                                     <Label>Reason *</Label>
                                                     <Select
                                                         value={formData.category_detail}
-                                                        onValueChange={(value) => setFormData(prev => ({ ...prev, category_detail: value }))}
+                                                        onValueChange={(value) => setFormData(prev => ({ ...prev, category_detail: value, category_note: '' }))}
                                                     >
                                                         <SelectTrigger>
                                                             <SelectValue placeholder="Select reason" />
@@ -1035,6 +1048,18 @@ export default function TechnicianPortal() {
                                                             ))}
                                                         </SelectContent>
                                                     </Select>
+                                                </div>
+                                            )}
+                                            {/* Explanation textbox when idle reason has no job number to describe the work */}
+                                            {isIdleNoteRequired && (
+                                                <div className="space-y-2 sm:col-span-2">
+                                                    <Label>What were you actually doing? *</Label>
+                                                    <Textarea
+                                                        value={formData.category_note}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, category_note: e.target.value }))}
+                                                        placeholder="e.g. Offloading machine, sweeping workshop floor, moving parts to storage..."
+                                                        className="h-24 border-slate-300"
+                                                    />
                                                 </div>
                                             )}
                                             {/* Notes textbox for Training */}
@@ -1376,6 +1401,8 @@ export default function TechnicianPortal() {
                                                     const editCat = isEditing ? editEntryDraft.category : entry.category;
                                                     const showIdleSubReason = isIdle && editCat === 'Idle';
                                                     const showOtherDetail = isIdle && (editEntryDraft.category === 'Other' || entry.category === 'Other');
+                                                    const editCatDetail = isEditing ? editEntryDraft.category_detail : entry.category_detail;
+                                                    const showIdleNote = showIdleSubReason && idleSubReasonsRequiringNote.includes(editCatDetail);
                                                     const multiplier = Number(entry.overtime_multiplier || 1);
                                                     const payable = Number(entry.payable_hours || (Number(entry.hours_logged || 0) * multiplier));
 
@@ -1428,6 +1455,14 @@ export default function TechnicianPortal() {
                                                                                     placeholder="Other details"
                                                                                 />
                                                                             )}
+                                                                            {showIdleNote && (
+                                                                                <Textarea
+                                                                                    className="min-h-16 text-sm"
+                                                                                    value={editEntryDraft.category_note}
+                                                                                    onChange={(e) => setEditEntryDraft(prev => ({ ...prev, category_note: e.target.value }))}
+                                                                                    placeholder="What were you actually doing?"
+                                                                                />
+                                                                            )}
                                                                         </>
                                                                     ) : (
                                                                         <span className="text-sm text-slate-700">{getEntryCategoryLabel(entry)}</span>
@@ -1475,7 +1510,7 @@ export default function TechnicianPortal() {
                                                                         className="h-8 w-8 text-slate-500 hover:text-slate-800"
                                                                         onClick={() => {
                                                                             setEditingEntryId(null);
-                                                                            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '' });
+                                                                            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '', category_note: '' });
                                                                         }}
                                                                         disabled={updateEntryMutation.isPending}
                                                                         title="Cancel"
@@ -1489,6 +1524,10 @@ export default function TechnicianPortal() {
                                                                         onClick={() => {
                                                                             const hours = Number(editEntryDraft.hours_logged);
                                                                             if (!hours || hours <= 0) return;
+                                                                            if (showIdleNote && !String(editEntryDraft.category_note || '').trim()) {
+                                                                                alert(`Please explain what you were actually doing during "${editEntryDraft.category_detail}" idle time`);
+                                                                                return;
+                                                                            }
                                                                             updateEntryMutation.mutate({
                                                                                 id: entry.id,
                                                                                 timeLog: {
@@ -1496,6 +1535,7 @@ export default function TechnicianPortal() {
                                                                                     is_idle: entry.is_idle,
                                                                                     category: entry.is_idle ? editEntryDraft.category : entry.category,
                                                                                     category_detail: entry.is_idle ? editEntryDraft.category_detail : entry.category_detail,
+                                                                                    category_note: entry.is_idle ? editEntryDraft.category_note : entry.category_note,
                                                                                     subtask_id: entry.subtask_id
                                                                                 }
                                                                             });
@@ -1517,7 +1557,8 @@ export default function TechnicianPortal() {
                                                                             setEditEntryDraft({
                                                                                 hours_logged: String(entry.hours_logged ?? ''),
                                                                                 category: String(entry.category ?? ''),
-                                                                                category_detail: String(entry.category_detail ?? '')
+                                                                                category_detail: String(entry.category_detail ?? ''),
+                                                                                category_note: String(entry.category_note ?? '')
                                                                             });
                                                                         }}
                                                                         title="Edit"

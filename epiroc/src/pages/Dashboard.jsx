@@ -2282,7 +2282,12 @@ onClick={() => {
                                                                     )}
                                                                 </div>
                                                             ) : (
-                                                                <span className="text-sm">Idle: {log.category}{log.category === 'Other' && log.category_detail ? ` (${log.category_detail})` : ''}</span>
+                                                                <span className="text-sm">
+                                                                    Idle: {log.category}{log.category_detail ? ` (${log.category_detail})` : ''}
+                                                                    {log.category_note ? (
+                                                                        <span className="block text-xs text-slate-500 italic">"{log.category_note}"</span>
+                                                                    ) : null}
+                                                                </span>
                                                             )
                                                         ) : (
                                                             <span className="text-sm">Job</span>
