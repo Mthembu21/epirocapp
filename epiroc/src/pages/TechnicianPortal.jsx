@@ -818,20 +818,17 @@ export default function TechnicianPortal() {
 
 
 
-                {allMyJobs.length > 0 && (
+                {pendingJobs.length > 0 && (
                     <Card className="border-0 shadow-lg bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-l-green-500 mb-6">
                         <CardHeader className="pb-2">
                             <CardTitle className="flex items-center gap-2 text-green-700 text-lg">
                                 <CheckCircle className="w-5 h-5" />
-                                Active Job Assignments ({allMyJobs.length})
+                                Active Job Assignments ({pendingJobs.length})
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-3">
-                                {allMyJobs.filter(job => {
-                                    const mine = getMyAssignment(job);
-                                    return !!mine && !mine.confirmed_by_technician && job.status !== 'completed' && hasIncompleteAssignedWork(job);
-                                }).map(job => (
+                                {pendingJobs.map(job => (
                                     <div key={job.id} className="bg-white rounded-lg p-4 shadow-sm border border-amber-200">
                                         <div className="flex items-start justify-between mb-3">
                                             <div className="flex-1">
