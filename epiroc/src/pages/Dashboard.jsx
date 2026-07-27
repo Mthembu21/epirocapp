@@ -313,6 +313,10 @@ export default function Dashboard() {
     });
 
     const isForeman = currentUser?.type === 'supervisor' && ['foreman', 'manager'].includes(currentUser?.role);
+    // Foreman specifically (not manager, which has its own separate multi-workshop
+    // Workshop Overview page) gets KPI numbers combined across all their workshops
+    // from the backend, instead of only whichever single workshop is switched to.
+    const hasCombinedWorkshopKpis = currentUser?.type === 'supervisor' && currentUser?.role === 'foreman';
     const isComponentSupervisor = currentUser?.type === 'supervisor' && currentUser?.supervisor_key === 'component';
     
     // Enable approvals for component supervisors and foreman (but different scopes)
@@ -967,11 +971,11 @@ export default function Dashboard() {
                                         efficiency_percent:     m?.efficiency_percent      ?? null,
                                         availability_percent:   m?.availability_percent    ?? null,
                                         utilization_percent:    m?.utilization_percent     ?? null,
-                                        active_jobs:       activeJobs.length,
-                                        completed_jobs:    completedJobs.length,
-                                        jobs_at_risk:      atRiskJobs.length,
-                                        overtime_hours:    totalOvertimeHours,
-                                        total_technicians: technicians.filter(t => t.status === 'active').length,
+                                        active_jobs:       hasCombinedWorkshopKpis ? (m?.active_jobs ?? activeJobs.length) : activeJobs.length,
+                                        completed_jobs:    hasCombinedWorkshopKpis ? (m?.completed_jobs ?? completedJobs.length) : completedJobs.length,
+                                        jobs_at_risk:      hasCombinedWorkshopKpis ? (m?.jobs_at_risk ?? atRiskJobs.length) : atRiskJobs.length,
+                                        overtime_hours:    hasCombinedWorkshopKpis ? (m?.overtime_hours ?? totalOvertimeHours) : totalOvertimeHours,
+                                        total_technicians: hasCombinedWorkshopKpis ? (m?.total_technicians ?? technicians.filter(t => t.status === 'active').length) : technicians.filter(t => t.status === 'active').length,
                                     }}
                                     hasData={kpiHasData}
                                     isLoading={isLoading || operationalMetrics === null}
