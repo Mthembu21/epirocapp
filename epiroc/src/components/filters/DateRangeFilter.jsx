@@ -23,6 +23,7 @@ export default function DateRangeFilter({
   const views = [
     { value: 'daily', label: 'Daily View', icon: '📅' },
     { value: 'weekly', label: 'Weekly View', icon: '📊' },
+    { value: 'last_week', label: 'Last Week View', icon: '🗓️' },
     { value: 'monthly', label: 'Monthly View', icon: '📈' }
   ];
 
@@ -119,7 +120,10 @@ export default function DateRangeFilter({
           <div className="flex items-end justify-end">
             <div className="text-sm text-slate-600 text-center">
               <p className="font-semibold">
-                {selectedView === 'daily' ? 'Today' : selectedView === 'weekly' ? 'This Week' : 'This Month'}
+                {selectedView === 'daily' ? 'Today'
+                  : selectedView === 'weekly' ? 'This Week'
+                  : selectedView === 'last_week' ? 'Last Week'
+                  : 'This Month'}
               </p>
               <p className="text-xs text-slate-500">
                 {workshopId ? '(Filtered)' : '(All Data)'}

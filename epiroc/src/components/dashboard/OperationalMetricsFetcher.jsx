@@ -13,9 +13,10 @@ import { guardRequires } from '@/utils/kpiUtils';
  * Props:
  *   supervisorKey         — required; aborts with a visible warning when absent
  *   technicians           — list of technician objects; aborts when empty
- *   timeView              — 'daily' | 'weekly' | 'monthly'
+ *   timeView              — 'daily' | 'weekly' | 'last_week' | 'monthly'
  *   selectedMonth         — 'YYYY-MM' string used for monthly view
  *   weekStart / weekEnd   — Date-like values used for weekly view
+ *   lastWeekStart / lastWeekEnd — Date-like values used for last-week view
  *   onOperationalMetricsUpdate(normalized)  — receives the normalized KPI object
  *   onMonthlySummariesUpdate(series[])      — receives time-series data if present
  */
@@ -27,6 +28,8 @@ export default function OperationalMetricsFetcher({
   onMonthlySummariesUpdate,
   weekStart,
   weekEnd,
+  lastWeekStart,
+  lastWeekEnd,
   supervisorKey,
   refreshKey = 0,
 }) {
@@ -61,6 +64,22 @@ export default function OperationalMetricsFetcher({
       } else if (timeView === 'weekly') {
         const ws = weekStart ? new Date(weekStart) : startOfWeek(today, { weekStartsOn: 1 });
         const we = weekEnd   ? new Date(weekEnd)   : endOfWeek(today,   { weekStartsOn: 1 });
+        filters = {
+          start_date: format(ws, 'yyyy-MM-dd'),
+          end_date:   format(we, 'yyyy-MM-dd'),
+        };
+
+      } else if (timeView === 'last_week') {
+        const ws = lastWeekStart ? new Date(lastWeekStart) : (() => {
+          const d = startOfWeek(today, { weekStartsOn: 1 });
+          d.setDate(d.getDate() - 7);
+          return d;
+        })();
+        const we = lastWeekEnd ? new Date(lastWeekEnd) : (() => {
+          const d = endOfWeek(today, { weekStartsOn: 1 });
+          d.setDate(d.getDate() - 7);
+          return d;
+        })();
         filters = {
           start_date: format(ws, 'yyyy-MM-dd'),
           end_date:   format(we, 'yyyy-MM-dd'),
@@ -123,7 +142,7 @@ export default function OperationalMetricsFetcher({
     // Callback props are excluded intentionally: inline lambdas in Dashboard
     // are recreated every render and would cause an infinite loop if included.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supervisorKey, timeView, selectedMonth, weekStart, weekEnd, technicians, refreshKey]);
+  }, [supervisorKey, timeView, selectedMonth, weekStart, weekEnd, lastWeekStart, lastWeekEnd, technicians, refreshKey]);
 
   return null;
 }

@@ -105,10 +105,24 @@ export default function Dashboard() {
         return d;
     }, []);
 
+    // Last week's boundaries — same Monday-Sunday computation, shifted back 7 days.
+    const lastWeekStart = React.useMemo(() => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() - 7);
+        return d;
+    }, [weekStart]);
+
+    const lastWeekEnd = React.useMemo(() => {
+        const d = new Date(weekEnd);
+        d.setDate(d.getDate() - 7);
+        return d;
+    }, [weekEnd]);
+
     // Period label for the KPI header and detail dialogs.
     const periodLabel = React.useMemo(() => {
         if (selectedView === 'daily') return 'Today';
         if (selectedView === 'weekly') return 'This Week';
+        if (selectedView === 'last_week') return 'Last Week';
         if (selectedMonth) {
             try { return new Date(selectedMonth + '-01').toLocaleString('default', { month: 'long', year: 'numeric' }); }
             catch { return selectedMonth; }
@@ -654,6 +668,8 @@ export default function Dashboard() {
     const todayDateStr = format(new Date(), 'yyyy-MM-dd');
     const weekStartStr = format(weekStart, 'yyyy-MM-dd');
     const weekEndStr   = format(weekEnd,   'yyyy-MM-dd');
+    const lastWeekStartStr = format(lastWeekStart, 'yyyy-MM-dd');
+    const lastWeekEndStr   = format(lastWeekEnd,   'yyyy-MM-dd');
     const timeLogsForMonth = (timeLogs || []).filter((e) => {
         if (!e?.log_date) return false;
         const logLocalDate = format(new Date(e.log_date), 'yyyy-MM-dd');
@@ -662,6 +678,9 @@ export default function Dashboard() {
         }
         if (selectedView === 'weekly') {
             return logLocalDate >= weekStartStr && logLocalDate <= weekEndStr;
+        }
+        if (selectedView === 'last_week') {
+            return logLocalDate >= lastWeekStartStr && logLocalDate <= lastWeekEndStr;
         }
         const d = parseISO(e.log_date);
         return isWithinInterval(d, { start: monthStart, end: monthEnd });
@@ -993,9 +1012,16 @@ export default function Dashboard() {
                         technicians={technicians}
                         selectedMonth={selectedMonth}
                         supervisorKey={supervisorKey}
-                        timeView={selectedView === 'daily' ? 'daily' : selectedView === 'weekly' ? 'weekly' : 'monthly'}
+                        timeView={
+                            selectedView === 'daily' ? 'daily'
+                            : selectedView === 'weekly' ? 'weekly'
+                            : selectedView === 'last_week' ? 'last_week'
+                            : 'monthly'
+                        }
                         weekStart={weekStart}
                         weekEnd={weekEnd}
+                        lastWeekStart={lastWeekStart}
+                        lastWeekEnd={lastWeekEnd}
                         onOperationalMetricsUpdate={handleOperationalMetricsUpdate}
                         onMonthlySummariesUpdate={handleMonthlySummariesUpdate}
                         refreshKey={kpiRefreshKey}
