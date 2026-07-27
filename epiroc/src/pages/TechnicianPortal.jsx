@@ -48,7 +48,10 @@ export default function TechnicianPortal() {
         // Use category_detail as the technician-provided note/description for Training + Other
         category_detail: '',
         // Free-text explanation of what was actually done, required for Housekeeping/Other idle reasons
-        category_note: ''
+        category_note: '',
+        // When checked, lets this submission go through even after the daily
+        // productive-hours cap has been reached.
+        is_overtime: false
     });
 
     const [reportData, setReportData] = useState({
@@ -342,7 +345,7 @@ export default function TechnicianPortal() {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
             queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
-            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '', category_note: '', end_date: '' }));
+            setFormData(prev => ({ ...prev, job_id: '', subtask_id: '', hours_logged: '', category: '', category_detail: '', category_note: '', end_date: '', is_overtime: false }));
             setReportData({
                 work_completed: '',
                 has_bottleneck: false,
@@ -559,6 +562,7 @@ export default function TechnicianPortal() {
             category: isIdleSelected ? formData.category : null,
             category_detail: isIdleSelected ? (formData.category_detail || '') : '',
             category_note: isIdleSelected ? (formData.category_note || '') : '',
+            is_overtime: !!formData.is_overtime,
             // Ensure entry goes to approval system
             approval_status: 'pending',
             approved_hours: null,
@@ -1173,6 +1177,19 @@ export default function TechnicianPortal() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {!isMultiDayLeave && (
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id="is_overtime"
+                                                checked={formData.is_overtime}
+                                                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_overtime: checked }))}
+                                            />
+                                            <Label htmlFor="is_overtime" className="text-slate-700">
+                                                Log these hours as overtime (lets you submit even after reaching today's available hours)
+                                            </Label>
+                                        </div>
+                                    )}
 
                                     {!isIdleSelected && selectedJob && selectedJobRemainingHours > 0 && Number(formData.hours_logged || 0) > selectedJobRemainingHours && (
                                         <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
