@@ -25,6 +25,7 @@ import ManagementKPIHeader from '@/components/kpi/ManagementKPIHeader.jsx';
 import DateRangeFilter from '@/components/filters/DateRangeFilter.jsx';
 import AlertsList from '@/components/alerts/AlertsList.jsx';
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -47,10 +48,11 @@ export default function Dashboard() {
     const [editLogDraft, setEditLogDraft] = useState({ hours_logged: '', category: '', category_detail: '' });
     const [selectedJobDetails, setSelectedJobDetails] = useState(null);
     const [isEditingJob, setIsEditingJob] = useState(false);
-    const [jobEditDraft, setJobEditDraft] = useState({ job_number: '', description: '', allocated_hours: '', status: '' });
+    const [jobEditDraft, setJobEditDraft] = useState({ job_number: '', description: '', allocated_hours: '', status: '', hours_change_reason: '' });
     const [jobAddTechnicianId, setJobAddTechnicianId] = useState('');
     const [selectedJobTechnicianId, setSelectedJobTechnicianId] = useState('');
     const [techStageAllocDraft, setTechStageAllocDraft] = useState({});
+    const [techStageReasonDraft, setTechStageReasonDraft] = useState({});
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [completedJobsReportOpen, setCompletedJobsReportOpen] = useState(false);
@@ -478,7 +480,7 @@ export default function Dashboard() {
 
             if (!variables?.keepEditing) {
                 setIsEditingJob(false);
-                setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '', hours_change_reason: '' });
                 setJobAddTechnicianId('');
             }
         },
@@ -2546,7 +2548,7 @@ onClick={() => {
                     if (!open) {
                         setSelectedJobDetails(null);
                         setIsEditingJob(false);
-                        setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                        setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '', hours_change_reason: '' });
                         setSelectedJobTechnicianId('');
                         setTechStageAllocDraft({});
                     }
@@ -2585,8 +2587,25 @@ onClick={() => {
                                                         onChange={(e) => setJobEditDraft((p) => ({ ...p, allocated_hours: e.target.value }))}
                                                         className="h-8"
                                                     />
+                                                    {(selectedJobDetails?.base_allocated_hours ?? null) !== null && (
+                                                        <div className="text-xs text-slate-500">
+                                                            Originally allocated: {Number(selectedJobDetails.base_allocated_hours).toFixed(1)}h
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
+                                            {String(jobEditDraft.allocated_hours ?? '').trim() !== '' &&
+                                                Number(jobEditDraft.allocated_hours) !== Number(selectedJobDetails?.allocated_hours ?? 0) && (
+                                                <div className="space-y-1">
+                                                    <div className="text-xs text-slate-500">Reason for changing allocated hours *</div>
+                                                    <Textarea
+                                                        value={jobEditDraft.hours_change_reason}
+                                                        onChange={(e) => setJobEditDraft((p) => ({ ...p, hours_change_reason: e.target.value }))}
+                                                        placeholder="Why is the overall job allocation changing?"
+                                                        className="h-16 text-sm"
+                                                    />
+                                                </div>
+                                            )}
                                             <div className="space-y-1">
                                                 <div className="text-xs text-slate-500">Status</div>
                                                 <Select
@@ -2627,7 +2646,7 @@ onClick={() => {
                                             variant="outline"
                                             onClick={() => {
                                                 setIsEditingJob(false);
-                                                setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '' });
+                                                setJobEditDraft({ job_number: '', description: '', allocated_hours: '', status: '', hours_change_reason: '' });
                                             }}
                                             disabled={updateJobByNumberMutation.isPending}
                                         >
@@ -2640,6 +2659,13 @@ onClick={() => {
                                                 const rawAllocated = String(jobEditDraft.allocated_hours ?? '').trim();
                                                 const nextAllocated = rawAllocated === '' ? null : Number(rawAllocated);
                                                 const nextStatus = String(jobEditDraft.status || '').trim();
+                                                const allocatedIsChanging = nextAllocated !== null && !Number.isNaN(nextAllocated) &&
+                                                    nextAllocated !== Number(selectedJobDetails?.allocated_hours ?? 0);
+                                                const reason = String(jobEditDraft.hours_change_reason || '').trim();
+                                                if (allocatedIsChanging && !reason) {
+                                                    alert('Please give a reason for changing the allocated hours');
+                                                    return;
+                                                }
                                                 const payload = {
                                                     job_number: nextNumber,
                                                     description: String(jobEditDraft.description || '').trim()
@@ -2648,6 +2674,9 @@ onClick={() => {
                                                 if (nextStatus) payload.status = nextStatus;
                                                 if (nextAllocated !== null && !Number.isNaN(nextAllocated)) {
                                                     payload.allocated_hours = nextAllocated;
+                                                }
+                                                if (allocatedIsChanging) {
+                                                    payload.hours_change_reason = reason;
                                                 }
 
                                                 updateJobByNumberMutation.mutate({
@@ -2702,7 +2731,8 @@ onClick={() => {
                                                     job_number: selectedJobDetails?.job_number || '',
                                                     description: selectedJobDetails?.description || '',
                                                     allocated_hours: String(selectedJobDetails?.allocated_hours ?? ''),
-                                                    status: selectedJobDetails?.status || 'in_progress'
+                                                    status: selectedJobDetails?.status || 'in_progress',
+                                                    hours_change_reason: ''
                                                 });
                                                 // Pre-populate per-technician stage allocations so Save works immediately
                                                 const initDraft = {};
@@ -2813,41 +2843,56 @@ onClick={() => {
                                                                 <TableCell>{st?.title || '-'}</TableCell>
                                                                 <TableCell className="text-right">
                                                                     {isEditingJob ? (
-                                                                        <div className="flex items-center justify-end gap-2">
-                                                                            <Input
-                                                                                type="number"
-                                                                                step="0.5"
-                                                                                min="0"
-                                                                                value={draftVal !== '' ? draftVal : String(alloc)}
-                                                                                onChange={(e) => {
-                                                                                    const v = e.target.value;
-                                                                                    setTechStageAllocDraft((p) => ({ ...p, [draftKey]: v }));
-                                                                                }}
-                                                                                className="h-8 w-24 text-right"
-                                                                            />
-                                                                            <Button
-                                                                                variant="outline"
-                                                                                className="h-8"
-                                                                                disabled={updateSubtaskMutation.isPending}
-                                                                                onClick={() => {
-                                                                                    const raw = String(techStageAllocDraft?.[draftKey] ?? '').trim();
-                                                                                    if (raw === '') return;
-                                                                                    const nextAlloc = Number(raw);
-                                                                                    if (Number.isNaN(nextAlloc) || nextAlloc < 0) return;
-                                                                                    const nextAssigned = assigned.map((x) =>
-                                                                                        String(x?.technician_id) === String(selectedJobTechnicianId)
-                                                                                            ? { ...x, allocated_hours: nextAlloc }
-                                                                                            : x
-                                                                                    );
-                                                                                    updateSubtaskMutation.mutate({
-                                                                                        jobNumber: selectedJobDetails?.job_number,
-                                                                                        subtaskId: stId,
-                                                                                        data: { assigned_technicians: nextAssigned }
-                                                                                    });
-                                                                                }}
-                                                                            >
-                                                                                Save
-                                                                            </Button>
+                                                                        <div className="space-y-1">
+                                                                            <div className="flex items-center justify-end gap-2">
+                                                                                <Input
+                                                                                    type="number"
+                                                                                    step="0.5"
+                                                                                    min="0"
+                                                                                    value={draftVal !== '' ? draftVal : String(alloc)}
+                                                                                    onChange={(e) => {
+                                                                                        const v = e.target.value;
+                                                                                        setTechStageAllocDraft((p) => ({ ...p, [draftKey]: v }));
+                                                                                    }}
+                                                                                    className="h-8 w-24 text-right"
+                                                                                />
+                                                                                <Button
+                                                                                    variant="outline"
+                                                                                    className="h-8"
+                                                                                    disabled={updateSubtaskMutation.isPending}
+                                                                                    onClick={() => {
+                                                                                        const raw = String(techStageAllocDraft?.[draftKey] ?? '').trim();
+                                                                                        if (raw === '') return;
+                                                                                        const nextAlloc = Number(raw);
+                                                                                        if (Number.isNaN(nextAlloc) || nextAlloc < 0) return;
+                                                                                        const reason = String(techStageReasonDraft?.[draftKey] ?? '').trim();
+                                                                                        if (nextAlloc !== alloc && !reason) {
+                                                                                            alert('Please give a reason for changing this technician\'s allocated hours');
+                                                                                            return;
+                                                                                        }
+                                                                                        const nextAssigned = assigned.map((x) =>
+                                                                                            String(x?.technician_id) === String(selectedJobTechnicianId)
+                                                                                                ? { ...x, allocated_hours: nextAlloc }
+                                                                                                : x
+                                                                                        );
+                                                                                        updateSubtaskMutation.mutate({
+                                                                                            jobNumber: selectedJobDetails?.job_number,
+                                                                                            subtaskId: stId,
+                                                                                            data: { assigned_technicians: nextAssigned, hours_change_reason: reason }
+                                                                                        });
+                                                                                    }}
+                                                                                >
+                                                                                    Save
+                                                                                </Button>
+                                                                            </div>
+                                                                            {draftVal !== '' && Number(draftVal) !== alloc && (
+                                                                                <Input
+                                                                                    value={techStageReasonDraft?.[draftKey] ?? ''}
+                                                                                    onChange={(e) => setTechStageReasonDraft((p) => ({ ...p, [draftKey]: e.target.value }))}
+                                                                                    placeholder="Reason for hours change *"
+                                                                                    className="h-7 text-xs"
+                                                                                />
+                                                                            )}
                                                                         </div>
                                                                     ) : (
                                                                         `${alloc.toFixed(1)}h`
@@ -2920,6 +2965,12 @@ onClick={() => {
                                 <div className="bg-slate-50 rounded p-3">
                                     <div className="text-slate-500">Allocated</div>
                                     <div className="font-semibold">{Number(selectedJobDetails?.allocated_hours || 0).toFixed(1)}h</div>
+                                    {(selectedJobDetails?.base_allocated_hours ?? null) !== null &&
+                                        Number(selectedJobDetails.base_allocated_hours) !== Number(selectedJobDetails?.allocated_hours || 0) && (
+                                        <div className="text-xs text-slate-500">
+                                            originally {Number(selectedJobDetails.base_allocated_hours).toFixed(1)}h
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="bg-slate-50 rounded p-3">
                                     <div className="text-slate-500">Consumed</div>
@@ -2932,6 +2983,42 @@ onClick={() => {
                                     </div>
                                 </div>
                             </div>
+
+                            {(() => {
+                                const hoursHistory = (selectedJobDetails?.audit_history || [])
+                                    .filter((h) => h?.type === 'hours_updated' || h?.type === 'subtask_hours_updated')
+                                    .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0));
+                                if (!hoursHistory.length) return null;
+                                return (
+                                    <div className="space-y-2 mb-6">
+                                        <div className="font-semibold text-slate-800">Hours Change History</div>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                            {hoursHistory.map((h, idx) => (
+                                                <div key={idx} className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                                                    <div className="flex items-center justify-between text-slate-500">
+                                                        <span>{h?.at ? format(new Date(h.at), 'yyyy-MM-dd HH:mm') : '-'}</span>
+                                                        <span>{h?.actor_email || 'unknown'}</span>
+                                                    </div>
+                                                    {h.type === 'hours_updated' ? (
+                                                        <div>
+                                                            Job hours: {Number(h?.details?.previous_allocated_hours ?? 0).toFixed(1)}h → {Number(h?.details?.next_allocated_hours ?? 0).toFixed(1)}h
+                                                        </div>
+                                                    ) : (
+                                                        <div>
+                                                            {h?.details?.subtask_title || 'Stage'}: {(h?.details?.changes || []).map((c) => (
+                                                                `${c.technician_name || 'Technician'} ${Number(c.previous_allocated_hours || 0).toFixed(1)}h → ${Number(c.next_allocated_hours || 0).toFixed(1)}h`
+                                                            )).join(', ')}
+                                                        </div>
+                                                    )}
+                                                    {h?.details?.reason && (
+                                                        <div className="italic text-slate-600 mt-0.5">"{h.details.reason}"</div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {selectedJobDetails?.actual_completion_date && (
                                 <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 mb-6">
