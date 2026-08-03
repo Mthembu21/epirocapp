@@ -23,8 +23,6 @@ export default function TechnicianPerformance({ technicians = [], kpiData = {} }
         return {
             ...tech,
             jobsWithBottlenecks: 0,
-            activeJobs: techKPI.active_jobs || 0,
-            completedJobs: techKPI.completed_jobs || 0,
             totalAllocatedHours: techKPI.total_allocated_hours || 0,
             totalHours: techKPI.total_hours || 0,
             totalOvertimeHours: techKPI.total_overtime_hours || 0,
@@ -52,8 +50,6 @@ export default function TechnicianPerformance({ technicians = [], kpiData = {} }
                         <TableHeader>
                             <TableRow className="bg-slate-50">
                                 <TableHead>Technician</TableHead>
-                                <TableHead className="text-center">Active Jobs</TableHead>
-                                <TableHead className="text-center">Completed</TableHead>
                                 <TableHead className="text-center">Bottlenecks</TableHead>
                                 <TableHead className="text-right">Total Hrs</TableHead>
                                 <TableHead className="text-right">OT Hrs</TableHead>
@@ -74,16 +70,6 @@ export default function TechnicianPerformance({ technicians = [], kpiData = {} }
                                             <p className="font-medium">{tech.name}</p>
                                             <p className="text-xs text-slate-500">{tech.employee_id}</p>
                                         </div>
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                        <Badge variant="outline" className="bg-blue-50">
-                                            {tech.activeJobs}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                        <Badge variant="outline" className="bg-green-50 text-green-700">
-                                            {tech.completedJobs}
-                                        </Badge>
                                     </TableCell>
                                     <TableCell className="text-center">
                                         {tech.jobsWithBottlenecks > 0 ? (
