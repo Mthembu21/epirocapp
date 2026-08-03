@@ -442,6 +442,17 @@ export default function TechnicianPortal() {
     const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
     const isSickSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'sick';
     const isMultiDayLeave = isLeaveSelected || isSickSelected;
+    // A single-day leave/sick booking (no end date, or same-day range) can be a half
+    // day — e.g. worked part of the day, then went home sick — so the hours field
+    // stays editable, same as Training. A genuine multi-day range still auto-fills
+    // full days per weekday, since customizing each day individually isn't practical.
+    const isSingleDayLeaveOrSick = isMultiDayLeave &&
+        (!String(formData.end_date || '').trim() || formData.end_date === formData.date);
+    const singleDayDefaultHours = (() => {
+        if (!isSingleDayLeaveOrSick || !formData.date) return '';
+        try { return getDay(parseISO(formData.date)) === 5 ? '7' : '8'; }
+        catch { return '8'; }
+    })();
 
     const getAssignedSubtasksForJob = (job) => {
         const subtasks = job?.subtasks || [];
@@ -517,13 +528,27 @@ export default function TechnicianPortal() {
                 return;
             }
 
+            // A single-day booking can be a half day (e.g. worked part of the day,
+            // then went home sick) — use whatever the technician entered/left as the
+            // default. A genuine multi-day range still auto-fills full days per weekday.
+            const isSingleDay = isSameDay(start, end);
+            let customHours = null;
+            if (isSingleDay) {
+                const raw = String(formData.hours_logged || '').trim();
+                customHours = raw !== '' ? Number(raw) : Number(singleDayDefaultHours);
+                if (!customHours || customHours <= 0 || Number.isNaN(customHours)) {
+                    alert('Please enter valid hours for this day');
+                    return;
+                }
+            }
+
             const batch = [];
             for (let d = start; !isAfter(d, end); d = addDays(d, 1)) {
                 const day = getDay(d);
                 // Skip weekends for leave/sick entries
                 if (day === 0 || day === 6) continue;
 
-                const hours = day === 5 ? 7 : 8;
+                const hours = isSingleDay ? customHours : (day === 5 ? 7 : 8);
                 batch.push({
                     timeLog: {
                         technician_id: getTechnicianId(),
@@ -1098,7 +1123,9 @@ export default function TechnicianPortal() {
                                                         onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
                                                         className="border-slate-300"
                                                     />
-                                                    <p className="text-xs text-slate-500">Weekdays only. Hours are auto-calculated (8h Mon–Thu, 7h Fri).</p>
+                                                    <p className="text-xs text-slate-500">
+                                                        Leave blank for a single day (hours editable above, e.g. for a half day). For a date range, weekdays are auto-filled as full days (8h Mon–Thu, 7h Fri).
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>
@@ -1153,11 +1180,20 @@ export default function TechnicianPortal() {
                                                 type="number"
                                                 min="0"
                                                 step="0.25"
-                                                value={formData.hours_logged}
+                                                value={
+                                                    formData.hours_logged !== ''
+                                                        ? formData.hours_logged
+                                                        : (isSingleDayLeaveOrSick ? singleDayDefaultHours : '')
+                                                }
                                                 onChange={(e) => setFormData(prev => ({ ...prev, hours_logged: e.target.value }))}
-                                                disabled={isMultiDayLeave}
+                                                disabled={isMultiDayLeave && !isSingleDayLeaveOrSick}
                                                 className="border-slate-300"
                                             />
+                                            {isSingleDayLeaveOrSick && (
+                                                <p className="text-xs text-slate-500">
+                                                    Defaults to a full day ({singleDayDefaultHours}h) — lower this if you worked part of the day and are booking {isLeaveSelected ? 'leave' : 'sick'} for the rest.
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="space-y-2">
                                             <Label>Day Summary</Label>
