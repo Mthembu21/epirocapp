@@ -475,6 +475,15 @@ export default function TechnicianPortal() {
         ? (selectedSubtask.assigned_technicians || []).find((a) => String(a?.technician_id) === String(getTechnicianId()))
         : null;
     const selectedSubtaskAllocatedHours = Number(selectedSubtaskAssignment?.allocated_hours || 0);
+    // My own remaining on this stage — not the stage-wide total shared across every
+    // assigned technician, which was showing the same pooled figure to everyone
+    // regardless of their own individual allocation/consumed hours.
+    const selectedSubtaskMyProgress = selectedSubtask
+        ? (selectedSubtask.progress_by_technician || []).find((p) => String(p?.technician_id) === String(getTechnicianId()))
+        : null;
+    const selectedSubtaskMyRemainingHours = selectedSubtaskMyProgress?.remaining_hours !== undefined
+        ? Number(selectedSubtaskMyProgress.remaining_hours || 0)
+        : Number(selectedSubtask?.remaining_hours || 0);
 
     const groupedAssignedSubtasks = assignedSubtasks.reduce((acc, st) => {
         const key = st?.category || 'Other';
@@ -1165,8 +1174,8 @@ export default function TechnicianPortal() {
                                                         <span className="font-semibold text-slate-800">{selectedSubtaskAllocatedHours.toFixed(1)}h</span>
                                                     </div>
                                                     <div className="flex justify-between">
-                                                        <span>Stage remaining</span>
-                                                        <span className="font-semibold text-slate-800">{Number(selectedSubtask?.remaining_hours || 0).toFixed(1)}h</span>
+                                                        <span>My remaining on this stage</span>
+                                                        <span className="font-semibold text-slate-800">{selectedSubtaskMyRemainingHours.toFixed(1)}h</span>
                                                     </div>
                                                 </div>
                                             )}
@@ -1228,13 +1237,13 @@ export default function TechnicianPortal() {
                                     )}
 
                                     {!isIdleSelected && selectedJob && (() => {
-                                        // Booking is validated against the stage's remaining hours when a
-                                        // stage is selected (matches what the backend actually checks) —
-                                        // not the job's overall remaining, which can be much smaller than
-                                        // a stage's real allocation and was confusingly contradicting the
-                                        // "Stage remaining" figure shown just above.
+                                        // Booking is validated against MY OWN remaining hours on the
+                                        // selected stage (matches what the backend actually checks) — not
+                                        // the job's overall remaining, nor the stage-wide total shared
+                                        // across every technician assigned to it, both of which can be
+                                        // very different from what I personally have left to book.
                                         const referenceRemaining = selectedSubtask
-                                            ? Number(selectedSubtask?.remaining_hours || 0)
+                                            ? selectedSubtaskMyRemainingHours
                                             : selectedJobRemainingHours;
                                         const hoursLogged = Number(formData.hours_logged || 0);
                                         if (!(referenceRemaining > 0 && hoursLogged > referenceRemaining)) return null;
@@ -1242,7 +1251,7 @@ export default function TechnicianPortal() {
                                             <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
                                                 <AlertTriangle className="w-4 h-4" />
                                                 {selectedSubtask
-                                                    ? `This stage has only ${referenceRemaining.toFixed(1)}h remaining. Supervisor approval required.`
+                                                    ? `You have only ${referenceRemaining.toFixed(1)}h remaining on this stage. Supervisor approval required.`
                                                     : `Job has only ${referenceRemaining.toFixed(1)}h remaining. Supervisor approval required.`}
                                             </div>
                                         );
