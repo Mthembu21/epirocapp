@@ -1227,12 +1227,26 @@ export default function TechnicianPortal() {
                                         </div>
                                     )}
 
-                                    {!isIdleSelected && selectedJob && selectedJobRemainingHours > 0 && Number(formData.hours_logged || 0) > selectedJobRemainingHours && (
-                                        <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
-                                            <AlertTriangle className="w-4 h-4" />
-                                            Job has only {selectedJob?.remaining_hours?.toFixed(1)}h remaining. Supervisor approval required.
-                                        </div>
-                                    )}
+                                    {!isIdleSelected && selectedJob && (() => {
+                                        // Booking is validated against the stage's remaining hours when a
+                                        // stage is selected (matches what the backend actually checks) —
+                                        // not the job's overall remaining, which can be much smaller than
+                                        // a stage's real allocation and was confusingly contradicting the
+                                        // "Stage remaining" figure shown just above.
+                                        const referenceRemaining = selectedSubtask
+                                            ? Number(selectedSubtask?.remaining_hours || 0)
+                                            : selectedJobRemainingHours;
+                                        const hoursLogged = Number(formData.hours_logged || 0);
+                                        if (!(referenceRemaining > 0 && hoursLogged > referenceRemaining)) return null;
+                                        return (
+                                            <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
+                                                <AlertTriangle className="w-4 h-4" />
+                                                {selectedSubtask
+                                                    ? `This stage has only ${referenceRemaining.toFixed(1)}h remaining. Supervisor approval required.`
+                                                    : `Job has only ${referenceRemaining.toFixed(1)}h remaining. Supervisor approval required.`}
+                                            </div>
+                                        );
+                                    })()}
 
                                     {(totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24) && (
                                         <div className="flex items-center gap-2 text-amber-600 text-sm bg-amber-50 p-3 rounded-lg border border-amber-200">
