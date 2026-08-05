@@ -2267,6 +2267,7 @@ onClick={() => {
                                             <TableHead>Holiday</TableHead>
                                             <TableHead className="text-right">Multiplier</TableHead>
                                             <TableHead className="text-right">Hours</TableHead>
+                                            <TableHead className="text-right">Normal</TableHead>
                                             <TableHead className="text-right">OT</TableHead>
                                             <TableHead className="text-right">Payable</TableHead>
                                             <TableHead className="text-right">Actions</TableHead>
@@ -2351,7 +2352,10 @@ onClick={() => {
                                                             `${Number(log.hours_logged || 0).toFixed(1)}h`
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="text-right">
+                                                    <TableCell className="text-right text-blue-600">
+                                                        {`${Number(log.normal_hours || 0).toFixed(1)}h`}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-semibold text-yellow-600">
                                                         {`${Number(log.overtime_hours || 0).toFixed(1)}h`}
                                                     </TableCell>
                                                     <TableCell className="text-right font-semibold text-slate-800">
@@ -3271,6 +3275,7 @@ onClick={() => {
                                                     <TableHead>Technician</TableHead>
                                                     <TableHead>Stage</TableHead>
                                                     <TableHead className="text-right">Hours</TableHead>
+                                                    <TableHead className="text-right">Normal</TableHead>
                                                     <TableHead className="text-right">OT</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -3287,7 +3292,8 @@ onClick={() => {
                                                                 <TableCell>{techName}</TableCell>
                                                                 <TableCell>{stageTitle}</TableCell>
                                                                 <TableCell className="text-right">{Number(l.hours_logged || 0).toFixed(1)}h</TableCell>
-                                                                <TableCell className="text-right">{Number(l.overtime_hours || 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-blue-600">{Number(l.normal_hours || 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right text-yellow-600">{Number(l.overtime_hours || 0).toFixed(1)}h</TableCell>
                                                             </TableRow>
                                                         );
                                                     })}
