@@ -38,11 +38,14 @@ const getTrend = (value) => {
  * isLoading       → "—"
  * otherwise       → formatted number
  */
-const KPICard = ({ title, value, unit = '%', icon: Icon, color, showProgress = true, trend = null, isLoading = false }) => {
+const KPICard = ({ title, value, unit = '%', icon: Icon, color, showProgress = true, trend = null, isLoading = false, onClick = null }) => {
   const isNull = value === null || value === undefined;
 
   return (
-    <Card className={`border shadow-sm ${color}`}>
+    <Card
+      className={`border shadow-sm ${color} ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+      onClick={onClick || undefined}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium text-slate-700 flex items-center gap-2">
@@ -95,6 +98,8 @@ export default function TechnicianKPIHeader({
   isLoading = false,
   hasData = null,
   selectedDate = null,
+  overtimeHours = null,
+  onOvertimeHoursClick = null,
 }) {
   const metrics = useMemo(() => ({
     utilization:   safeFloat(metricsData?.utilization_percent),
@@ -183,6 +188,16 @@ export default function TechnicianKPIHeader({
           icon={Clock}
           color={getStatusColor(metrics.nonProductive)}
           showProgress={true}
+        />
+
+        <KPICard
+          title="Overtime Hours"
+          value={overtimeHours}
+          unit="hrs"
+          icon={Clock}
+          color="bg-orange-50 border-orange-200"
+          showProgress={false}
+          onClick={onOvertimeHoursClick}
         />
 
         <KPICard

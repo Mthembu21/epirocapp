@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle, CheckCircle2, Pencil, Trash2, X } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import JobPauseResumeForm from '@/components/downtime/JobPauseResumeForm.jsx';
@@ -63,6 +64,7 @@ export default function TechnicianPortal() {
     });
 
   const [editingEntryId, setEditingEntryId] = useState(null);
+  const [showOvertimeDetails, setShowOvertimeDetails] = useState(false);
 
   // Downtime (pause/resume) - UI wired; backend wiring pending
   const [isPaused, setIsPaused] = useState(false);
@@ -849,8 +851,59 @@ export default function TechnicianPortal() {
                         hasData={safeMetrics?.hasData ?? null}
                         isLoading={kpiLoading}
                         selectedDate={format(new Date(formData.date), 'MMM dd, yyyy')}
+                        overtimeHours={totalOvertimeHours}
+                        onOvertimeHoursClick={() => setShowOvertimeDetails(true)}
                     />
                 </div>
+
+                <Dialog open={showOvertimeDetails} onOpenChange={setShowOvertimeDetails}>
+                    <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden">
+                        <DialogHeader>
+                            <DialogTitle className="text-slate-800">Overtime Hours — {format(parseISO(`${selectedMonth}-01`), 'MMMM yyyy')}</DialogTitle>
+                            <DialogDescription className="text-slate-500 text-sm">
+                                Every entry this month with overtime hours logged against it.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="overflow-y-auto max-h-[calc(85vh-8rem)]">
+                            {(() => {
+                                const overtimeEntries = myEntriesForMonth
+                                    .filter((e) => Number(e?.overtime_hours || 0) > 0)
+                                    .sort((a, b) => new Date(b?.log_date || 0) - new Date(a?.log_date || 0));
+                                if (overtimeEntries.length === 0) {
+                                    return <div className="p-6 text-center text-slate-500">No overtime logged this month.</div>;
+                                }
+                                return (
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow className="bg-slate-50 sticky top-0">
+                                                <TableHead>Date</TableHead>
+                                                <TableHead>Job</TableHead>
+                                                <TableHead className="text-right">Overtime</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {overtimeEntries.map((entry) => (
+                                                <TableRow key={entry.id}>
+                                                    <TableCell>{entry.log_date ? format(parseISO(entry.log_date), 'dd MMM yyyy') : '-'}</TableCell>
+                                                    <TableCell className="font-mono text-sm">
+                                                        {entry.is_idle ? getEntryCategoryLabel(entry) : entry.job_id}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-semibold text-yellow-700">
+                                                        {Number(entry.overtime_hours || 0).toFixed(1)}h
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                <TableCell colSpan={2} className="font-bold text-slate-800">TOTAL</TableCell>
+                                                <TableCell className="text-right text-yellow-800">{totalOvertimeHours.toFixed(1)}h</TableCell>
+                                            </TableRow>
+                                        </TableBody>
+                                    </Table>
+                                );
+                            })()}
+                        </div>
+                    </DialogContent>
+                </Dialog>
 
 
 
