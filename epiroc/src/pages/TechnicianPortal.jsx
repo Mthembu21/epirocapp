@@ -1539,7 +1539,12 @@ export default function TechnicianPortal() {
                                                                 <p className="font-medium">{entry.log_date ? format(parseISO(entry.log_date), 'dd MMM') : '-'}</p>
                                                             </div>
                                                         </TableCell>
-                                                        <TableCell className="font-mono text-sm">{entry.job_id}</TableCell>
+                                                        <TableCell className="font-mono text-sm">
+                                                            {entry.job_id}
+                                                            {entry.requested_overtime && (
+                                                                <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
+                                                            )}
+                                                        </TableCell>
                                                         <TableCell>
                                                             {isEditing ? (
                                                                 <div className="space-y-2 min-w-[180px]">

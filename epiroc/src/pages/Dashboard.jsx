@@ -4,6 +4,7 @@ import { base44 } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, BarChart as BarChartIcon } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
@@ -2287,7 +2288,12 @@ onClick={() => {
                                                 <TableRow key={log.id}>
                                                     <TableCell>{log.log_date ? parseISO(log.log_date).toLocaleDateString() : '-'}</TableCell>
                                                     <TableCell>{techName}</TableCell>
-                                                    <TableCell className="font-mono text-sm">{log.job_id}</TableCell>
+                                                    <TableCell className="font-mono text-sm">
+                                                        {log.job_id}
+                                                        {log.requested_overtime && (
+                                                            <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
+                                                        )}
+                                                    </TableCell>
                                                     <TableCell>
                                                         {isIdle ? (
                                                             isEditing ? (
@@ -3173,6 +3179,9 @@ onClick={() => {
                                                                     || log?.technician_name
                                                                     || (log?.technician_id?.name || log?.technician_id)
                                                                     || 'Unknown'}
+                                                                {log?.requested_overtime && (
+                                                                    <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
+                                                                )}
                                                             </TableCell>
                                                             <TableCell>{log?.subtask_title || getSubtaskTitle(log?.subtask_id) || '-'}</TableCell>
                                                             <TableCell>{Number(log?.hours_logged || 0).toFixed(1)}h</TableCell>
@@ -3289,7 +3298,12 @@ onClick={() => {
                                                         return (
                                                             <TableRow key={l.id}>
                                                                 <TableCell>{l.log_date ? parseISO(l.log_date).toLocaleDateString() : '-'}</TableCell>
-                                                                <TableCell>{techName}</TableCell>
+                                                                <TableCell>
+                                                                    {techName}
+                                                                    {l.requested_overtime && (
+                                                                        <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
+                                                                    )}
+                                                                </TableCell>
                                                                 <TableCell>{stageTitle}</TableCell>
                                                                 <TableCell className="text-right">{Number(l.hours_logged || 0).toFixed(1)}h</TableCell>
                                                                 <TableCell className="text-right text-blue-600">{Number(l.normal_hours || 0).toFixed(1)}h</TableCell>
