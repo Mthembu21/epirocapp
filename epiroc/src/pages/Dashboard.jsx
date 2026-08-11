@@ -2271,6 +2271,7 @@ onClick={() => {
                                             <TableHead className="text-right">Normal</TableHead>
                                             <TableHead className="text-right">OT</TableHead>
                                             <TableHead className="text-right">Payable</TableHead>
+                                            <TableHead>Status</TableHead>
                                             <TableHead className="text-right">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
@@ -2366,6 +2367,22 @@ onClick={() => {
                                                     </TableCell>
                                                     <TableCell className="text-right font-semibold text-slate-800">
                                                         {payable.toFixed(1)}h
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {log.approval_status === 'approved' ? (
+                                                            <div>
+                                                                <Badge className="bg-green-100 text-green-800">Approved</Badge>
+                                                                {Number(log.approved_hours) !== Number(log.hours_logged || 0) && (
+                                                                    <p className="text-xs text-slate-500 mt-0.5">
+                                                                        {Number(log.approved_hours || 0).toFixed(1)}h of {Number(log.hours_logged || 0).toFixed(1)}h logged
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        ) : log.approval_status === 'declined' ? (
+                                                            <Badge className="bg-red-100 text-red-800">Declined</Badge>
+                                                        ) : (
+                                                            <Badge className="bg-amber-100 text-amber-800">Pending</Badge>
+                                                        )}
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         {isEditing ? (
