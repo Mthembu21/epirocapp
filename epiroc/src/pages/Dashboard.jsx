@@ -58,6 +58,7 @@ export default function Dashboard() {
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [completedJobsReportOpen, setCompletedJobsReportOpen] = useState(false);
     const [selectedJobReport, setSelectedJobReport] = useState(null);
+    const [completedJobSearch, setCompletedJobSearch] = useState('');
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [operationalMetrics, setOperationalMetrics] = useState(null);
     const [lastOperationalMetrics, setLastOperationalMetrics] = useState(null);
@@ -668,6 +669,12 @@ export default function Dashboard() {
             return bt - at;
         });
     }, [completedJobsReport]);
+
+    const filteredCompletedJobsData = React.useMemo(() => {
+        const q = completedJobSearch.trim().toLowerCase();
+        if (!q) return completedJobsData;
+        return completedJobsData.filter(j => String(j.job_number || '').toLowerCase().includes(q));
+    }, [completedJobsData, completedJobSearch]);
 
     
     const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
@@ -1822,7 +1829,7 @@ onClick={() => {
                     </TabsContent>
 
 
-                    <Dialog open={completedDialogOpen} onOpenChange={(open) => { setCompletedDialogOpen(open); if (!open) setSelectedJobReport(null); }}>
+                    <Dialog open={completedDialogOpen} onOpenChange={(open) => { setCompletedDialogOpen(open); if (!open) { setSelectedJobReport(null); setCompletedJobSearch(''); } }}>
                         <DialogContent className="sm:max-w-7xl max-h-[92vh] overflow-hidden flex flex-col">
                             <DialogHeader className="flex-shrink-0">
                                 <DialogTitle className="text-slate-800 flex items-center gap-3">
@@ -1848,11 +1855,23 @@ onClick={() => {
                             {/* ── LIST VIEW ── */}
                             {!selectedJobReport && (
                                 <div className="space-y-2 py-2">
+                                    <div className="sticky top-0 bg-white pb-2 z-10">
+                                        <Input
+                                            value={completedJobSearch}
+                                            onChange={(e) => setCompletedJobSearch(e.target.value)}
+                                            placeholder="Search by job number..."
+                                            className="max-w-xs"
+                                        />
+                                    </div>
                                     {completedJobsData.length === 0 ? (
                                         <div className="py-16 text-center text-slate-400">
                                             {isFetchingCompletedJobsReport ? 'Fetching report…' : 'No completed jobs found.'}
                                         </div>
-                                    ) : completedJobsData.map(j => {
+                                    ) : filteredCompletedJobsData.length === 0 ? (
+                                        <div className="py-16 text-center text-slate-400">
+                                            No completed jobs match "{completedJobSearch}".
+                                        </div>
+                                    ) : filteredCompletedJobsData.map(j => {
                                         const ts = j.time_summary || {};
                                         const total = Number(ts.total_hours ?? 0);
                                         const prod  = Number(ts.productive_hours ?? 0);
