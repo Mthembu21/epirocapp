@@ -421,7 +421,16 @@ export default function TechnicianPortal() {
     const entriesForDate = selectedDateObj
         ? myEntriesForMonth.filter(entry => entry?.log_date && isSameDay(parseISO(entry.log_date), selectedDateObj))
         : [];
-    const totalLoggedHoursForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.hours_logged) || 0), 0);
+    // A declined entry didn't use any of the day's capacity, and a partially-approved
+    // entry only used the approved portion — not everything originally logged — so a
+    // decline/partial approval should free up room to rebook instead of the day
+    // permanently reading as full. Mirrors the backend's productive-hours cap check.
+    const effectiveEntryHours = (e) => {
+        if (e.approval_status === 'declined') return 0;
+        if (e.approval_status === 'approved') return Number(e.approved_hours) || 0;
+        return Number(e.hours_logged) || 0;
+    };
+    const totalLoggedHoursForDate = entriesForDate.reduce((sum, e) => sum + effectiveEntryHours(e), 0);
     const totalOvertimeForDate = entriesForDate.reduce((sum, e) => sum + (Number(e.overtime_hours) || 0), 0);
 
     const requiredNormalForDay = selectedDateObj
