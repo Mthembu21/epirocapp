@@ -797,6 +797,9 @@ export default function Dashboard() {
                 efficiency_percent:        td.efficiency_percent,
                 utilization_percent:       td.utilization_percent,
                 productivity_percent:      td.productivity_percent,
+                leave_days:                td.leave_days || 0,
+                sick_days:                 td.sick_days || 0,
+                training_hours:            td.training_hours || 0,
             };
         }
         return result;

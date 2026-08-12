@@ -6,7 +6,22 @@ import { TrendingUp, Award } from 'lucide-react';
 import { clampPercent } from '@/utils/kpiUtils';
 
 
-const getPerformanceCategory = (efficiency) => {
+const getPerformanceCategory = (efficiency, techKPI = {}) => {
+    // A technician with no productive hours because they were on leave, sick, or in
+    // training had no real opportunity to be productive that period — show the
+    // actual reason instead of a "Needs Improvement" label that implies they
+    // underperformed on work they were actually assigned.
+    const productiveHours = Number(techKPI.total_productive_hours || 0);
+    const leaveDays = Number(techKPI.leave_days || 0);
+    const sickDays = Number(techKPI.sick_days || 0);
+    const trainingHours = Number(techKPI.training_hours || 0);
+
+    if (productiveHours <= 0 && (leaveDays > 0 || sickDays > 0 || trainingHours > 0)) {
+        if (sickDays > 0) return { label: 'Sick', color: 'bg-orange-100 text-orange-700' };
+        if (leaveDays > 0) return { label: 'On Leave', color: 'bg-indigo-100 text-indigo-700' };
+        return { label: 'Training', color: 'bg-blue-100 text-blue-700' };
+    }
+
     if (efficiency >= 95) return { label: 'Excellent', color: 'bg-green-100 text-green-700' };
     if (efficiency >= 85) return { label: 'Good', color: 'bg-blue-100 text-blue-700' };
     if (efficiency >= 70) return { label: 'Average', color: 'bg-yellow-100 text-yellow-700' };
@@ -32,7 +47,7 @@ export default function TechnicianPerformance({ technicians = [], kpiData = {} }
             jobEfficiency: techKPI.efficiency_percent || 0,
             utilization: techKPI.utilization_percent || 0,
             productivity: techKPI.productivity_percent || 0,
-            performance: getPerformanceCategory(techKPI.efficiency_percent || 0)
+            performance: getPerformanceCategory(techKPI.efficiency_percent || 0, techKPI)
         };
     });
 
