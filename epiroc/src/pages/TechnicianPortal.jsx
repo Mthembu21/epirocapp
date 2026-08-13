@@ -452,6 +452,7 @@ export default function TechnicianPortal() {
     const isIdleNoteRequired = isIdleCategorySelected && idleSubReasonsRequiringNote.includes(formData.category_detail);
     const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
     const isSickSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'sick';
+    const isSiteWorkSelected = isIdleSelected && formData.category === 'Site Work';
     const isMultiDayLeave = isLeaveSelected || isSickSelected;
     // A single-day leave/sick booking (no end date, or same-day range) can be a half
     // day — e.g. worked part of the day, then went home sick — so the hours field
@@ -535,6 +536,11 @@ export default function TechnicianPortal() {
                 alert('Training Note is required');
                 return;
             }
+        }
+        // Require a note explaining where and what site work was performed
+        if (isSiteWorkSelected && !String(formData.category_detail || '').trim()) {
+            alert('Please describe where and what site work you performed');
+            return;
         }
 
 
@@ -683,6 +689,9 @@ export default function TechnicianPortal() {
             }
             if (base === 'Other' && detail) {
                 return `Other: ${detail}`;
+            }
+            if (base === 'Site Work' && detail) {
+                return `Site Work: ${detail}`;
             }
             return base;
         }
@@ -1171,6 +1180,18 @@ export default function TechnicianPortal() {
                                                     />
                                                 </div>
                                             )}
+                                            {/* Notes textbox for Site Work */}
+                                            {isSiteWorkSelected && (
+                                                <div className="space-y-2">
+                                                    <Label>Site Work Note (where & what) *</Label>
+                                                    <Textarea
+                                                        value={formData.category_detail}
+                                                        onChange={(e) => setFormData(prev => ({ ...prev, category_detail: e.target.value }))}
+                                                        placeholder="Where was the site work performed, and what did you do there?"
+                                                        className="h-24 border-slate-300"
+                                                    />
+                                                </div>
+                                            )}
                                             {/* Legacy Other free text */}
                                             {isOtherIdleSelected && (
                                                 <div className="space-y-2">
@@ -1436,7 +1457,7 @@ export default function TechnicianPortal() {
                                             (!isMultiDayLeave && !formData.hours_logged) ||
                                             (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                             (isIdleSelected && !formData.category) ||
-                                            ((isIdleSelected && (formData.category === 'Idle' || formData.category === 'Training')) && !String(formData.category_detail || '').trim()) ||
+                                            ((isIdleSelected && (formData.category === 'Idle' || formData.category === 'Training' || formData.category === 'Site Work')) && !String(formData.category_detail || '').trim()) ||
                                             (!isMultiDayLeave && (totalLoggedHoursForDate + Number(formData.hours_logged || 0) > 24))
                                         }
 
