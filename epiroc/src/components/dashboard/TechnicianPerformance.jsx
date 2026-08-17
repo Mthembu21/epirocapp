@@ -8,17 +8,16 @@ import { clampPercent } from '@/utils/kpiUtils';
 
 const getPerformanceCategory = (efficiency, techKPI = {}) => {
     // A technician with no productive hours because they were on leave, sick, or in
-    // training had no real opportunity to be productive that period — show the
-    // actual reason instead of a "Needs Improvement" label that implies they
-    // underperformed on work they were actually assigned.
+    // training had no real opportunity to be productive that period — show OFF for
+    // sick/leave (without revealing which) instead of "Needs Improvement", which would
+    // imply they underperformed on work they were actually assigned.
     const productiveHours = Number(techKPI.total_productive_hours || 0);
     const leaveDays = Number(techKPI.leave_days || 0);
     const sickDays = Number(techKPI.sick_days || 0);
     const trainingHours = Number(techKPI.training_hours || 0);
 
     if (productiveHours <= 0 && (leaveDays > 0 || sickDays > 0 || trainingHours > 0)) {
-        if (sickDays > 0) return { label: 'Sick', color: 'bg-orange-100 text-orange-700' };
-        if (leaveDays > 0) return { label: 'On Leave', color: 'bg-indigo-100 text-indigo-700' };
+        if (sickDays > 0 || leaveDays > 0) return { label: 'OFF', color: 'bg-slate-100 text-slate-700' };
         return { label: 'Training', color: 'bg-blue-100 text-blue-700' };
     }
 
