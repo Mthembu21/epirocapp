@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Search, UserPlus, Users, User, Clock, Building } from 'lucide-react';
+import { Search, UserPlus, Users, User, Clock, Building, ArrowRightLeft } from 'lucide-react';
 import { base44 } from '@/api/apiClient';
 
 // Add error boundary to catch and display errors
@@ -50,6 +51,7 @@ function GlobalTechnicianSelector({
     onTechnicianSelect, 
     currentSupervisorKey 
 }) {
+    const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
     const [myTechnicians, setMyTechnicians] = useState([]);
     const [searchResults, setSearchResults] = useState([]);
@@ -58,6 +60,11 @@ function GlobalTechnicianSelector({
     const [temporaryAssignment, setTemporaryAssignment] = useState({
         technicianId: null,
         duration_hours: 8,
+        reason: '',
+        showForm: false
+    });
+    const [transferAssignment, setTransferAssignment] = useState({
+        technicianId: null,
         reason: '',
         showForm: false
     });
@@ -157,6 +164,11 @@ function GlobalTechnicianSelector({
             reason: '',
             showForm: false
         });
+        setTransferAssignment({
+            technicianId: null,
+            reason: '',
+            showForm: false
+        });
     };
 
     const handleTechnicianSelect = (technician) => {
@@ -210,85 +222,46 @@ function GlobalTechnicianSelector({
         });
     };
 
-    // Temporary Assignment Confirmation Dialog
-    const TemporaryAssignmentDialog = () => {
-        if (!temporaryAssignment.showForm) return null;
-        
-        return (
-            <Dialog open={temporaryAssignment.showForm} onOpenChange={cancelTemporaryAssignment}>
-                <DialogHeader>
-                    <DialogTitle className="text-slate-800">Temporary Assignment</DialogTitle>
-                    <DialogDescription>
-                        Assign {temporaryAssignment.technician?.name} temporarily to your workshop
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogContent className="sm:max-w-md">
-                    <div className="space-y-4">
-                        <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                            <div className="flex items-center gap-2 mb-2">
-                                <User className="w-4 h-4 text-orange-600" />
-                                <h4 className="font-semibold text-orange-800">Technician Details</h4>
-                            </div>
-                            <div className="text-sm text-orange-700">
-                                <div><strong>Name:</strong> {temporaryAssignment.technician?.name}</div>
-                                <div><strong>ID:</strong> {temporaryAssignment.technician?.employee_id || temporaryAssignment.technician?.employeeNumber}</div>
-                                <div><strong>Original Supervisor:</strong> {temporaryAssignment.technician?.originalSupervisor || temporaryAssignment.technician?.supervisor_key}</div>
-                            </div>
-                        </div>
+    const showTransferForm = (technician) => {
+        setTransferAssignment({
+            technicianId: technician._id || technician.id,
+            reason: '',
+            showForm: true,
+            technician
+        });
+    };
 
-                        <div className="space-y-2">
-                            <Label htmlFor="duration_hours">Duration (hours)</Label>
-                            <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-slate-400" />
-                                <Input
-                                    id="duration_hours"
-                                    type="number"
-                                    min="1"
-                                    max="24"
-                                    value={temporaryAssignment.duration_hours}
-                                    onChange={(e) => setTemporaryAssignment(prev => ({
-                                        ...prev,
-                                        duration_hours: parseInt(e.target.value) || 8
-                                    }))}
-                                    placeholder="8"
-                                />
-                            </div>
-                        </div>
+    const cancelTransfer = () => {
+        setTransferAssignment({
+            technicianId: null,
+            reason: '',
+            showForm: false
+        });
+    };
 
-                        <div className="space-y-2">
-                            <Label htmlFor="reason">Reason for Assignment</Label>
-                            <Input
-                                id="reason"
-                                value={temporaryAssignment.reason}
-                                onChange={(e) => setTemporaryAssignment(prev => ({
-                                    ...prev,
-                                    reason: e.target.value
-                                }))}
-                                placeholder="e.g., Specialized task, Coverage, etc."
-                            />
-                        </div>
+    const handleTransfer = async (technician) => {
+        try {
+            setLoading(true);
+            const result = await base44.entities.Technician.transfer(
+                technician._id || technician.id,
+                transferAssignment.reason
+            );
 
-                        <div className="flex gap-3">
-                            <Button
-                                variant="outline"
-                                onClick={cancelTemporaryAssignment}
-                                className="flex-1"
-                                disabled={loading}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                onClick={() => handleTemporaryAssignment(temporaryAssignment.technician)}
-                                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
-                                disabled={loading}
-                            >
-                                {loading ? 'Assigning...' : 'Assign Temporarily'}
-                            </Button>
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
-        );
+            // The technician now belongs to this component - refresh "My Technicians"
+            // (here and anywhere else in the app backed by the same query) so they
+            // show up immediately instead of only after the next reload.
+            await loadMyTechnicians();
+            queryClient.invalidateQueries({ queryKey: ['technicians'] });
+
+            onTechnicianSelect(result.technician);
+            setIsOpen(false);
+            resetForm();
+        } catch (error) {
+            console.error('Error moving technician:', error);
+            alert('Failed to move technician: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -371,15 +344,26 @@ function GlobalTechnicianSelector({
                                             </div>
                                             <div className="flex gap-2">
                                                 {tech.isTemporary ? (
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => showTemporaryAssignmentForm(tech)}
-                                                        className="bg-orange-500 hover:bg-orange-600 text-white"
-                                                        disabled={loading}
-                                                    >
-                                                        <UserPlus className="w-3 h-3 mr-1" />
-                                                        Assign Temporarily
-                                                    </Button>
+                                                    <>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => showTemporaryAssignmentForm(tech)}
+                                                            className="bg-orange-500 hover:bg-orange-600 text-white"
+                                                            disabled={loading}
+                                                        >
+                                                            <UserPlus className="w-3 h-3 mr-1" />
+                                                            Assign Temporarily
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => showTransferForm(tech)}
+                                                            className="bg-purple-600 hover:bg-purple-700 text-white"
+                                                            disabled={loading}
+                                                        >
+                                                            <ArrowRightLeft className="w-3 h-3 mr-1" />
+                                                            Move Here
+                                                        </Button>
+                                                    </>
                                                 ) : (
                                                     <Button
                                                         size="sm"
@@ -481,7 +465,143 @@ function GlobalTechnicianSelector({
                     </div>
                 </DialogContent>
             </Dialog>
-            <TemporaryAssignmentDialog />
+            {temporaryAssignment.showForm && (
+                <Dialog open={temporaryAssignment.showForm} onOpenChange={cancelTemporaryAssignment}>
+                    <DialogHeader>
+                        <DialogTitle className="text-slate-800">Temporary Assignment</DialogTitle>
+                        <DialogDescription>
+                            Assign {temporaryAssignment.technician?.name} temporarily to your workshop
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogContent className="sm:max-w-md">
+                        <div className="space-y-4">
+                            <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <User className="w-4 h-4 text-orange-600" />
+                                    <h4 className="font-semibold text-orange-800">Technician Details</h4>
+                                </div>
+                                <div className="text-sm text-orange-700">
+                                    <div><strong>Name:</strong> {temporaryAssignment.technician?.name}</div>
+                                    <div><strong>ID:</strong> {temporaryAssignment.technician?.employee_id || temporaryAssignment.technician?.employeeNumber}</div>
+                                    <div><strong>Original Supervisor:</strong> {temporaryAssignment.technician?.originalSupervisor || temporaryAssignment.technician?.supervisor_key}</div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="duration_hours">Duration (hours)</Label>
+                                <div className="flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-slate-400" />
+                                    <Input
+                                        id="duration_hours"
+                                        type="number"
+                                        min="1"
+                                        max="24"
+                                        value={temporaryAssignment.duration_hours}
+                                        onChange={(e) => setTemporaryAssignment(prev => ({
+                                            ...prev,
+                                            duration_hours: parseInt(e.target.value) || 8
+                                        }))}
+                                        placeholder="8"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="reason">Reason for Assignment</Label>
+                                <Input
+                                    id="reason"
+                                    value={temporaryAssignment.reason}
+                                    onChange={(e) => setTemporaryAssignment(prev => ({
+                                        ...prev,
+                                        reason: e.target.value
+                                    }))}
+                                    placeholder="e.g., Specialized task, Coverage, etc."
+                                />
+                            </div>
+
+                            <div className="flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    onClick={cancelTemporaryAssignment}
+                                    className="flex-1"
+                                    disabled={loading}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={() => handleTemporaryAssignment(temporaryAssignment.technician)}
+                                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
+                                    disabled={loading}
+                                >
+                                    {loading ? 'Assigning...' : 'Assign Temporarily'}
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            {transferAssignment.showForm && (
+                <Dialog open={transferAssignment.showForm} onOpenChange={cancelTransfer}>
+                    <DialogHeader>
+                        <DialogTitle className="text-slate-800">Move Technician</DialogTitle>
+                        <DialogDescription>
+                            Permanently move {transferAssignment.technician?.name} into your component
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogContent className="sm:max-w-md">
+                        <div className="space-y-4">
+                            <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <User className="w-4 h-4 text-purple-600" />
+                                    <h4 className="font-semibold text-purple-800">Technician Details</h4>
+                                </div>
+                                <div className="text-sm text-purple-700">
+                                    <div><strong>Name:</strong> {transferAssignment.technician?.name}</div>
+                                    <div><strong>ID:</strong> {transferAssignment.technician?.employee_id || transferAssignment.technician?.employeeNumber}</div>
+                                    <div><strong>Current Supervisor:</strong> {transferAssignment.technician?.originalSupervisor || transferAssignment.technician?.supervisor_key}</div>
+                                </div>
+                                <div className="text-xs text-purple-600 mt-2">
+                                    This is a permanent move, not a loan. Once moved, this technician's performance
+                                    will count toward your component, and their current supervisor will need to use
+                                    "Assign Temporarily" to borrow them back.
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="transfer_reason">Reason for Move</Label>
+                                <Input
+                                    id="transfer_reason"
+                                    value={transferAssignment.reason}
+                                    onChange={(e) => setTransferAssignment(prev => ({
+                                        ...prev,
+                                        reason: e.target.value
+                                    }))}
+                                    placeholder="e.g., Permanent headcount transfer"
+                                />
+                            </div>
+
+                            <div className="flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    onClick={cancelTransfer}
+                                    className="flex-1"
+                                    disabled={loading}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={() => handleTransfer(transferAssignment.technician)}
+                                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                                    disabled={loading || !transferAssignment.reason.trim()}
+                                >
+                                    {loading ? 'Moving...' : 'Move Technician'}
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </>
     );
 }

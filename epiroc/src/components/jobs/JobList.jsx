@@ -4,10 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Briefcase, Trash2, AlertTriangle, Clock, CheckCircle2, XCircle, ArrowRightLeft, Plus } from 'lucide-react';
+import { Briefcase, Trash2, AlertTriangle, Clock, CheckCircle2, XCircle, ArrowRightLeft, Plus, Ban } from 'lucide-react';
 
 import JobReassignModal from './JobReassignModal';
 import JobAddTechnicianModal from './JobAddTechnicianModal';
+import JobBlockTechnicianModal from './JobBlockTechnicianModal';
 
 const statusConfig = {
     pending_confirmation: { label: 'Pending', color: 'bg-slate-100 text-slate-700', icon: Clock },
@@ -19,9 +20,10 @@ const statusConfig = {
     overrun: { label: 'Overrun', color: 'bg-orange-100 text-orange-700', icon: AlertTriangle }
 };
 
-export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, onSelectJob, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false }) {
+export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, onSelectJob, onBlockTechnician, onUnblockTechnician, technicians = [], showActions = true, isReassigning = false, isAddingTechnician = false, isBlockingTechnician = false }) {
     const [reassignJob, setReassignJob] = useState(null);
     const [addTechJob, setAddTechJob] = useState(null);
+    const [blockTechJob, setBlockTechJob] = useState(null);
     const [search, setSearch] = useState('');
 
     const handleReassign = (data) => {
@@ -98,6 +100,7 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
                                 const technicianNames = (job.technicians && job.technicians.length > 0)
                                     ? job.technicians.map(t => t.technician_name).filter(Boolean).join(', ')
                                     : (job.assigned_technician_name || '');
+                                const hasBlockedTechnician = (job.technicians || []).some(t => t.booking_blocked);
                                 const perTechProgress = (job.technicians && job.technicians.length > 0 && job.progress_by_technician)
                                     ? job.technicians
                                         .map(t => {
@@ -127,7 +130,12 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
                                             )}
                                         </TableCell>
                                         <TableCell className="max-w-[200px] truncate">{job.description}</TableCell>
-                                        <TableCell className="max-w-[200px] truncate" title={technicianNames}>{technicianNames}</TableCell>
+                                        <TableCell className="max-w-[200px] truncate" title={technicianNames}>
+                                            {technicianNames}
+                                            {hasBlockedTechnician && (
+                                                <Badge variant="outline" className="ml-1.5 text-red-600 border-red-200">Blocked</Badge>
+                                            )}
+                                        </TableCell>
                                         <TableCell>
                                             <Badge className={`${config.color} flex items-center gap-1 w-fit`}>
                                                 <StatusIcon className="w-3 h-3" />
@@ -181,6 +189,17 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
                                                             <ArrowRightLeft className="w-4 h-4" />
                                                         </Button>
                                                     )}
+                                                    {onBlockTechnician && (job.technicians || []).length > 0 && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() => setBlockTechJob(job)}
+                                                            className={hasBlockedTechnician ? 'text-red-600 hover:text-red-800 hover:bg-red-50' : 'text-slate-400 hover:text-red-700 hover:bg-red-50'}
+                                                            title="Block technician from booking"
+                                                        >
+                                                            <Ban className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
@@ -219,6 +238,17 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
                     onClose={() => setAddTechJob(null)}
                     onSubmit={handleAddTechnician}
                     isLoading={isAddingTechnician}
+                />
+            )}
+
+            {blockTechJob && (
+                <JobBlockTechnicianModal
+                    job={jobs.find((j) => j.job_number === blockTechJob.job_number) || blockTechJob}
+                    isOpen={!!blockTechJob}
+                    onClose={() => setBlockTechJob(null)}
+                    onBlock={onBlockTechnician}
+                    onUnblock={onUnblockTechnician}
+                    isLoading={isBlockingTechnician}
                 />
             )}
         </Card>

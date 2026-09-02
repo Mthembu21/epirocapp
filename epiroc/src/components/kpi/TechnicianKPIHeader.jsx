@@ -110,6 +110,7 @@ export default function TechnicianKPIHeader({
     trainingHours: safeFloat(metricsData?.training_hours),
     leaveDays:     safeFloat(metricsData?.leave_days),
     sickDays:      safeFloat(metricsData?.sick_days),
+    teamBuildingDays: safeFloat(metricsData?.team_building_days),
   }), [metricsData]);
 
   console.log('[KPI TRACE] TechnicianKPIHeader — rendering with metrics:', metrics, { hasData, isLoading });
@@ -224,6 +225,15 @@ export default function TechnicianKPIHeader({
           unit="days"
           icon={AlertCircle}
           color="bg-orange-50 border-orange-200"
+          showProgress={false}
+        />
+
+        <KPICard
+          title="Team Building Days"
+          value={metrics.teamBuildingDays}
+          unit="days"
+          icon={Users}
+          color="bg-purple-50 border-purple-200"
           showProgress={false}
         />
       </div>

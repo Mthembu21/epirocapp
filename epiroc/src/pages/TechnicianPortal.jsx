@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle, CheckCircle2, Pencil, Trash2, X } from 'lucide-react';
+import { Wrench, Clock, Save, LogOut, Calendar, Briefcase, AlertTriangle, CheckCircle, CheckCircle2, Pencil, Trash2, X, EyeOff, RotateCcw } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import JobPauseResumeForm from '@/components/downtime/JobPauseResumeForm.jsx';
 import TechnicianKPIHeader from '@/components/kpi/TechnicianKPIHeader.jsx';
@@ -65,6 +65,7 @@ export default function TechnicianPortal() {
 
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [showOvertimeDetails, setShowOvertimeDetails] = useState(false);
+  const [showHiddenJobs, setShowHiddenJobs] = useState(false);
 
   // Downtime (pause/resume) - UI wired; backend wiring pending
   const [isPaused, setIsPaused] = useState(false);
@@ -305,7 +306,15 @@ export default function TechnicianPortal() {
     });
     const activeJobs = myJobs.filter(j => {
         const mine = getMyAssignment(j);
-        return !!mine && mine.confirmed_by_technician && j.status !== 'completed' && hasIncompleteAssignedWork(j);
+        return !!mine && mine.confirmed_by_technician && !mine.hidden_by_technician && j.status !== 'completed' && hasIncompleteAssignedWork(j);
+    });
+
+    // Jobs this technician chose to hide from their own dashboard. Purely a display
+    // preference - the assignment, hours, and status are untouched, so this list
+    // doubles as the "restore" source.
+    const hiddenJobs = myJobs.filter(j => {
+        const mine = getMyAssignment(j);
+        return !!mine && mine.hidden_by_technician && j.status !== 'completed';
     });
 
     const confirmJobMutation = useMutation({
@@ -318,6 +327,19 @@ export default function TechnicianPortal() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] }),
         onError: (e) => {
             alert(e?.message || 'Could not accept job');
+        }
+    });
+
+    const hideJobMutation = useMutation({
+        mutationFn: ({ jobNumber, hidden }) => {
+            if (!jobNumber) {
+                throw new Error('Missing job number');
+            }
+            return base44.entities.Job.hideForTechnician(jobNumber, getTechnicianId(), hidden);
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['myJobs'] }),
+        onError: (e) => {
+            alert(e?.message || 'Could not update job visibility');
         }
     });
 
@@ -443,6 +465,13 @@ export default function TechnicianPortal() {
     const selectedJobRemainingHours = Number(
         selectedJob?.remaining_hours ?? (Number(selectedJob?.allocated_hours || 0) - Number(selectedJob?.consumed_hours || 0))
     );
+    // A supervisor can block just this technician from booking hours on this job
+    // (with a reason) without pausing it for anyone else. The backend enforces
+    // this too — this is just so the technician sees why before they try to submit.
+    const selectedJobAssignment = selectedJob ? (selectedJob.technicians || []).find(
+        (t) => String(t?.technician_id) === String(getTechnicianId())
+    ) : null;
+    const isSelectedJobBlocked = !!selectedJobAssignment?.booking_blocked;
     const isIdleSelected = formData.job_id === IDLE_JOB_ID;
     const isIdleCategorySelected = isIdleSelected && formData.category === 'Idle';
     const isOtherIdleSelected = isIdleSelected && formData.category === 'Other'; // legacy backward-compat
@@ -1441,6 +1470,18 @@ export default function TechnicianPortal() {
                                         </div>
                                     )}
 
+                                    {isSelectedJobBlocked && (
+                                        <div className="flex items-start gap-2 text-red-700 text-sm bg-red-50 p-3 rounded-lg border border-red-200">
+                                            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                            <span>
+                                                You're blocked from booking hours on this job.
+                                                {selectedJobAssignment?.block_reason && (
+                                                    <span className="block text-red-600 mt-0.5">"{selectedJobAssignment.block_reason}"</span>
+                                                )}
+                                            </span>
+                                        </div>
+                                    )}
+
                                     {createEntryMutation.isError && (
                                         <div className="flex items-center gap-2 text-red-700 text-sm bg-red-50 p-3 rounded-lg border border-red-200">
                                             <AlertTriangle className="w-4 h-4" />
@@ -1448,12 +1489,13 @@ export default function TechnicianPortal() {
                                         </div>
                                     )}
 
-                                    <Button 
-                                        type="submit" 
+                                    <Button
+                                        type="submit"
                                         className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-semibold"
                                             disabled={
                                             createEntryMutation.isPending ||
                                             !formData.job_id ||
+                                            isSelectedJobBlocked ||
                                             (!isMultiDayLeave && !formData.hours_logged) ||
                                             (!isIdleSelected && selectedJob && !formData.subtask_id) ||
                                             (isIdleSelected && !formData.category) ||
@@ -1487,7 +1529,9 @@ export default function TechnicianPortal() {
                                     </div>
                                 ) : (
                                     <div className="divide-y">
-                                        {activeJobs.map(job => (
+                                        {activeJobs.map(job => {
+                                            const myAssignment = getMyAssignment(job);
+                                            return (
                                             <div key={job.id} className="p-4">
                                                 <div className="flex items-start justify-between mb-3">
                                                     <div className="flex-1">
@@ -1495,6 +1539,9 @@ export default function TechnicianPortal() {
                                                         <p className="text-sm text-slate-600">{job.description}</p>
                                                     </div>
                                                     <div className="flex items-center gap-2">
+                                                        {myAssignment?.booking_blocked && (
+                                                            <Badge className="bg-red-100 text-red-700" title={myAssignment.block_reason}>Blocked</Badge>
+                                                        )}
                                                         <Badge className={
                                                             job.status === 'at_risk' ? 'bg-red-100 text-red-700' :
                                                             job.status === 'over_allocated' ? 'bg-orange-100 text-orange-700' :
@@ -1502,8 +1549,21 @@ export default function TechnicianPortal() {
                                                         }>
                                                             {job.status?.replace(/_/g, ' ')}
                                                         </Badge>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                                                            title="Remove from view (doesn't delete or unassign the job)"
+                                                            disabled={hideJobMutation.isPending}
+                                                            onClick={() => hideJobMutation.mutate({ jobNumber: job.job_number, hidden: true })}
+                                                        >
+                                                            <EyeOff className="w-4 h-4" />
+                                                        </Button>
                                                     </div>
                                                 </div>
+                                                {myAssignment?.booking_blocked && myAssignment?.block_reason && (
+                                                    <p className="text-xs text-red-600 mb-2">"{myAssignment.block_reason}"</p>
+                                                )}
                                                 <div className="mb-2">
                                                     <Progress value={job.aggregated_progress_percentage ?? job.progress_percentage ?? 0} className="h-2" />
                                                     <div className="flex justify-between text-xs text-slate-500 mt-1">
@@ -1512,11 +1572,53 @@ export default function TechnicianPortal() {
                                                     </div>
                                                 </div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </CardContent>
                         </Card>
+
+                        {hiddenJobs.length > 0 && (
+                            <Card className="border-0 shadow-lg bg-white/95 backdrop-blur mt-4">
+                                <CardHeader
+                                    className="pb-4 border-b border-slate-100 cursor-pointer select-none"
+                                    onClick={() => setShowHiddenJobs((v) => !v)}
+                                >
+                                    <CardTitle className="flex items-center justify-between gap-2 text-slate-500 text-sm font-medium">
+                                        <span className="flex items-center gap-2">
+                                            <EyeOff className="w-4 h-4" />
+                                            Hidden jobs ({hiddenJobs.length})
+                                        </span>
+                                        <span className="text-xs text-yellow-600">{showHiddenJobs ? 'Hide' : 'Show'}</span>
+                                    </CardTitle>
+                                </CardHeader>
+                                {showHiddenJobs && (
+                                    <CardContent className="p-0">
+                                        <div className="divide-y">
+                                            {hiddenJobs.map(job => (
+                                                <div key={job.id} className="p-4 flex items-center justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="font-semibold text-slate-700 truncate">{job.job_number}</p>
+                                                        <p className="text-sm text-slate-500 truncate">{job.description}</p>
+                                                    </div>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="flex-shrink-0"
+                                                        disabled={hideJobMutation.isPending}
+                                                        onClick={() => hideJobMutation.mutate({ jobNumber: job.job_number, hidden: false })}
+                                                    >
+                                                        <RotateCcw className="w-4 h-4 mr-2" />
+                                                        Restore
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </CardContent>
+                                )}
+                            </Card>
+                        )}
                     </TabsContent>
 
                     <TabsContent value="history">

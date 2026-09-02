@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, BarChart as BarChartIcon } from 'lucide-react';
+import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, ClipboardList } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -18,6 +18,7 @@ import JobAllocationModal from '../components/jobs/JobAllocationModal';
 import JobList from '../components/jobs/JobList';
 import AtRiskJobs from '../components/jobs/AtRiskJobs';
 import TechnicianPerformance from '@/components/dashboard/TechnicianPerformance';
+import TechnicianActivityLog from '@/components/dashboard/TechnicianActivityLog';
 import OperationalMetricsFetcher from '@/components/dashboard/OperationalMetricsFetcher';
 import PerformanceCharts from '../components/dashboard/PerformanceCharts';
 import HRExportButton from '../components/dashboard/HRExportButton';
@@ -31,9 +32,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
-  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell 
+import {
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
 
 // Hours are now calculated per entry, not constants
@@ -69,6 +70,7 @@ export default function Dashboard() {
     const [showNonProductiveDetails, setShowNonProductiveDetails] = useState(false);
     const [showEfficiencyDetails, setShowEfficiencyDetails] = useState(false);
     const [showAvailabilityDetails, setShowAvailabilityDetails] = useState(false);
+    const [showTrainingDetails, setShowTrainingDetails] = useState(false);
     const [monthlySummaries, setMonthlySummaries] = useState([]);
     // Incrementing this triggers an immediate KPI re-fetch after any mutation that
     // changes hours (approve/decline/delete time entries, job deletion, etc.).
@@ -150,6 +152,7 @@ export default function Dashboard() {
     const handleNonProductiveClick = React.useCallback(() => setShowNonProductiveDetails(true), []);
     const handleEfficiencyClick    = React.useCallback(() => setShowEfficiencyDetails(true),    []);
     const handleAvailabilityClick  = React.useCallback(() => setShowAvailabilityDetails(true),  []);
+    const handleTrainingClick      = React.useCallback(() => setShowTrainingDetails(true),      []);
 
     const [dashboardAlerts, setDashboardAlerts] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -583,6 +586,22 @@ export default function Dashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
     });
 
+    const blockTechnicianMutation = useMutation({
+        mutationFn: ({ jobNumber, technicianId, reason }) => base44.entities.Job.blockTechnician(jobNumber, technicianId, true, reason),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+        onError: (e) => {
+            alert(e?.message || 'Could not block technician');
+        }
+    });
+
+    const unblockTechnicianMutation = useMutation({
+        mutationFn: ({ jobNumber, technicianId }) => base44.entities.Job.blockTechnician(jobNumber, technicianId, false),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+        onError: (e) => {
+            alert(e?.message || 'Could not lift block');
+        }
+    });
+
     const addTechnicianMutation = useMutation({
         mutationFn: async ({ jobId, jobNumber, technicianId, technicianName, allocated_hours, subtask_allocations }) => {
             await base44.entities.Job.assignTechnicianByJobNumber(
@@ -705,6 +724,18 @@ export default function Dashboard() {
     const totalProductiveHours = timeLogsForMonth.reduce((sum, e) => sum + (e.is_idle ? 0 : (e.hours_logged || 0)), 0);
     const totalNonProductiveHours = timeLogsForMonth.reduce((sum, e) => sum + (e.is_idle ? (e.hours_logged || 0) : 0), 0);
 
+    // Training hours come from the same KPI engine (details.technicians[].training_hours)
+    // as the Availability/Utilization dialogs already use, NOT the separate TrainingLog
+    // collection — technicians log training as a time-entry category ("Training"), never
+    // through the disconnected TrainingForm/TrainingLog pipeline. Reusing kpiDetails keeps
+    // this number consistent with what's already shown elsewhere, and it's already scoped
+    // to the current daily/weekly/last_week/monthly view since operationalMetrics refetches
+    // on selectedView changes.
+    const totalTrainingHours = React.useMemo(() => {
+        const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+        return (kpiDetails?.technicians || []).reduce((sum, t) => sum + Number(t.training_hours ?? 0), 0);
+    }, [operationalMetrics, lastOperationalMetrics]);
+
     const overtimeRowsForMonth = React.useMemo(() => {
         // overtime_hours on time log rows (already scoped to selectedMonth by timeLogsForMonth)
         const rows = (timeLogsForMonth || [])
@@ -799,6 +830,7 @@ export default function Dashboard() {
                 productivity_percent:      td.productivity_percent,
                 leave_days:                td.leave_days || 0,
                 sick_days:                 td.sick_days || 0,
+                team_building_days:        td.team_building_days || 0,
                 training_hours:            td.training_hours || 0,
             };
         }
@@ -982,10 +1014,10 @@ export default function Dashboard() {
                                         efficiency_percent:     m?.efficiency_percent      ?? null,
                                         availability_percent:   m?.availability_percent    ?? null,
                                         utilization_percent:    m?.utilization_percent     ?? null,
-                                        active_jobs:       hasCombinedWorkshopKpis ? (m?.active_jobs ?? activeJobs.length) : activeJobs.length,
                                         completed_jobs:    hasCombinedWorkshopKpis ? (m?.completed_jobs ?? completedJobs.length) : completedJobs.length,
                                         jobs_at_risk:      hasCombinedWorkshopKpis ? (m?.jobs_at_risk ?? atRiskJobs.length) : atRiskJobs.length,
                                         overtime_hours:    hasCombinedWorkshopKpis ? (m?.overtime_hours ?? totalOvertimeHours) : totalOvertimeHours,
+                                        training_hours:    hasCombinedWorkshopKpis ? (m?.training_hours ?? totalTrainingHours) : totalTrainingHours,
                                         total_technicians: hasCombinedWorkshopKpis ? (m?.total_technicians ?? technicians.filter(t => t.status === 'active').length) : technicians.filter(t => t.status === 'active').length,
                                     }}
                                     hasData={kpiHasData}
@@ -1000,6 +1032,7 @@ export default function Dashboard() {
                                     onNonProductiveClick={handleNonProductiveClick}
                                     onEfficiencyClick={handleEfficiencyClick}
                                     onAvailabilityClick={handleAvailabilityClick}
+                                    onTrainingClick={handleTrainingClick}
                                 />
                             </>
                         );
@@ -1736,6 +1769,94 @@ export default function Dashboard() {
                     );
                 })()}
 
+                {/* ── Training — per-technician training hours for the selected period ── */}
+                {(() => {
+                    const kpiDetails = (operationalMetrics ?? lastOperationalMetrics)?.details;
+                    const techs = (kpiDetails?.technicians || [])
+                        .filter(t => (t.training_hours ?? 0) > 0)
+                        .sort((a, b) => (b.training_hours ?? 0) - (a.training_hours ?? 0));
+
+                    return (
+                        <Dialog open={showTrainingDetails} onOpenChange={setShowTrainingDetails}>
+                            <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-hidden">
+                                <DialogHeader>
+                                    <DialogTitle className="text-slate-800">Training — {periodLabel}</DialogTitle>
+                                    <DialogDescription className="text-slate-500 text-sm">
+                                        Training hours logged for the selected period.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="overflow-y-auto max-h-[calc(85vh-7rem)] space-y-5">
+                                    {techs.length === 0 ? (
+                                        <div className="p-6 text-center text-slate-500">No training logged for this period.</div>
+                                    ) : (
+                                        <>
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow className="bg-slate-50 sticky top-0 z-10">
+                                                        <TableHead>Technician</TableHead>
+                                                        <TableHead className="text-right">Sessions</TableHead>
+                                                        <TableHead className="text-right">Hours</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {techs.map((t) => (
+                                                        <TableRow key={t.technician_id}>
+                                                            <TableCell className="font-medium">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</TableCell>
+                                                            <TableCell className="text-right">{(t.training_entries || []).length}</TableCell>
+                                                            <TableCell className="text-right text-indigo-700 font-medium">{Number(t.training_hours ?? 0).toFixed(1)}h</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                    <TableRow className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                        <TableCell className="font-bold text-slate-800">TEAM TOTAL</TableCell>
+                                                        <TableCell className="text-right">{techs.reduce((s, t) => s + (t.training_entries || []).length, 0)}</TableCell>
+                                                        <TableCell className="text-right text-indigo-800">{totalTrainingHours.toFixed(1)}h</TableCell>
+                                                    </TableRow>
+                                                </TableBody>
+                                            </Table>
+
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide px-1">Entry Detail</p>
+                                                {techs.map((t) => {
+                                                    const entries = [...(t.training_entries || [])].sort((a, b) => a.date.localeCompare(b.date));
+                                                    if (entries.length === 0) return null;
+                                                    return (
+                                                        <div key={t.technician_id} className="rounded-lg border border-slate-200 bg-white/95">
+                                                            <div className="px-4 py-2 border-b border-slate-100 flex items-baseline justify-between gap-3">
+                                                                <span className="font-semibold text-slate-800 text-sm">{technicianNameById[String(t.technician_id)] || String(t.technician_id)}</span>
+                                                                <span className="text-xs text-indigo-700">{Number(t.training_hours ?? 0).toFixed(1)}h training</span>
+                                                            </div>
+                                                            <div className="p-3">
+                                                                <Table>
+                                                                    <TableHeader>
+                                                                        <TableRow className="bg-slate-50">
+                                                                            <TableHead>Date</TableHead>
+                                                                            <TableHead>Category</TableHead>
+                                                                            <TableHead className="text-right">Hours</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {entries.map((e, i) => (
+                                                                            <TableRow key={i}>
+                                                                                <TableCell>{e.date}</TableCell>
+                                                                                <TableCell className="text-indigo-700 font-medium">{e.category || 'Training'}</TableCell>
+                                                                                <TableCell className="text-right">{Number(e.hours).toFixed(1)}h</TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    );
+                })()}
+
                 <Tabs defaultValue="jobs" className="space-y-6">
                     <TabsList className="bg-slate-700/50 p-1 rounded-xl border border-slate-600">
                         <TabsTrigger 
@@ -1752,8 +1873,15 @@ export default function Dashboard() {
                             <TrendingUp className="w-4 h-4" />
                             Performance
                         </TabsTrigger>
-                        <TabsTrigger 
-                            value="technicians" 
+                        <TabsTrigger
+                            value="activities"
+                            className="flex items-center gap-2 rounded-lg text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800"
+                        >
+                            <ClipboardList className="w-4 h-4" />
+                            Activities
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="technicians"
                             className="flex items-center gap-2 rounded-lg text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-800"
                         >
                             <Users className="w-4 h-4" />
@@ -1824,8 +1952,11 @@ onClick={() => {
                                 onReassign={reassignJobMutation.mutate}
                                 onAddTechnician={addTechnicianMutation.mutate}
                                 onSelectJob={openJobDetails}
+                                onBlockTechnician={blockTechnicianMutation.mutate}
+                                onUnblockTechnician={unblockTechnicianMutation.mutate}
                                 isReassigning={reassignJobMutation.isPending}
                                 isAddingTechnician={addTechnicianMutation.isPending}
+                                isBlockingTechnician={blockTechnicianMutation.isPending || unblockTechnicianMutation.isPending}
                             />
 
                         </div>
@@ -2192,6 +2323,17 @@ onClick={() => {
                         </div>
                     </TabsContent>
 
+                    <TabsContent value="activities" className="mt-6">
+                        <TechnicianActivityLog
+                            technicians={technicians}
+                            timeLogs={timeLogsForMonth}
+                            jobs={jobs}
+                            jobReports={jobReports}
+                            kpiData={techKpiData}
+                            periodLabel={periodLabel}
+                        />
+                    </TabsContent>
+
                     <TabsContent value="technicians" className="mt-6">
                         <div className="space-y-6">
                             <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -2211,62 +2353,12 @@ onClick={() => {
                                     Search All Technicians
                                 </Button>
                             </div>
-                            <TechnicianList 
+                            <TechnicianList
                                 technicians={technicians}
                                 onDelete={deleteTechnicianMutation.mutate}
                                 onUpdate={updateTechnicianMutation.mutate}
                                 isUpdating={updateTechnicianMutation.isPending}
                             />
-                            
-                            {/* Technician Efficiency Chart */}
-                            <Card className="border-0 shadow-lg bg-white/95">
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="flex items-center gap-2 text-slate-800 text-lg">
-                                        <BarChartIcon className="w-5 h-5 text-yellow-500" />
-                                        Technician Efficiency (%)
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    {(() => {
-                                        const technicianEfficiency = technicians.map(tech => {
-                                            const techJobs = jobs.filter(j => j.technician_id === tech.technician_id && j.status === 'completed');
-                                            const techEntries = timeLogs.filter(e => e.technician_id === tech.technician_id);
-                                            const completedJobs = techJobs;
-                                            
-                                            const totalAllocated = completedJobs.reduce((sum, j) => sum + (j.allocated_hours || 0), 0);
-                                            const totalUtilized = techEntries
-                                                .filter(e => !e.is_idle)
-                                                .filter(e => completedJobs.some(j => String(j.job_number) === String(e.job_id)))
-                                                .reduce((sum, e) => sum + Number(e.hours_logged || 0), 0);
-
-                                            const efficiency = totalUtilized > 0 
-                                                ? Math.max(0, Math.min(100, (totalAllocated / totalUtilized) * 100)) 
-                                                : 0;
-
-                                            return {
-                                                name: tech.name?.split(' ')[0] || 'Unknown',
-                                                fullName: tech.name,
-                                                efficiency,
-                                                completedJobs: completedJobs.length
-                                            };
-                                        }).filter(tech => tech.completedJobs > 0);
-                                        
-                                        return technicianEfficiency.length > 0 ? (
-                                            <ResponsiveContainer width="100%" height={300}>
-                                                <BarChart data={technicianEfficiency} layout="vertical">
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                                    <XAxis type="number" domain={[0, 100]} />
-                                                    <YAxis dataKey="name" type="category" width={80} />
-                                                    <Tooltip formatter={(value) => [`${value.toFixed(1)}%`, 'Efficiency']} />
-                                                    <Bar dataKey="efficiency" fill="#facc15" radius={[0, 4, 4, 0]} />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        ) : (
-                                            <div className="h-[300px] flex items-center justify-center text-slate-400">No efficiency data</div>
-                                        );
-                                    })()}
-                                </CardContent>
-                            </Card>
                         </div>
                     </TabsContent>
 

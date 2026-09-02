@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, AlertTriangle, Briefcase, Clock, Award, Users, Target, AlertCircle, Info } from 'lucide-react';
+import { TrendingUp, AlertTriangle, Briefcase, Clock, Award, Users, GraduationCap, AlertCircle, Info } from 'lucide-react';
 import { KPICard, getStatusColor } from './KPICard';
 
 // null-safe float parser: returns null when the value is null/undefined/NaN.
@@ -35,6 +35,7 @@ export default function ManagementKPIHeader({
   onNonProductiveClick = null,
   onEfficiencyClick = null,
   onAvailabilityClick = null,
+  onTrainingClick = null,
 }) {
   const metrics = useMemo(() => ({
     productive:       safeFloat(metricsData?.productive_percent),
@@ -44,10 +45,10 @@ export default function ManagementKPIHeader({
     availability:     safeFloat(metricsData?.availability_percent),
     utilization:      safeFloat(metricsData?.utilization_percent),
     // Count metrics always come from other state (never null)
-    activeJobs:       parseInt(metricsData?.active_jobs)    || 0,
     completedJobs:    parseInt(metricsData?.completed_jobs) || 0,
     jobsAtRisk:       parseInt(metricsData?.jobs_at_risk)   || 0,
     overtimeHours:    parseFloat(metricsData?.overtime_hours)  || 0,
+    trainingHours:    parseFloat(metricsData?.training_hours)  || 0,
     totalTechnicians: parseInt(metricsData?.total_technicians) || 0,
   }), [metricsData]);
 
@@ -168,13 +169,13 @@ export default function ManagementKPIHeader({
         />
 
         <KPICard
-          title="Active Jobs"
-          value={metrics.activeJobs}
-          unit="jobs"
-          icon={Target}
-          color="bg-blue-50 border-blue-200"
+          title="Training Hours"
+          value={metrics.trainingHours}
+          unit="hrs"
+          icon={GraduationCap}
+          color="bg-indigo-50 border-indigo-200"
           showProgress={false}
-          isCount={true}
+          onClick={onTrainingClick}
         />
 
         <KPICard

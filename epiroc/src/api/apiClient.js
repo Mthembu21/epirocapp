@@ -129,6 +129,11 @@ class APIClient {
             completeTemporaryAssignment: (assignmentId, performance_note) => this.request(`/technicians/temporary-assignment/${assignmentId}/complete`, {
                 method: 'PUT',
                 body: JSON.stringify({ performance_note })
+            }),
+            // ✅ Permanent move to the current supervisor's component
+            transfer: (technicianId, reason) => this.request(`/technicians/${technicianId}/transfer`, {
+                method: 'PUT',
+                body: JSON.stringify({ reason })
             })
         },
 
@@ -151,6 +156,14 @@ class APIClient {
             confirmByJobNumber: (jobNumber, technician_id) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/confirm`, {
                 method: 'PUT',
                 body: JSON.stringify({ technician_id })
+            }),
+            hideForTechnician: (jobNumber, technician_id, hidden = true) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/hide-for-technician`, {
+                method: 'PUT',
+                body: JSON.stringify({ technician_id, hidden })
+            }),
+            blockTechnician: (jobNumber, technician_id, blocked = true, reason = '') => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/block-technician`, {
+                method: 'PUT',
+                body: JSON.stringify({ technician_id, blocked, reason })
             }),
             subtasks: {
                 add: (jobNumber, data) => this.request(`/jobs/by-job/${encodeURIComponent(jobNumber)}/subtasks`, {

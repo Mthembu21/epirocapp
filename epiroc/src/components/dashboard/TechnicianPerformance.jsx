@@ -14,16 +14,27 @@ const getPerformanceCategory = (efficiency, techKPI = {}) => {
     const productiveHours = Number(techKPI.total_productive_hours || 0);
     const leaveDays = Number(techKPI.leave_days || 0);
     const sickDays = Number(techKPI.sick_days || 0);
+    const teamBuildingDays = Number(techKPI.team_building_days || 0);
     const trainingHours = Number(techKPI.training_hours || 0);
 
-    if (productiveHours <= 0 && (leaveDays > 0 || sickDays > 0 || trainingHours > 0)) {
-        if (sickDays > 0 || leaveDays > 0) return { label: 'OFF', color: 'bg-slate-100 text-slate-700' };
+    if (productiveHours <= 0 && (leaveDays > 0 || sickDays > 0 || teamBuildingDays > 0 || trainingHours > 0)) {
+        if (sickDays > 0 || leaveDays > 0 || teamBuildingDays > 0) return { label: 'OFF', color: 'bg-slate-100 text-slate-700' };
         return { label: 'Training', color: 'bg-blue-100 text-blue-700' };
     }
 
-    if (efficiency >= 95) return { label: 'Excellent', color: 'bg-green-100 text-green-700' };
-    if (efficiency >= 85) return { label: 'Good', color: 'bg-blue-100 text-blue-700' };
-    if (efficiency >= 70) return { label: 'Average', color: 'bg-yellow-100 text-yellow-700' };
+    // Training hours are a productive use of time too (upskilling), but
+    // `efficiency` only counts job hours against all logged hours, so a
+    // technician who split their day between jobs and training gets docked
+    // for the training portion. `utilization_percent` already credits
+    // productive + training hours against available hours, so when training
+    // hours are present, rate on whichever metric is more favorable instead
+    // of penalizing time that was actually well spent.
+    const utilizationPercent = Number(techKPI.utilization_percent || 0);
+    const ratingBasis = trainingHours > 0 ? Math.max(efficiency, utilizationPercent) : efficiency;
+
+    if (ratingBasis >= 95) return { label: 'Excellent', color: 'bg-green-100 text-green-700' };
+    if (ratingBasis >= 85) return { label: 'Good', color: 'bg-blue-100 text-blue-700' };
+    if (ratingBasis >= 70) return { label: 'Average', color: 'bg-yellow-100 text-yellow-700' };
     return { label: 'Needs Improvement', color: 'bg-red-100 text-red-700' };
 };
 
