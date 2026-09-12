@@ -17,7 +17,14 @@ export default function DateRangeFilter({
   onTechnicianChange = () => {},
   workshops = [],
   technicians = [],
-  compact = false
+  compact = false,
+  // The "(Filtered)" / "(All Data)" sub-label only means anything when a
+  // workshop selector is actually present (see the `workshops` prop above).
+  // Workshop Overview has no such selector - it always shows every
+  // workshop - so that sub-label would read "(All Data)" permanently and
+  // say nothing useful. Defaults to shown, preserving the existing
+  // supervisor-dashboard appearance.
+  showFilterStatus = true
 }) {
   
   const views = [
@@ -125,9 +132,11 @@ export default function DateRangeFilter({
                   : selectedView === 'last_week' ? 'Last Week'
                   : 'This Month'}
               </p>
-              <p className="text-xs text-slate-500">
-                {workshopId ? '(Filtered)' : '(All Data)'}
-              </p>
+              {showFilterStatus && (
+                <p className="text-xs text-slate-500">
+                  {workshopId ? '(Filtered)' : '(All Data)'}
+                </p>
+              )}
             </div>
           </div>
         </div>

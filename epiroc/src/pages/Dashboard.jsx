@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, ClipboardList } from 'lucide-react';
+import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, ClipboardList, Printer } from 'lucide-react';
 import { createPageUrl } from '@/utils';
 import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -38,6 +38,315 @@ import {
 } from 'recharts';
 
 // Hours are now calculated per entry, not constants
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// yyyy-mm-dd key (in local calendar time, matching how dates are displayed
+// elsewhere via toLocaleDateString) for matching a report's date against a
+// time entry's date. Reads the local date fields straight off the parsed
+// instant with no setHours/toISOString round-trip - mixing local mutation
+// with a UTC read shifts every key by a day in any timezone ahead of UTC
+// (e.g. UTC+2), which silently mismatched every note-to-entry join and
+// shifted every detected gap day by one.
+function dayKey(d) {
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return null;
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+// Local midnight Date object for the same calendar day as `d`. Used for date
+// arithmetic (walking day-by-day) - never re-parse a 'yyyy-MM-dd' key string
+// with `new Date()` for this purpose, since JS parses date-only strings as
+// UTC, which reintroduces the same off-by-one this function exists to avoid.
+function localDateOnly(d) {
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return null;
+    return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+// Builds a standalone, print-ready A4 document for a single completed job and
+// opens it in a new tab for the browser's native print dialog (Save as PDF).
+// Built as its own HTML document rather than printing the in-app dialog: the
+// dialog is a fixed-position, scroll-clipped Radix overlay, so printing it
+// directly would only capture whatever fit on screen, not the full report.
+//
+// Training is deliberately left out everywhere below: technicians can only log
+// Training time against the non-job idle bucket (see IDLE_JOB_ID in the
+// backend), so it never has a real job_number and has no place in a per-job
+// report - showing a permanently-zero Training column here would just be noise.
+function buildJobReportPrintHtml(j) {
+    const ts = j.time_summary || {};
+    const prod  = Number(ts.productive_hours ?? 0);
+    const np    = Number(ts.non_productive_hours ?? 0);
+    const idle  = Number(ts.idle_hours ?? 0);
+    const total = Number(ts.total_hours ?? (prod + np + idle));
+    const prodPct = total > 0 ? (prod / total * 100) : 0;
+    const npPct   = total > 0 ? ((np + idle) / total * 100) : 0;
+
+    const startLabel = j.first_log_date ? new Date(j.first_log_date).toLocaleDateString() : (j.start_date ? new Date(j.start_date).toLocaleDateString() : '—');
+    const endLabel   = j.last_log_date ? new Date(j.last_log_date).toLocaleDateString() : (j.completed_at ? new Date(j.completed_at).toLocaleDateString() : '—');
+
+    // Every entry actually logged against this specific job. classification
+    // 'training' is filtered defensively - it should never occur here (see note
+    // above) but a per-job report is the wrong place for it if it ever does.
+    const entries = (j.time_entries || []).filter((e) => e.classification !== 'training');
+
+    const techRows = (j.hours_by_technician || [])
+        .map((t) => ({
+            ...t,
+            job_hours: Number(t.productive_hours ?? 0) + Number(t.non_productive_hours ?? 0) + Number(t.idle_hours ?? 0)
+        }))
+        .sort((a, b) => (b.productive_hours ?? 0) - (a.productive_hours ?? 0));
+
+    const bottleneckReports = (j.job_reports || []).filter((r) => r.has_bottleneck);
+    const totalHoursLost = bottleneckReports.reduce((sum, r) => sum + Number(r.bottleneck_time_lost_hours || 0), 0);
+
+    // Join every report onto the hours row it belongs to (same date + same
+    // technician) so "what was done" sits right next to the hours logged,
+    // instead of a separate notes list disconnected from the timeline. A
+    // report has no direct foreign key back to one TimeLog row, but date +
+    // technician_id reliably identifies it since reports are only ever filed
+    // against the technician's own job entry for that day.
+    const reportsByDateTech = new Map();
+    for (const r of (j.job_reports || [])) {
+        const key = `${dayKey(r.date)}|${String(r.technician_id || '')}`;
+        if (!reportsByDateTech.has(key)) reportsByDateTech.set(key, []);
+        reportsByDateTech.get(key).push(r);
+    }
+    const notesFor = (e) => reportsByDateTech.get(`${dayKey(e.date)}|${String(e.technician_id || '')}`) || [];
+
+    // Flag calendar gaps between the job's own logged days: any working day
+    // (Mon-Fri) strictly between the first and last logged date with zero
+    // hours logged by anyone on this job is surfaced as a possible-downtime
+    // row, in its correct chronological place in the timeline.
+    const loggedDayKeys = new Set(entries.map((e) => dayKey(e.date)).filter(Boolean));
+    const loggedDates = entries.map((e) => localDateOnly(e.date)).filter(Boolean).sort((a, b) => a - b);
+    const gapDays = [];
+    if (loggedDates.length > 1) {
+        const last = loggedDates[loggedDates.length - 1];
+        const cursor = new Date(loggedDates[0].getFullYear(), loggedDates[0].getMonth(), loggedDates[0].getDate() + 1);
+        while (cursor < last) {
+            const dow = cursor.getDay();
+            const key = dayKey(cursor);
+            if (dow !== 0 && dow !== 6 && !loggedDayKeys.has(key)) {
+                gapDays.push({ key, date: new Date(cursor) });
+            }
+            cursor.setDate(cursor.getDate() + 1);
+        }
+    }
+
+    // Merge real entries and synthetic gap rows into one chronological timeline.
+    const timeline = [
+        ...entries.map((e) => ({ type: 'entry', key: dayKey(e.date), entry: e })),
+        ...gapDays.map((g) => ({ type: 'gap', key: g.key, date: g.date })),
+    ].sort((a, b) => (a.key || '').localeCompare(b.key || '') || (a.type === 'gap' ? 1 : -1));
+
+    const classLabel = { productive: 'Productive', non_productive: 'Non-Productive', idle: 'Idle', not_available: 'Leave/Sick' };
+
+    const rows = (arr, mapFn) => arr.map(mapFn).join('');
+
+    const noteHtml = (reportsForRow) => {
+        if (!reportsForRow.length) return '<span class="muted">—</span>';
+        return reportsForRow.map((r) => {
+            const bits = [];
+            if (String(r.work_completed || '').trim()) bits.push(escapeHtml(r.work_completed));
+            if (r.has_bottleneck) {
+                bits.push(`<span class="inline-flag">${escapeHtml(String(r.bottleneck_category || 'issue').replace(/_/g, ' '))}${r.bottleneck_time_lost_hours ? ` · ${Number(r.bottleneck_time_lost_hours).toFixed(1)}h lost` : ''}${r.bottleneck_description ? ` — ${escapeHtml(r.bottleneck_description)}` : ''}</span>`);
+            }
+            return bits.join('<br/>');
+        }).join('<hr class="note-sep"/>');
+    };
+
+    return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Job Report - ${escapeHtml(j.job_number)}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+    @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8px; color: #94a3b8; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    color: #1e293b; font-size: 11px; margin: 0; line-height: 1.45;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h2 {
+    font-size: 12px; margin: 20px 0 8px; padding: 5px 10px;
+    background: #1e293b; color: #fff; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  h2 .count { font-weight: 400; opacity: 0.7; text-transform: none; letter-spacing: normal; }
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px; margin-bottom: 16px; border-radius: 6px;
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #fff; border-bottom: 4px solid #eab308;
+  }
+  .header h1 { font-size: 17px; margin: 0 0 2px; color: #fff; letter-spacing: 0.03em; }
+  .header .subtitle { color: #fbbf24; font-size: 11px; font-weight: 600; }
+  .header .desc { color: #cbd5e1; font-size: 10px; margin-top: 2px; }
+  .header .meta { text-align: right; font-size: 9px; color: #cbd5e1; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+  .card {
+    border: 1px solid #e2e8f0; border-radius: 6px; padding: 9px 11px;
+    background: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .card .label { font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .card .value { font-size: 16px; font-weight: 700; margin-top: 3px; color: #0f172a; }
+  .card.accent { background: #fffbeb; border-color: #fde68a; }
+  .card.accent .value { color: #b45309; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+  th, td { border: 1px solid #e2e8f0; padding: 5px 7px; text-align: left; font-size: 9.5px; vertical-align: top; }
+  th { background: #f1f5f9; text-transform: uppercase; font-size: 8.5px; letter-spacing: 0.02em; color: #475569; }
+  tbody tr:nth-child(even) { background: #fbfcfe; }
+  .num { text-align: right; white-space: nowrap; }
+  tr { page-break-inside: avoid; }
+  .badge { display: inline-block; padding: 1.5px 7px; border-radius: 10px; font-size: 8.5px; font-weight: 700; white-space: nowrap; }
+  .b-productive { background: #dcfce7; color: #166534; }
+  .b-non_productive { background: #ffedd5; color: #9a3412; }
+  .b-idle { background: #f1f5f9; color: #475569; }
+  .b-not_available { background: #fee2e2; color: #b91c1c; }
+  .inline-flag {
+    display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 3px;
+    background: #fef3c7; color: #92400e; font-size: 9px; font-weight: 600;
+  }
+  .note-sep { border: none; border-top: 1px dashed #e2e8f0; margin: 4px 0; }
+  .muted { color: #cbd5e1; }
+  .gap-row td {
+    background: repeating-linear-gradient(45deg, #fef2f2, #fef2f2 6px, #fee2e2 6px, #fee2e2 12px);
+    color: #b91c1c; font-style: italic; text-align: center; font-weight: 600; font-size: 9.5px;
+    padding: 6px 7px;
+  }
+  .note { border: 1px solid #e2e8f0; border-left: 3px solid #94a3b8; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; }
+  .note.bottleneck { border-left-color: #d97706; background: #fffbeb; }
+  .note .meta { font-size: 9px; color: #64748b; margin-bottom: 3px; }
+  .empty { color: #94a3b8; font-style: italic; padding: 8px 0; }
+  .footer { margin-top: 18px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 8.5px; color: #94a3b8; text-align: center; }
+  @media print {
+    .print-toolbar { display: none; }
+    .header { background: #1e293b !important; }
+  }
+  .print-toolbar { text-align: right; margin-bottom: 10px; }
+  .print-toolbar button { font-family: inherit; font-size: 12px; padding: 7px 16px; border-radius: 4px; border: none; background: #eab308; color: #1e293b; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="print-toolbar"><button onclick="window.print()">🖨 Print / Save as PDF</button></div>
+
+  <div class="header">
+    <div>
+      <div class="subtitle">EPIROC · LABOUR UTILIZATION</div>
+      <h1>Job Completion Report</h1>
+      <div class="desc">${escapeHtml(j.job_number)} — ${escapeHtml(j.description || '')}</div>
+    </div>
+    <div class="meta">
+      Generated ${escapeHtml(new Date().toLocaleString())}<br/>
+      Workshop: ${escapeHtml(j.supervisor_key || '—')}
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Allocated</div><div class="value">${Number(j.allocated_hours ?? 0).toFixed(1)}h</div></div>
+    <div class="card"><div class="label">Total Logged</div><div class="value">${total.toFixed(1)}h</div></div>
+    <div class="card"><div class="label">Started</div><div class="value">${escapeHtml(startLabel)}</div></div>
+    <div class="card"><div class="label">Completed</div><div class="value">${escapeHtml(endLabel)}</div></div>
+  </div>
+
+  <h2>Performance Summary</h2>
+  <div class="grid3">
+    <div class="card"><div class="label">Productivity</div><div class="value">${prodPct.toFixed(1)}%</div></div>
+    <div class="card"><div class="label">Non-Productive</div><div class="value">${npPct.toFixed(1)}%</div></div>
+    <div class="card accent"><div class="label">Hours Lost (Issues)</div><div class="value">${totalHoursLost.toFixed(1)}h</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Productive</th><th>Non-Productive</th><th>Idle</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>${prod.toFixed(1)}h (${prodPct.toFixed(1)}%)</td>
+        <td>${np.toFixed(1)}h (${total > 0 ? (np / total * 100).toFixed(1) : '0.0'}%)</td>
+        <td>${idle.toFixed(1)}h (${total > 0 ? (idle / total * 100).toFixed(1) : '0.0'}%)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  ${techRows.length ? `
+  <h2>Technician Contribution</h2>
+  <table>
+    <thead><tr><th>Technician</th><th class="num">Productive</th><th class="num">Non-Productive</th><th class="num">Idle</th><th class="num">Total</th></tr></thead>
+    <tbody>
+      ${rows(techRows, (t) => `<tr>
+        <td>${escapeHtml(t.technician_name || t.technician_id)}</td>
+        <td class="num">${Number(t.productive_hours ?? 0).toFixed(1)}h</td>
+        <td class="num">${Number(t.non_productive_hours ?? 0).toFixed(1)}h</td>
+        <td class="num">${Number(t.idle_hours ?? 0).toFixed(1)}h</td>
+        <td class="num"><strong>${t.job_hours.toFixed(1)}h</strong></td>
+      </tr>`)}
+    </tbody>
+  </table>` : ''}
+
+  <h2>Bottlenecks &amp; Issues <span class="count">(${bottleneckReports.length})</span></h2>
+  ${bottleneckReports.length === 0
+      ? '<div class="empty">No issues or bottlenecks were reported on this job.</div>'
+      : rows(bottleneckReports, (r) => `<div class="note bottleneck">
+          <div class="meta"><strong>${escapeHtml(r.technician_name || 'Technician')}</strong> — ${r.date ? escapeHtml(new Date(r.date).toLocaleDateString()) : 'No date'} — ${escapeHtml(String(r.bottleneck_category || 'issue').replace(/_/g, ' '))} — ${Number(r.bottleneck_time_lost_hours || 0).toFixed(1)}h lost</div>
+          ${escapeHtml(r.bottleneck_description || 'No description provided.')}
+        </div>`)
+  }
+
+  <h2>Full Time Log <span class="count">(${entries.length} entries${gapDays.length ? `, ${gapDays.length} day${gapDays.length === 1 ? '' : 's'} with no activity` : ''})</span></h2>
+  ${timeline.length === 0
+      ? '<div class="empty">No time entries recorded for this job.</div>'
+      : `<table>
+          <thead><tr><th>Date</th><th>Technician</th><th>Type</th><th>Category / Reason</th><th class="num">Hours</th><th>What Was Done</th></tr></thead>
+          <tbody>
+            ${rows(timeline, (item) => {
+                if (item.type === 'gap') {
+                    return `<tr class="gap-row"><td colspan="6">⚠ No hours logged on ${escapeHtml(item.date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }))} — possible downtime</td></tr>`;
+                }
+                const e = item.entry;
+                const dateStr = e.date ? new Date(e.date).toLocaleDateString() : '—';
+                const catLabel = e.sub_reason ? `${e.category || ''} - ${e.sub_reason}` : (e.category || (e.classification === 'productive' ? 'Job Work' : '—'));
+                return `<tr>
+                    <td>${escapeHtml(dateStr)}</td>
+                    <td>${escapeHtml(e.technician_name || '—')}</td>
+                    <td><span class="badge b-${e.classification || 'idle'}">${escapeHtml(classLabel[e.classification] || e.classification || '—')}</span></td>
+                    <td>${escapeHtml(catLabel)}</td>
+                    <td class="num">${Number(e.hours ?? 0).toFixed(1)}h</td>
+                    <td>${noteHtml(notesFor(e))}</td>
+                </tr>`;
+            })}
+          </tbody>
+        </table>`
+  }
+
+  <div class="footer">EPIROC Labour Utilization — Job ${escapeHtml(j.job_number)} — Printed ${escapeHtml(new Date().toLocaleString())}</div>
+</body>
+</html>`;
+}
+
+function printJobReport(j) {
+    const html = buildJobReportPrintHtml(j);
+    const win = window.open('', '_blank');
+    if (!win) {
+        alert('Please allow pop-ups to print this report.');
+        return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+}
 
 export default function Dashboard() {
     const [techModalOpen, setTechModalOpen] = useState(false);
@@ -1977,6 +2286,16 @@ onClick={() => {
                                             </button>
                                             <span className="font-mono text-slate-700">{selectedJobReport.job_number}</span>
                                             <span className="text-slate-500 font-normal text-base truncate max-w-sm">{selectedJobReport.description}</span>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="ml-auto text-xs h-8 gap-1.5"
+                                                onClick={() => printJobReport(selectedJobReport)}
+                                            >
+                                                <Printer className="w-3.5 h-3.5" />
+                                                Print A4 Report
+                                            </Button>
                                         </>
                                     ) : (
                                         <>Completed Jobs Report {isFetchingCompletedJobsReport && <span className="text-sm font-normal text-slate-400 ml-2">Loading…</span>}</>
@@ -2058,21 +2377,24 @@ onClick={() => {
                                 const j  = selectedJobReport;
                                 const ts = j.time_summary || {};
                                 const prod   = Number(ts.productive_hours    ?? 0);
-                                const train  = Number(ts.training_hours      ?? 0);
                                 const np     = Number(ts.non_productive_hours ?? 0);
                                 const idle   = Number(ts.idle_hours          ?? 0);
-                                const total  = Number(ts.total_hours         ?? 0);
+                                const total  = Number(ts.total_hours         ?? (prod + np + idle));
                                 const prodPct  = total > 0 ? (prod  / total * 100) : 0;
-                                const utilPct  = total > 0 ? ((prod + train) / total * 100) : 0;
-                                const npPct    = total > 0 ? ((np + idle + train) / total * 100) : 0;
+                                const npPct    = total > 0 ? ((np + idle) / total * 100) : 0;
                                 const startLabel = j.first_log_date ? new Date(j.first_log_date).toLocaleDateString() : (j.start_date ? new Date(j.start_date).toLocaleDateString() : '—');
                                 const endLabel   = j.last_log_date  ? new Date(j.last_log_date).toLocaleDateString()  : (j.completed_at ? new Date(j.completed_at).toLocaleDateString() : '—');
-                                const entries = (j.time_entries || []);
+                                // Training is excluded from job reports entirely: technicians can only log
+                                // Training time against the non-job idle bucket (IDLE_JOB_ID), so it never
+                                // carries a real job_number and has no place in a per-job breakdown.
+                                const entries = (j.time_entries || []).filter(e => e.classification !== 'training');
                                 const techRows = (j.hours_by_technician || []).sort((a, b) => (b.productive_hours ?? 0) - (a.productive_hours ?? 0));
-                                const notes = [
-                                    ...(j.job_reports || []).filter(r => r.bottleneck_description || r.notes),
-                                    ...entries.filter(e => e.notes),
-                                ];
+                                // Every daily report filed on this job, not just ones flagged as a
+                                // bottleneck - a plain "what I did today" note (work_completed with no
+                                // bottleneck) used to be silently dropped here.
+                                const notes = (j.job_reports || [])
+                                    .filter(r => String(r.work_completed || '').trim() || r.bottleneck_description)
+                                    .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
                                 const idleReasons = entries
                                     .filter(e => (e.classification === 'idle' || e.classification === 'non_productive') && (e.sub_reason || e.category))
                                     .reduce((acc, e) => {
@@ -2081,8 +2403,8 @@ onClick={() => {
                                         return acc;
                                     }, {});
 
-                                const classLabel  = { productive: 'Productive', training: 'Training', non_productive: 'Non-Productive', idle: 'Idle', not_available: 'Leave/Sick' };
-                                const classBadge  = { productive: 'bg-green-100 text-green-800', training: 'bg-blue-100 text-blue-800', non_productive: 'bg-orange-100 text-orange-800', idle: 'bg-slate-100 text-slate-600', not_available: 'bg-red-100 text-red-700' };
+                                const classLabel  = { productive: 'Productive', non_productive: 'Non-Productive', idle: 'Idle', not_available: 'Leave/Sick' };
+                                const classBadge  = { productive: 'bg-green-100 text-green-800', non_productive: 'bg-orange-100 text-orange-800', idle: 'bg-slate-100 text-slate-600', not_available: 'bg-red-100 text-red-700' };
 
                                 return (
                                     <div className="space-y-5 py-2">
@@ -2102,11 +2424,10 @@ onClick={() => {
                                         </div>
 
                                         {/* ── KPI Summary ── */}
-                                        <div className="grid grid-cols-3 gap-3">
+                                        <div className="grid grid-cols-2 gap-3">
                                             {[
                                                 { label: 'Productivity', pct: prodPct, desc: `${prod.toFixed(1)}h productive / ${total.toFixed(1)}h total`, color: prodPct >= 70 ? 'text-green-700' : 'text-red-600' },
-                                                { label: 'Utilization',  pct: utilPct, desc: `${(prod + train).toFixed(1)}h (prod + training) / ${total.toFixed(1)}h`, color: utilPct >= 70 ? 'text-green-700' : 'text-yellow-600' },
-                                                { label: 'Non-Productive', pct: npPct, desc: `${(np + idle + train).toFixed(1)}h / ${total.toFixed(1)}h`, color: npPct <= 30 ? 'text-green-700' : 'text-red-600' },
+                                                { label: 'Non-Productive', pct: npPct, desc: `${(np + idle).toFixed(1)}h (non-productive + idle) / ${total.toFixed(1)}h`, color: npPct <= 30 ? 'text-green-700' : 'text-red-600' },
                                             ].map(k => (
                                                 <div key={k.label} className="bg-white border border-slate-200 rounded-lg px-4 py-3 text-center">
                                                     <p className="text-xs text-slate-500 mb-1">{k.label}</p>
@@ -2119,10 +2440,9 @@ onClick={() => {
                                         {/* ── Time Distribution ── */}
                                         <div>
                                             <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Time Distribution</p>
-                                            <div className="grid grid-cols-4 gap-2">
+                                            <div className="grid grid-cols-3 gap-2">
                                                 {[
                                                     { label: 'Productive',    hours: prod,  pct: prodPct,                       color: 'bg-green-100 text-green-800' },
-                                                    { label: 'Training',      hours: train, pct: total > 0 ? train/total*100 : 0, color: 'bg-blue-100 text-blue-800' },
                                                     { label: 'Non-Productive',hours: np,    pct: total > 0 ? np/total*100 : 0,    color: 'bg-orange-100 text-orange-800' },
                                                     { label: 'Idle',          hours: idle,  pct: total > 0 ? idle/total*100 : 0,  color: 'bg-slate-100 text-slate-700' },
                                                 ].map(b => (
@@ -2144,7 +2464,6 @@ onClick={() => {
                                                         <TableRow className="bg-slate-50">
                                                             <TableHead>Technician</TableHead>
                                                             <TableHead className="text-right text-green-700">Productive</TableHead>
-                                                            <TableHead className="text-right text-blue-700">Training</TableHead>
                                                             <TableHead className="text-right text-orange-700">Non-Prod</TableHead>
                                                             <TableHead className="text-right text-slate-500">Idle</TableHead>
                                                             <TableHead className="text-right font-semibold">Total</TableHead>
@@ -2155,10 +2474,11 @@ onClick={() => {
                                                             <TableRow key={t.technician_id}>
                                                                 <TableCell className="font-medium">{t.technician_name || t.technician_id}</TableCell>
                                                                 <TableCell className="text-right text-green-700">{Number(t.productive_hours ?? 0).toFixed(1)}h</TableCell>
-                                                                <TableCell className="text-right text-blue-700">{Number(t.training_hours ?? 0).toFixed(1)}h</TableCell>
                                                                 <TableCell className="text-right text-orange-700">{Number(t.non_productive_hours ?? 0).toFixed(1)}h</TableCell>
                                                                 <TableCell className="text-right text-slate-500">{Number(t.idle_hours ?? 0).toFixed(1)}h</TableCell>
-                                                                <TableCell className="text-right font-semibold">{Number(t.total_hours ?? 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="text-right font-semibold">
+                                                                    {(Number(t.productive_hours ?? 0) + Number(t.non_productive_hours ?? 0) + Number(t.idle_hours ?? 0)).toFixed(1)}h
+                                                                </TableCell>
                                                             </TableRow>
                                                         ))}
                                                     </TableBody>
@@ -2210,7 +2530,7 @@ onClick={() => {
                                         {/* ── Issues & Notes ── */}
                                         {(Object.keys(idleReasons).length > 0 || notes.length > 0) && (
                                             <div>
-                                                <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Issues & Notes</p>
+                                                <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Work Notes & Issues (What Was Done, and When)</p>
                                                 <div className="space-y-3">
                                                     {Object.keys(idleReasons).length > 0 && (
                                                         <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">

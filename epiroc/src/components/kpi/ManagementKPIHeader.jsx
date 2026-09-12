@@ -36,6 +36,13 @@ export default function ManagementKPIHeader({
   onEfficiencyClick = null,
   onAvailabilityClick = null,
   onTrainingClick = null,
+  // Callers that already render their own page-level title and period label
+  // (e.g. Workshop Overview's "All Workshops — Combined" heading) can turn
+  // these off to avoid a redundant/duplicate second heading and a bottom
+  // summary bar that just repeats numbers already shown in the cards above.
+  // Defaults preserve the original supervisor-dashboard appearance.
+  showHeading = true,
+  showSummaryBar = true,
 }) {
   const metrics = useMemo(() => ({
     productive:       safeFloat(metricsData?.productive_percent),
@@ -94,22 +101,24 @@ export default function ManagementKPIHeader({
     <div className="space-y-4">
       {noDataBanner}
 
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-slate-800">Dashboard Metrics</h2>
-          {currentUser?.name && (
-            <Badge variant="outline" className="text-xs">
-              {currentUser.name}
-            </Badge>
+      {showHeading && (
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-800">Dashboard Metrics</h2>
+            {currentUser?.name && (
+              <Badge variant="outline" className="text-xs">
+                {currentUser.name}
+              </Badge>
+            )}
+          </div>
+          {selectedDate && (
+            <span className="text-sm text-slate-600 flex items-center gap-1">
+              <Clock className="w-4 h-4" />
+              {selectedDate}
+            </span>
           )}
         </div>
-        {selectedDate && (
-          <span className="text-sm text-slate-600 flex items-center gap-1">
-            <Clock className="w-4 h-4" />
-            {selectedDate}
-          </span>
-        )}
-      </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
         <KPICard
@@ -222,30 +231,32 @@ export default function ManagementKPIHeader({
         </Card>
       )}
 
-      <Card className="bg-slate-50 border-slate-200 mt-4">
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-3 gap-4 text-center text-sm">
-            <div>
-              <p className="text-slate-600">Average Team Utilization</p>
-              <p className="text-lg font-semibold text-slate-800">
-                {metrics.utilization !== null ? `${metrics.utilization.toFixed(1)}%` : 'N/A'}
-              </p>
+      {showSummaryBar && (
+        <Card className="bg-slate-50 border-slate-200 mt-4">
+          <CardContent className="pt-4">
+            <div className="grid grid-cols-3 gap-4 text-center text-sm">
+              <div>
+                <p className="text-slate-600">Average Team Utilization</p>
+                <p className="text-lg font-semibold text-slate-800">
+                  {metrics.utilization !== null ? `${metrics.utilization.toFixed(1)}%` : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-600">Team Efficiency</p>
+                <p className="text-lg font-semibold text-slate-800">
+                  {metrics.efficiency !== null ? `${metrics.efficiency.toFixed(1)}%` : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-600">Risk Status</p>
+                <Badge className={metrics.jobsAtRisk > 0 ? 'bg-red-600' : 'bg-green-600'}>
+                  {metrics.jobsAtRisk > 0 ? `${metrics.jobsAtRisk} at risk` : 'All Clear'}
+                </Badge>
+              </div>
             </div>
-            <div>
-              <p className="text-slate-600">Team Efficiency</p>
-              <p className="text-lg font-semibold text-slate-800">
-                {metrics.efficiency !== null ? `${metrics.efficiency.toFixed(1)}%` : 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-slate-600">Risk Status</p>
-              <Badge className={metrics.jobsAtRisk > 0 ? 'bg-red-600' : 'bg-green-600'}>
-                {metrics.jobsAtRisk > 0 ? `${metrics.jobsAtRisk} at risk` : 'All Clear'}
-              </Badge>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

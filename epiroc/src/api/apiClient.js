@@ -290,7 +290,16 @@ class APIClient {
                 const m = String(month || '').trim();
                 const qs = m ? `?month=${encodeURIComponent(m)}` : '';
                 return this.request(`/overview/workshop${qs}`);
-            }
+            },
+            kpis: ({ start_date, end_date } = {}) => {
+                const q = new URLSearchParams();
+                if (start_date) q.set('start_date', start_date);
+                if (end_date) q.set('end_date', end_date);
+                const qs = q.toString();
+                return this.request(`/overview/kpis${qs ? `?${qs}` : ''}`);
+            },
+            jobs: () => this.request('/overview/jobs'),
+            job: (workshop, jobNumber) => this.request(`/overview/job/${encodeURIComponent(workshop)}/${encodeURIComponent(jobNumber)}`)
         },
         
 
