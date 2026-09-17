@@ -12,17 +12,21 @@ export default function TechnicianModal({ onAdd, isOpen, setIsOpen }) {
         department: ''
     });
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        onAdd({
-            ...formData,
-            name: formData.name.trim(),
-            employee_id: formData.employee_id.trim(),
-            department: formData.department.trim(),
-            status: 'active'
-        });
-        setFormData({ name: '', employee_id: '', department: '' });
-        setIsOpen(false);
+        try {
+            await onAdd({
+                ...formData,
+                name: formData.name.trim(),
+                employee_id: formData.employee_id.trim(),
+                department: formData.department.trim(),
+                status: 'active'
+            });
+            setFormData({ name: '', employee_id: '', department: '' });
+            setIsOpen(false);
+        } catch (error) {
+            // onAdd's mutation already surfaces the error (e.g. via alert); keep the dialog open so the user can retry.
+        }
     };
 
     return (

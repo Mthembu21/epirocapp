@@ -33,9 +33,9 @@ export default function JobList({ jobs, onDelete, onReassign, onAddTechnician, o
         setReassignJob(null);
     };
 
-    const handleAddTechnician = (data) => {
+    const handleAddTechnician = async (data) => {
         if (onAddTechnician) {
-            onAddTechnician(data);
+            await onAddTechnician(data);
         }
         setAddTechJob(null);
     };

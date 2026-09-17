@@ -679,7 +679,8 @@ export default function Dashboard() {
 
     const createTechnicianMutation = useMutation({
         mutationFn: (data) => base44.entities.Technician.create(data),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['technicians'] })
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['technicians'] }),
+        onError: (error) => alert(error?.message || 'Failed to add technician')
     });
 
     const updateTechnicianMutation = useMutation({
@@ -952,7 +953,8 @@ export default function Dashboard() {
             const latestAfter = await base44.entities.Job.getByJobNumber(jobNumber);
             return latestAfter;
         },
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] })
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['jobs'] }),
+        onError: (e) => alert(e?.message || 'Failed to add technician to job')
     });
 
     // Jobs list should show only jobs that are still pending/active (exclude completed)
@@ -1260,8 +1262,8 @@ export default function Dashboard() {
                                 }}
                                 currentSupervisorKey={currentUser?.supervisor_key}
                             />
-                            <TechnicianModal 
-                                onAdd={createTechnicianMutation.mutate}
+                            <TechnicianModal
+                                onAdd={createTechnicianMutation.mutateAsync}
                                 isOpen={techModalOpen}
                                 setIsOpen={setTechModalOpen}
                             />
@@ -2259,7 +2261,7 @@ onClick={() => {
                                 technicians={technicians}
                                 onDelete={deleteJobMutation.mutate}
                                 onReassign={reassignJobMutation.mutate}
-                                onAddTechnician={addTechnicianMutation.mutate}
+                                onAddTechnician={addTechnicianMutation.mutateAsync}
                                 onSelectJob={openJobDetails}
                                 onBlockTechnician={blockTechnicianMutation.mutate}
                                 onUnblockTechnician={unblockTechnicianMutation.mutate}

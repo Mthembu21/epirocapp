@@ -149,9 +149,9 @@ export default function JobAddTechnicianModal({ job, technicians, isOpen, onClos
         });
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!selectedTechnician) return;
-        
+
         // Find technician in either local technicians or global search results
         let tech = (technicians || []).find((t) => t.id === selectedTechnician);
         if (!tech) {
@@ -165,18 +165,21 @@ export default function JobAddTechnicianModal({ job, technicians, isOpen, onClos
                 allocated_hours: Number(v.allocated_hours || 0)
             }));
 
-        onSubmit({
-            jobId: job?.id,
-            jobNumber: job?.job_number,
-            technicianId: selectedTechnician,
-            technicianName: tech?.name || '',
-            allocated_hours: allocatedHours,
-            subtask_allocations: selected,
-            isTemporaryAssignment: tech?.isTemporary || false,
-            temporaryAssignmentId: tech?.temporaryAssignment?.id || null
-        });
-
-        handleClose();
+        try {
+            await onSubmit({
+                jobId: job?.id,
+                jobNumber: job?.job_number,
+                technicianId: selectedTechnician,
+                technicianName: tech?.name || '',
+                allocated_hours: allocatedHours,
+                subtask_allocations: selected,
+                isTemporaryAssignment: tech?.isTemporary || false,
+                temporaryAssignmentId: tech?.temporaryAssignment?.id || null
+            });
+            handleClose();
+        } catch (error) {
+            // The mutation's onError already surfaces this (e.g. via alert); keep the dialog open so the user can retry.
+        }
     };
 
     return (
