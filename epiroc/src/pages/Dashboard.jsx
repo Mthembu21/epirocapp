@@ -567,7 +567,11 @@ export default function Dashboard() {
     const { data: technicians = [] } = useQuery({
         queryKey: ['technicians'],
         queryFn: () => base44.entities.Technician.list(),
-        enabled: isAuthenticated
+        enabled: isAuthenticated,
+        // A technician can be permanently transferred out by another workshop's
+        // supervisor in a separate session - without polling, this dashboard's
+        // cached roster wouldn't know they left until a manual reload.
+        refetchInterval: isAuthenticated ? 10000 : false
     });
 
     // Technicians can log hours on jobs owned by other workshops (temporary

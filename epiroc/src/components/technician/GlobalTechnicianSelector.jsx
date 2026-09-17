@@ -141,9 +141,9 @@ function GlobalTechnicianSelector({
             resetForm();
         } catch (error) {
             console.error('Error creating technician:', error);
-            if (error.message?.includes('already exists')) {
-                alert('Technician already exists. Please search and assign instead.');
-            }
+            alert(error.message?.includes('already exists')
+                ? 'Technician already exists. Please search and assign instead.'
+                : (error.message || 'Failed to create technician'));
         }
     };
 
