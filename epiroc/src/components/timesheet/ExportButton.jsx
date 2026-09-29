@@ -58,59 +58,7 @@ export default function ExportButton({ entries, technicians = [], filename = "ti
 
         const workbook = XLSX.utils.book_new();
 
-        // Sheet 1: All Entries
-        const entriesData = entries.map(entry => ({
-            'Technician': getTechnicianName(entry),
-            'Date': normalizeDateStr(entry.log_date),
-            'Day': getDayStr(entry.log_date),
-            'Job Number': entry.job_id || '',
-            'Start Time': '',
-            'End Time': '',
-            'HR Hours': Number(entry.hours_logged || 0) || 0,
-            'Productive Hours': entry.is_idle ? 0 : (Number(entry.hours_logged || 0) || 0),
-            'Overtime Hours': Number(entry.overtime_hours || 0),
-            'OT Rate': 1.5,
-            'Weighted Overtime': Number(entry.overtime_hours || 0),
-            'Notes': entry.notes || ''
-        }));
-
-        const entriesSheet = XLSX.utils.json_to_sheet(entriesData);
-        XLSX.utils.book_append_sheet(workbook, entriesSheet, 'All Entries');
-
-        // Sheet 2: Summary by Technician
-        const techSummary = {};
-        entries.forEach(entry => {
-            const techName = getTechnicianName(entry);
-            if (!techSummary[techName]) {
-                techSummary[techName] = {
-                    name: techName,
-                    totalEntries: 0,
-                    hrHours: 0,
-                    productiveHours: 0,
-                    overtimeHours: 0,
-                    weightedOvertime: 0
-                };
-            }
-            techSummary[techName].totalEntries++;
-            techSummary[techName].hrHours += Number(entry.hours_logged || 0) || 0;
-            techSummary[techName].productiveHours += entry.is_idle ? 0 : (Number(entry.hours_logged || 0) || 0);
-            techSummary[techName].overtimeHours += Number(entry.overtime_hours || 0);
-            techSummary[techName].weightedOvertime += Number(entry.overtime_hours || 0);
-        });
-
-        const summaryData = Object.values(techSummary).map(tech => ({
-            'Technician': tech.name,
-            'Total Entries': tech.totalEntries,
-            'HR Hours': Math.round(tech.hrHours * 100) / 100,
-            'Productive Hours': Math.round(tech.productiveHours * 100) / 100,
-            'Overtime Hours': Math.round(tech.overtimeHours * 100) / 100,
-            'Weighted Overtime': Math.round(tech.weightedOvertime * 100) / 100
-        }));
-
-        const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-        XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary by Technician');
-
-        // Sheet 3: Non-Productive Hours (Idle, Training, Housekeeping, etc.)
+        // Sheet 1: Non-Productive Hours (Idle, Training, Housekeeping, etc.)
         const nonProductiveEntries = entries
             .filter(isNonProductiveEntry)
             .map(entry => ({
@@ -138,7 +86,7 @@ export default function ExportButton({ entries, technicians = [], filename = "ti
             : XLSX.utils.aoa_to_sheet([['Technician', 'Date', 'Day', 'Non-Productive Type', 'Reason', 'Hours', 'Notes']]);
         XLSX.utils.book_append_sheet(workbook, nonProductiveSheet, 'Non-Productive Hours');
 
-        // Sheet 4: Non-Productive Summary — hours per technician, one column per type
+        // Sheet 2: Non-Productive Summary — hours per technician, one column per type
         const npTypes = [...new Set(['Idle', 'Training', 'Housekeeping', ...nonProductiveEntries.map(e => e.type)])];
         const npByTech = {};
         nonProductiveEntries.forEach(e => {
