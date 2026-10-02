@@ -34,8 +34,33 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell
+  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, LabelList
 } from 'recharts';
+
+// Extra top/side room so the always-visible % labels above points near 100%
+// (and on the first/last day) aren't clipped by the chart edge.
+const DAILY_CHART_MARGIN = { top: 24, right: 16, left: 12, bottom: 0 };
+
+// Always-visible percentage label drawn above each point on the daily line charts.
+// The white outline (paintOrder stroke) keeps it readable over grid lines and the line.
+const renderPercentLabel = ({ x, y, value }) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+    return (
+        <text
+            x={x}
+            y={y - 10}
+            textAnchor="middle"
+            fontSize={11}
+            fontWeight={600}
+            fill="#334155"
+            stroke="#ffffff"
+            strokeWidth={3}
+            paintOrder="stroke"
+        >
+            {`${Math.round(Number(value))}%`}
+        </text>
+    );
+};
 
 // Hours are now calculated per entry, not constants
 
@@ -813,27 +838,13 @@ export default function Dashboard() {
     });
 
     const reopenJobMutation = useMutation({
-        mutationFn: async (jobNumber) => {
-            const response = await fetch(`/api/jobs/by-job/${jobNumber}/reopen`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    technician_id: currentUser?.id,
-                    reason: 'Job mistakenly marked as completed - has remaining hours'
-                })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error?.error || 'Failed to reopen job');
-            }
-            
-            return response.json();
-        },
+        mutationFn: (jobNumber) => base44.entities.Job.reopenByJobNumber(jobNumber, {
+            technician_id: currentUser?.id,
+            reason: 'Job mistakenly marked as completed - has remaining hours'
+        }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['completedJobsReport'] });
             alert('Job reopened successfully! You can now add more hours.');
         },
         onError: (e) => {
@@ -2596,12 +2607,14 @@ onClick={() => {
                                         
                                         return dailyData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height={250}>
-                                                <LineChart data={dailyData}>
+                                                <LineChart data={dailyData} margin={DAILY_CHART_MARGIN}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                                     <XAxis dataKey="date" />
                                                     <YAxis domain={[0, 100]} />
                                                     <Tooltip labelFormatter={(l, p) => p?.[0]?.payload?.fullDate || l} />
-                                                    <Line type="monotone" dataKey="dailyProductivePercentage" stroke="#facc15" strokeWidth={3} dot={{ fill: '#facc15' }} />
+                                                    <Line type="monotone" dataKey="dailyProductivePercentage" stroke="#facc15" strokeWidth={3} dot={{ fill: '#facc15' }}>
+                                                        <LabelList dataKey="dailyProductivePercentage" content={renderPercentLabel} />
+                                                    </Line>
                                                 </LineChart>
                                             </ResponsiveContainer>
                                         ) : (
@@ -2632,12 +2645,14 @@ onClick={() => {
                                         
                                         return dailyData.length > 0 ? (
                                             <ResponsiveContainer width="100%" height={250}>
-                                                <LineChart data={dailyData}>
+                                                <LineChart data={dailyData} margin={DAILY_CHART_MARGIN}>
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                                     <XAxis dataKey="date" />
                                                     <YAxis domain={[0, 100]} />
                                                     <Tooltip labelFormatter={(l, p) => p?.[0]?.payload?.fullDate || l} />
-                                                    <Line type="monotone" dataKey="dailyUtilizationPercentage" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6' }} />
+                                                    <Line type="monotone" dataKey="dailyUtilizationPercentage" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6' }}>
+                                                        <LabelList dataKey="dailyUtilizationPercentage" content={renderPercentLabel} />
+                                                    </Line>
                                                 </LineChart>
                                             </ResponsiveContainer>
                                         ) : (

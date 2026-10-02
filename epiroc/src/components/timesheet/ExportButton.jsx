@@ -66,9 +66,14 @@ export default function ExportButton({ entries, technicians = [], filename = "ti
                 date: normalizeDateStr(entry.log_date),
                 day: getDayStr(entry.log_date),
                 type: getNonProductiveType(entry),
-                reason: entry.category_detail || '',
+                // For 'Idle', category_detail holds the sub-reason and category_note the
+                // technician's explanation; every other category (e.g. Training) stores
+                // the technician's free-text note in category_detail instead.
+                reason: entry.category === 'Idle' ? (entry.category_detail || '') : '',
                 hours: Number(entry.hours_logged || 0) || 0,
-                notes: entry.category_note || entry.notes || ''
+                notes: (entry.category === 'Idle'
+                    ? entry.category_note
+                    : (entry.category_detail || entry.category_note)) || entry.notes || ''
             }))
             .sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date));
 
