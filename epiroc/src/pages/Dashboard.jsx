@@ -3231,18 +3231,10 @@ onClick={() => {
                                                     status: selectedJobDetails?.status || 'in_progress',
                                                     hours_change_reason: ''
                                                 });
-                                                // Pre-populate per-technician stage allocations so Save works immediately
-                                                const initDraft = {};
-                                                for (const st of (selectedJobDetails?.subtasks || [])) {
-                                                    const stId = String(st?._id || st?.id || '');
-                                                    for (const a of (st?.assigned_technicians || [])) {
-                                                        const techId = String(a?.technician_id || '');
-                                                        if (stId && techId) {
-                                                            initDraft[`${stId}:${techId}`] = String(a?.allocated_hours ?? 0);
-                                                        }
-                                                    }
-                                                }
-                                                setTechStageAllocDraft(initDraft);
+                                                // Per-technician stage inputs are +/- deltas (added to the current
+                                                // allocation on Save), so they must start empty — pre-filling them
+                                                // with the current allocation made Save add that whole amount again.
+                                                setTechStageAllocDraft({});
                                             }}
                                         >
                                             Edit Job
