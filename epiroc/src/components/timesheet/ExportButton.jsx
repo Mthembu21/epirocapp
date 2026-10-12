@@ -25,9 +25,24 @@ const getNonProductiveType = (entry) => {
     return entry.category || 'Idle';
 };
 
-export default function ExportButton({ entries, technicians = [], filename = "timesheet_export" }) {
-    const exportToExcel = () => {
+export default function ExportButton({ entries: entriesProp, technicians = [], filename = "timesheet_export", loadEntries }) {
+    const [isExporting, setIsExporting] = React.useState(false);
+
+    const exportToExcel = async () => {
+        let entries = entriesProp || [];
+        if (loadEntries) {
+            setIsExporting(true);
+            try {
+                entries = await loadEntries();
+            } catch (e) {
+                alert(`Could not load all time entries for this period: ${e?.message || 'Unknown error'}`);
+                return;
+            } finally {
+                setIsExporting(false);
+            }
+        }
         if (!entries || entries.length === 0) {
+            alert('No time entries in this period to export.');
             return;
         }
 
@@ -120,10 +135,10 @@ export default function ExportButton({ entries, technicians = [], filename = "ti
             onClick={exportToExcel}
             variant="outline"
             className="border-yellow-400 text-yellow-700 hover:bg-yellow-50 h-10 px-4"
-            disabled={!entries || entries.length === 0}
+            disabled={isExporting || ((!entriesProp || entriesProp.length === 0) && !loadEntries)}
         >
             <Download className="w-4 h-4 mr-2" />
-            Export Excel
+            {isExporting ? 'Exporting...' : 'Export Excel'}
         </Button>
     );
 }

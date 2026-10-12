@@ -215,6 +215,11 @@ class APIClient {
 
         DailyTimeEntry: {
             list: () => this.request('/time-entries'),
+            // Every entry in a date range (yyyy-MM-dd, inclusive), not just the latest 500.
+            listRange: ({ start_date, end_date }) => {
+                const q = new URLSearchParams({ start_date, end_date, limit: '5000' });
+                return this.request(`/time-entries?${q.toString()}`);
+            },
             filter: (filter) => {
                 if (filter.technician_id) {
                     return this.request(`/time-entries/technician/${filter.technician_id}`);
@@ -222,6 +227,8 @@ class APIClient {
                 return this.request('/time-entries');
             },
             idleCategories: () => this.request('/time-entries/idle-categories'),
+            missedDays: (technicianId, days = 30) =>
+                this.request(`/time-entries/technician/${encodeURIComponent(technicianId)}/missed-days?days=${days}`),
             approvals: {
                 pending: (params = {}) => {
                     const q = new URLSearchParams();

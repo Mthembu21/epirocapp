@@ -258,6 +258,16 @@ export default function TechnicianPortal() {
         refetchInterval: 30000
     });
 
+    // Working days in the last 30 with nothing booked. Keyed on the entry count so it
+    // refreshes as soon as the technician books one of the missed days.
+    const { data: missedDaysInfo } = useQuery({
+        queryKey: ['missedDays', getTechnicianId(), myEntries.length],
+        queryFn: () => base44.entities.DailyTimeEntry.missedDays(getTechnicianId(), 30),
+        enabled: !!getTechnicianId(),
+        staleTime: 60000
+    });
+    const missedDays = Array.isArray(missedDaysInfo?.missed_days) ? missedDaysInfo.missed_days : [];
+
     const { data: idleInfo } = useQuery({
 
         queryKey: ['idleCategories'],
@@ -955,6 +965,36 @@ export default function TechnicianPortal() {
 
 
 
+
+                {missedDays.length > 0 && (
+                    <Card className="border-0 shadow-lg bg-red-50 border-l-4 border-l-red-500 mb-6">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="flex items-center gap-2 text-red-700 text-lg">
+                                <AlertTriangle className="w-5 h-5" />
+                                You have {missedDays.length} working day{missedDays.length !== 1 ? 's' : ''} with no hours booked
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-red-700 mb-3">
+                                Please book your hours (job, idle, training or leave) for these days. Tap a date to open it in Log Hours.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                {missedDays.map((d) => (
+                                    <Button
+                                        key={d.date}
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 border-red-300 text-red-700 bg-white hover:bg-red-100"
+                                        onClick={() => setFormData((prev) => ({ ...prev, date: d.date, end_date: '' }))}
+                                    >
+                                        {format(parseISO(d.date), 'EEE dd MMM')}
+                                    </Button>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
                 {pendingJobs.length > 0 && (
                     <Card className="border-0 shadow-lg bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-l-green-500 mb-6">

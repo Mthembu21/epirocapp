@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Users, Clock, Trash2, Edit2, Save, X, CheckCircle, AlertTriangle, Plus, Wrench, LogOut, Briefcase, TrendingUp, Pencil, Award, ClipboardList, Printer } from 'lucide-react';
 import { createPageUrl } from '@/utils';
-import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, isWithinInterval, addDays } from 'date-fns';
 
 import StatsCard from '../components/timesheet/StatsCard';
 import ExportButton from '../components/timesheet/ExportButton';
@@ -22,6 +22,7 @@ import TechnicianActivityLog from '@/components/dashboard/TechnicianActivityLog'
 import OperationalMetricsFetcher from '@/components/dashboard/OperationalMetricsFetcher';
 import PerformanceCharts from '../components/dashboard/PerformanceCharts';
 import HRExportButton from '../components/dashboard/HRExportButton';
+import WeeklyExecutiveReport from '../components/dashboard/WeeklyExecutiveReport';
 import MonthlyArchiveManager from '../components/dashboard/MonthlyArchiveManager';
 import ManagementKPIHeader from '@/components/kpi/ManagementKPIHeader.jsx';
 import DateRangeFilter from '@/components/filters/DateRangeFilter.jsx';
@@ -32,6 +33,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, LabelList
@@ -390,6 +392,8 @@ export default function Dashboard() {
     const [techStageAllocDraft, setTechStageAllocDraft] = useState({});
     const [techStageReasonDraft, setTechStageReasonDraft] = useState({});
     const [approvalHoursDraft, setApprovalHoursDraft] = useState({});
+    const [selectedApprovalIds, setSelectedApprovalIds] = useState(() => new Set());
+    const [bulkApprovalProgress, setBulkApprovalProgress] = useState(null); // { done, total } while running
     const [completedDialogOpen, setCompletedDialogOpen] = useState(false);
     const [completedJobsReportOpen, setCompletedJobsReportOpen] = useState(false);
     const [selectedJobReport, setSelectedJobReport] = useState(null);
@@ -810,6 +814,45 @@ export default function Dashboard() {
         }
     });
 
+    // Approves each selected entry with the hours shown in its row. Runs one at a time,
+    // not in parallel: every approval re-saves the job document's consumed hours and
+    // stage progress, so concurrent approvals on the same job would overwrite each other.
+    const approveSelectedTimeLogs = async () => {
+        const toApprove = (Array.isArray(pendingApprovals) ? pendingApprovals : [])
+            .filter((log) => selectedApprovalIds.has(log.id));
+        if (!toApprove.length) return;
+        const totalHours = toApprove.reduce((sum, log) => {
+            const val = Number(approvalHoursDraft[log.id] ?? log?.hours_logged ?? 0);
+            return sum + (Number.isNaN(val) ? 0 : val);
+        }, 0);
+        if (!window.confirm(`Approve ${toApprove.length} time entr${toApprove.length === 1 ? 'y' : 'ies'} (${totalHours.toFixed(1)}h total)?`)) return;
+
+        const failures = [];
+        setBulkApprovalProgress({ done: 0, total: toApprove.length });
+        for (let i = 0; i < toApprove.length; i++) {
+            const log = toApprove[i];
+            const val = Number(approvalHoursDraft[log.id] ?? log?.hours_logged ?? 0);
+            try {
+                await base44.entities.DailyTimeEntry.approvals.approve(log.id, { approved_hours: Number.isNaN(val) ? 0 : val });
+            } catch (e) {
+                const who = log?.technician_id?.name || log?.technician_name || '';
+                const when = log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : '';
+                failures.push(`${who} ${when} ${log?.job_id || ''}: ${e?.message || 'Unknown error'}`.trim());
+            }
+            setBulkApprovalProgress({ done: i + 1, total: toApprove.length });
+        }
+        setBulkApprovalProgress(null);
+        setSelectedApprovalIds(new Set());
+        queryClient.invalidateQueries({ queryKey: ['pendingApprovals'] });
+        queryClient.invalidateQueries({ queryKey: ['jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['timeLogs'] });
+        setKpiRefreshKey(k => k + 1);
+
+        if (failures.length) {
+            alert(`Approved ${toApprove.length - failures.length} of ${toApprove.length}. These failed:\n\n${failures.join('\n')}`);
+        }
+    };
+
     const recoverTechnicalComplexityMutation = useMutation({
         mutationFn: async (jobNumber) => base44.entities.Job.recoverTechnicalComplexity(jobNumber),
         onSuccess: (updatedJob) => {
@@ -1029,7 +1072,7 @@ export default function Dashboard() {
     const weekEndStr   = format(weekEnd,   'yyyy-MM-dd');
     const lastWeekStartStr = format(lastWeekStart, 'yyyy-MM-dd');
     const lastWeekEndStr   = format(lastWeekEnd,   'yyyy-MM-dd');
-    const timeLogsForMonth = (timeLogs || []).filter((e) => {
+    const isLogInSelectedPeriod = (e) => {
         if (!e?.log_date) return false;
         const logLocalDate = format(new Date(e.log_date), 'yyyy-MM-dd');
         if (selectedView === 'daily') {
@@ -1043,7 +1086,22 @@ export default function Dashboard() {
         }
         const d = parseISO(e.log_date);
         return isWithinInterval(d, { start: monthStart, end: monthEnd });
-    });
+    };
+    const timeLogsForMonth = (timeLogs || []).filter(isLogInSelectedPeriod);
+
+    // timeLogs only holds the latest 500 entries workshop-wide, so an export of an
+    // earlier month came out incomplete. Exports fetch the selected period in full
+    // instead (padded a day each side for the server's UTC day boundaries, then
+    // trimmed with the same local-date rule the dashboard uses).
+    const loadTimeLogsForPeriod = async () => {
+        const [start, end] = selectedView === 'daily' ? [todayDateStr, todayDateStr]
+            : selectedView === 'weekly' ? [weekStartStr, weekEndStr]
+            : selectedView === 'last_week' ? [lastWeekStartStr, lastWeekEndStr]
+            : [format(monthStart, 'yyyy-MM-dd'), format(monthEnd, 'yyyy-MM-dd')];
+        const pad = (s, days) => format(addDays(parseISO(s), days), 'yyyy-MM-dd');
+        const logs = await base44.entities.DailyTimeEntry.listRange({ start_date: pad(start, -1), end_date: pad(end, 1) });
+        return (Array.isArray(logs) ? logs : []).filter(isLogInSelectedPeriod);
+    };
 
     const totalHours = timeLogsForMonth.reduce((sum, e) => sum + (e.hours_logged || 0), 0);
     const totalOvertimeHours = timeLogsForMonth.reduce((sum, e) => sum + (e.overtime_hours || 0), 0);
@@ -1256,8 +1314,9 @@ export default function Dashboard() {
                                 </Button>
                             ))}
 
-                            <HRExportButton timeEntries={timeLogsForMonth} technicians={technicians} />
-                            <ExportButton entries={timeLogsForMonth} technicians={technicians} filename="epiroc_timesheet" />
+                            <HRExportButton timeEntries={timeLogsForMonth} technicians={technicians} loadEntries={loadTimeLogsForPeriod} />
+                            <ExportButton entries={timeLogsForMonth} technicians={technicians} filename="epiroc_timesheet" loadEntries={loadTimeLogsForPeriod} />
+                            <WeeklyExecutiveReport supervisorKey={supervisorKey} technicians={technicians} />
                             <JobAllocationModal 
                                 technicians={technicians}
                                 existingJobs={jobs}
@@ -2926,13 +2985,45 @@ onClick={() => {
                         <TabsContent value="approvals" className="space-y-6">
                             <Card className="border-0 shadow-lg bg-white/95">
                                 <CardHeader className="pb-4 border-b border-slate-100">
-                                    <CardTitle className="text-slate-800">Pending Approvals ({pendingApprovals.length})</CardTitle>
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <CardTitle className="text-slate-800">Pending Approvals ({pendingApprovals.length})</CardTitle>
+                                        {(() => {
+                                            const selectedCount = (Array.isArray(pendingApprovals) ? pendingApprovals : [])
+                                                .filter((log) => selectedApprovalIds.has(log.id)).length;
+                                            return (
+                                                <Button
+                                                    className="h-9 bg-green-600 hover:bg-green-700 text-white"
+                                                    disabled={!selectedCount || !!bulkApprovalProgress || approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
+                                                    onClick={approveSelectedTimeLogs}
+                                                >
+                                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                                    {bulkApprovalProgress
+                                                        ? `Approving ${bulkApprovalProgress.done}/${bulkApprovalProgress.total}...`
+                                                        : `Approve selected (${selectedCount})`}
+                                                </Button>
+                                            );
+                                        })()}
+                                    </div>
                                 </CardHeader>
                                 <CardContent className="p-0">
                                     <div className="overflow-x-auto">
                                         <Table>
                                             <TableHeader>
                                                 <TableRow className="bg-slate-50">
+                                                    <TableHead className="w-10">
+                                                        {(() => {
+                                                            const ids = (Array.isArray(pendingApprovals) ? pendingApprovals : []).map((log) => log.id);
+                                                            const allSelected = ids.length > 0 && ids.every((id) => selectedApprovalIds.has(id));
+                                                            return (
+                                                                <Checkbox
+                                                                    aria-label="Select all pending entries"
+                                                                    checked={allSelected}
+                                                                    disabled={!ids.length || !!bulkApprovalProgress}
+                                                                    onCheckedChange={(checked) => setSelectedApprovalIds(checked ? new Set(ids) : new Set())}
+                                                                />
+                                                            );
+                                                        })()}
+                                                    </TableHead>
                                                     <TableHead>Date</TableHead>
                                                     <TableHead>Technician</TableHead>
                                                     <TableHead>Type</TableHead>
@@ -2947,19 +3038,19 @@ onClick={() => {
                                                 {console.log('Pending approvals data:', pendingApprovals, 'Type:', typeof pendingApprovals, 'IsArray:', Array.isArray(pendingApprovals))}
                                                 {approvalError?.response?.status === 401 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={6} className="text-center text-slate-500">
+                                                        <TableCell colSpan={9} className="text-center text-slate-500">
                                                             Session expired. Please log in again.
                                                         </TableCell>
                                                     </TableRow>
                                                 ) : !Array.isArray(pendingApprovals) ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={6} className="text-center text-slate-500">
+                                                        <TableCell colSpan={9} className="text-center text-slate-500">
                                                             Error loading pending approvals
                                                         </TableCell>
                                                     </TableRow>
                                                 ) : pendingApprovals.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={6} className="text-center text-slate-500">
+                                                        <TableCell colSpan={9} className="text-center text-slate-500">
                                                             No pending approvals
                                                         </TableCell>
                                                     </TableRow>
@@ -2969,10 +3060,22 @@ onClick={() => {
                                                     const isIdle = !!log?.is_idle;
                                                     const typeLabel = isIdle ? (log?.category || 'Idle') : 'Job';
                                                     return (
-                                                        <TableRow key={log.id}>
+                                                        <TableRow key={log.id} className={selectedApprovalIds.has(log.id) ? 'bg-green-50/60' : undefined}>
+                                                            <TableCell>
+                                                                <Checkbox
+                                                                    aria-label="Select entry"
+                                                                    checked={selectedApprovalIds.has(log.id)}
+                                                                    disabled={!!bulkApprovalProgress}
+                                                                    onCheckedChange={(checked) => setSelectedApprovalIds((prev) => {
+                                                                        const next = new Set(prev);
+                                                                        if (checked) next.add(log.id); else next.delete(log.id);
+                                                                        return next;
+                                                                    })}
+                                                                />
+                                                            </TableCell>
                                                             <TableCell>{log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : ''}</TableCell>
                                                             <TableCell>
-                                                            {log?.technician_id?.name || 
+                                                            {log?.technician_id?.name ||
                                                              log?.technician_name || 
                                                              (typeof log?.technician_id === 'string' ? log.technician_id : 
                                                               typeof log?.technician_id === 'object' ? log.technician_id?._id || log.technician_id?.id || 'Unknown' :
@@ -2997,7 +3100,7 @@ onClick={() => {
                                                                     <Button
                                                                         variant="outline"
                                                                         className="h-8"
-                                                                        disabled={approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
+                                                                        disabled={!!bulkApprovalProgress || approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
                                                                         onClick={() => {
                                                                             const val = Number(approvalHoursDraft[log.id] ?? submitted);
                                                                             approveTimeLogMutation.mutate({ id: log.id, approved_hours: Number.isNaN(val) ? 0 : val });
@@ -3008,7 +3111,7 @@ onClick={() => {
                                                                     <Button
                                                                         variant="outline"
                                                                         className="h-8 text-red-600 border-red-200 hover:bg-red-50"
-                                                                        disabled={approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
+                                                                        disabled={!!bulkApprovalProgress || approveTimeLogMutation.isPending || declineTimeLogMutation.isPending}
                                                                         onClick={() => {
                                                                             if (!window.confirm('Decline this time entry?')) return;
                                                                             declineTimeLogMutation.mutate({ id: log.id });
