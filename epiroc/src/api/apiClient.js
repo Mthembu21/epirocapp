@@ -215,6 +215,8 @@ class APIClient {
 
         DailyTimeEntry: {
             list: () => this.request('/time-entries'),
+            // Every entry booked against one job (any date), for the job details view.
+            listForJob: (jobNumber) => this.request(`/time-entries?job_id=${encodeURIComponent(jobNumber)}&limit=5000`),
             // Every entry in a date range (yyyy-MM-dd, inclusive), not just the latest 500.
             listRange: ({ start_date, end_date }) => {
                 const q = new URLSearchParams({ start_date, end_date, limit: '5000' });
@@ -278,6 +280,7 @@ class APIClient {
 
         JobReport: {
             list: () => this.request('/job-reports'),
+            listForJob: (jobNumber) => this.request(`/job-reports?job_id=${encodeURIComponent(jobNumber)}`),
             create: (data) => this.request('/job-reports', {
                 method: 'POST',
                 body: JSON.stringify(data)

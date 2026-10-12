@@ -16,6 +16,10 @@ function escapeHtml(value) {
         .replace(/"/g, '&quot;');
 }
 
+// Non-productive in the same sense as the non-productive Excel export: training,
+// idle (incl. housekeeping) and other non-productive time such as admin.
+const nonProductiveTotal = (t) => Number(t?.training_hours || 0) + Number(t?.idle_hours || 0) + Number(t?.non_productive_hours || 0);
+
 const h = (n) => `${Number(n || 0).toFixed(1)}h`;
 const pct = (n) => (n === null || n === undefined || Number.isNaN(Number(n)) ? '—' : `${Number(n).toFixed(1)}%`);
 const dayLabel = (d) => {
@@ -118,6 +122,8 @@ function buildReportHtml({ week, workshop, kpiData, technicians, completedJobs }
   tbody tr:nth-child(even) { background: #fbfcfe; }
   tr { page-break-inside: avoid; }
   .num { text-align: right; white-space: nowrap; }
+  th.center { text-align: center; }
+  .np-total { font-weight: 700; background: #fff7ed; }
   tfoot td { font-weight: 700; background: #f1f5f9; }
   .low { color: #b91c1c; font-weight: 700; }
   .good { color: #166534; font-weight: 700; }
@@ -154,7 +160,7 @@ function buildReportHtml({ week, workshop, kpiData, technicians, completedJobs }
   <div class="grid">
     <div class="card"><div class="label">Productive Hours</div><div class="value">${h(totals.productive_hours)}</div><div class="sub">of ${h(totals.scheduled_hours)} scheduled</div></div>
     <div class="card"><div class="label">Training</div><div class="value">${h(totals.training_hours)}</div><div class="sub">${pct(kpis.training_percent)}</div></div>
-    <div class="card"><div class="label">Idle + Non-Productive</div><div class="value">${h(Number(totals.idle_hours || 0) + Number(totals.non_productive_hours || 0))}</div><div class="sub">idle ${pct(kpis.idle_percent)}</div></div>
+    <div class="card"><div class="label">Non-Productive</div><div class="value">${h(nonProductiveTotal(totals))}</div><div class="sub">training, idle, housekeeping, admin</div></div>
     <div class="card"><div class="label">Overtime</div><div class="value">${h(kpiData?.overtime_hours)}</div></div>
   </div>
 
@@ -197,8 +203,12 @@ function buildReportHtml({ week, workshop, kpiData, technicians, completedJobs }
   ${techs.length ? `
   <table>
     <thead><tr>
-      <th>Technician</th><th class="num">Scheduled</th><th class="num">Productive</th><th class="num">Training</th>
-      <th class="num">Idle / NP</th><th class="num">Leave / Sick</th><th class="num">Utilization</th><th class="num">Productivity</th>
+      <th rowspan="2">Technician</th><th rowspan="2" class="num">Scheduled</th><th rowspan="2" class="num">Productive</th>
+      <th colspan="4" class="center">Non-Productive</th>
+      <th rowspan="2" class="num">Overtime</th><th rowspan="2" class="num">Leave / Sick</th>
+      <th rowspan="2" class="num">Utilization</th><th rowspan="2" class="num">Productivity</th>
+    </tr><tr>
+      <th class="num">Total</th><th class="num">Training</th><th class="num">Idle</th><th class="num">Other</th>
     </tr></thead>
     <tbody>${rows(techs, (t) => {
         const util = Number(t.utilization_percent);
@@ -206,8 +216,11 @@ function buildReportHtml({ week, workshop, kpiData, technicians, completedJobs }
         <td>${escapeHtml(t.name)}</td>
         <td class="num">${h(t.scheduled_hours)}</td>
         <td class="num">${h(t.productive_hours)}</td>
+        <td class="num np-total">${h(nonProductiveTotal(t))}</td>
         <td class="num">${h(t.training_hours)}</td>
-        <td class="num">${h(Number(t.idle_hours || 0) + Number(t.non_productive_hours || 0))}</td>
+        <td class="num">${h(t.idle_hours)}</td>
+        <td class="num">${h(t.non_productive_hours)}</td>
+        <td class="num">${Number(t.overtime_hours || 0) > 0 ? `<strong>${h(t.overtime_hours)}</strong>` : h(0)}</td>
         <td class="num">${h(t.not_available_hours)}</td>
         <td class="num ${util < 50 ? 'low' : util >= 85 ? 'good' : ''}">${pct(t.utilization_percent)}</td>
         <td class="num">${pct(t.productivity_percent)}</td>
@@ -215,8 +228,10 @@ function buildReportHtml({ week, workshop, kpiData, technicians, completedJobs }
     })}</tbody>
     <tfoot><tr>
       <td>Total</td><td class="num">${h(totals.scheduled_hours)}</td><td class="num">${h(totals.productive_hours)}</td>
-      <td class="num">${h(totals.training_hours)}</td><td class="num">${h(Number(totals.idle_hours || 0) + Number(totals.non_productive_hours || 0))}</td>
-      <td class="num">${h(totals.not_available_hours)}</td><td class="num">${pct(kpis.utilization_percent)}</td><td class="num">${pct(kpis.productivity_percent)}</td>
+      <td class="num">${h(nonProductiveTotal(totals))}</td><td class="num">${h(totals.training_hours)}</td>
+      <td class="num">${h(totals.idle_hours)}</td><td class="num">${h(totals.non_productive_hours)}</td>
+      <td class="num">${h(kpiData?.overtime_hours)}</td><td class="num">${h(totals.not_available_hours)}</td>
+      <td class="num">${pct(kpis.utilization_percent)}</td><td class="num">${pct(kpis.productivity_percent)}</td>
     </tr></tfoot>
   </table>` : '<div class="empty">No technician data for this week.</div>'}
 
@@ -253,7 +268,7 @@ function buildReportHtml({ week, workshop, kpiData, technicians, completedJobs }
     <strong>Productivity</strong>: productive hours ÷ available productive hours.
     <strong>Availability</strong>: available hours ÷ scheduled hours.
     <strong>Efficiency</strong>: productive hours ÷ all hours booked.
-    <strong>Productive</strong>: hours booked on jobs and site work. <strong>Idle / NP</strong>: idle, housekeeping, admin, waiting for parts.
+    <strong>Productive</strong>: hours booked on jobs and site work. <strong>Non-Productive</strong>: training + idle (incl. housekeeping) + other (admin, waiting for parts). <strong>Overtime</strong>: overtime hours on entries that were not declined.
   </div>
   <div class="footer">EPIROC Labour Utilization — ${escapeHtml(workshop)} — Week of ${escapeHtml(weekTitle)}</div>
 </body>

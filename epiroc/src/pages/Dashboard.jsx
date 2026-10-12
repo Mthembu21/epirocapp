@@ -1232,17 +1232,60 @@ export default function Dashboard() {
         })
         : [];
 
-    const selectedJobWorkLogs = selectedJobDetails
-        ? (timeLogs || []).filter((l) => !l?.is_idle && String(l?.job_id) === String(selectedJobDetails?.job_number))
+    // The job dialog loads this job's own entries and reports. The workshop-wide
+    // timeLogs/jobReports lists only hold the latest 500/200, so older or long-running
+    // jobs were missing entries and notes. Keys sit under ['timeLogs'] / ['jobReports']
+    // so the existing invalidations after edits/approvals refresh these too.
+    const selectedJobNumber = selectedJobDetails?.job_number ? String(selectedJobDetails.job_number) : '';
+    const { data: selectedJobLogsData } = useQuery({
+        queryKey: ['timeLogs', 'job', selectedJobNumber],
+        queryFn: () => base44.entities.DailyTimeEntry.listForJob(selectedJobNumber),
+        enabled: isAuthenticated && !!selectedJobNumber
+    });
+    const { data: selectedJobReportsData } = useQuery({
+        queryKey: ['jobReports', 'job', selectedJobNumber],
+        queryFn: () => base44.entities.JobReport.listForJob(selectedJobNumber),
+        enabled: isAuthenticated && !!selectedJobNumber
+    });
+
+    const selectedJobWorkLogs = selectedJobNumber
+        ? (Array.isArray(selectedJobLogsData) ? selectedJobLogsData : (timeLogs || []))
+            .filter((l) => !l?.is_idle && String(l?.job_id) === selectedJobNumber)
+            .slice()
+            .sort((a, b) => String(b.log_date || '').localeCompare(String(a.log_date || '')))
         : [];
 
-    const selectedJobReportEntries = selectedJobDetails
-        ? (jobReports || []).filter((r) => {
-            const rid = String(r?.job_id || '');
-            const jobNumber = String(selectedJobDetails?.job_number || '');
-            return rid && jobNumber && rid === jobNumber;
-        })
+    const selectedJobReportEntries = selectedJobNumber
+        ? (Array.isArray(selectedJobReportsData) ? selectedJobReportsData : (jobReports || []))
+            .filter((r) => String(r?.job_id || '') === selectedJobNumber)
         : [];
+
+    // Each report belongs to the time entry it was filed with (daily_time_entry_id).
+    // Reports whose entry was since deleted fall back to the same technician + day.
+    // Anything still unmatched is listed separately so no note is ever hidden.
+    const { reportsByLogId: selectedJobReportsByLogId, unmatchedReports: selectedJobUnmatchedReports } = (() => {
+        const byLogId = new Map();
+        const unmatched = [];
+        const logIds = new Set(selectedJobWorkLogs.map((l) => String(l.id || l._id)));
+        const firstLogForTechDay = new Map();
+        for (const l of selectedJobWorkLogs) {
+            const key = `${String(l.technician_id?._id || l.technician_id || '')}|${dayKey(l.log_date)}`;
+            if (!firstLogForTechDay.has(key)) firstLogForTechDay.set(key, String(l.id || l._id));
+        }
+        for (const r of selectedJobReportEntries) {
+            const linked = r?.daily_time_entry_id ? String(r.daily_time_entry_id) : '';
+            const logId = (linked && logIds.has(linked))
+                ? linked
+                : firstLogForTechDay.get(`${String(r?.technician_id || '')}|${dayKey(r?.date)}`);
+            if (logId) {
+                if (!byLogId.has(logId)) byLogId.set(logId, []);
+                byLogId.get(logId).push(r);
+            } else {
+                unmatched.push(r);
+            }
+        }
+        return { reportsByLogId: byLogId, unmatchedReports: unmatched };
+    })();
 
     const getSubtaskTitle = (subtaskId) => {
         if (!selectedJobDetails || !subtaskId) return '';
@@ -3081,7 +3124,21 @@ onClick={() => {
                                                               typeof log?.technician_id === 'object' ? log.technician_id?._id || log.technician_id?.id || 'Unknown' :
                                                               'Unknown')}
                                                         </TableCell>
-                                                            <TableCell>{typeLabel}</TableCell>
+                                                            <TableCell>
+                                                                {typeLabel}
+                                                                {/* Ticked "log as overtime" by the technician, or part of the
+                                                                    hours fell beyond the day's normal hours. */}
+                                                                {(log?.requested_overtime || Number(log?.overtime_hours || 0) > 0) && (
+                                                                    <Badge
+                                                                        className="ml-2 bg-yellow-100 text-yellow-800 border border-yellow-300 align-middle"
+                                                                        title={Number(log?.overtime_hours || 0) > 0
+                                                                            ? `${Number(log.overtime_hours).toFixed(1)}h of this entry is overtime`
+                                                                            : 'Logged as overtime'}
+                                                                    >
+                                                                        Overtime{Number(log?.overtime_hours || 0) > 0 ? ` ${Number(log.overtime_hours).toFixed(1)}h` : ''}
+                                                                    </Badge>
+                                                                )}
+                                                            </TableCell>
                                                             <TableCell className="font-mono">{log?.job_id}</TableCell>
                                                             <TableCell>{log?.subtask_title || '-'}</TableCell>
                                                             <TableCell className="text-right">{submitted.toFixed(1)}h</TableCell>
@@ -3717,10 +3774,13 @@ onClick={() => {
                                 </div>
                             )}
 
-                            {(selectedJobWorkLogs || []).length > 0 && (
+                            {(selectedJobWorkLogs.length > 0 || selectedJobUnmatchedReports.length > 0) && (
                                 <Card className="border border-slate-200 bg-slate-50">
                                     <CardHeader>
                                         <CardTitle className="text-slate-800">Job Work Logs</CardTitle>
+                                        <p className="text-xs text-slate-500">
+                                            Every entry booked on this job, with the technician's report for that day. Bottlenecks are highlighted.
+                                        </p>
                                     </CardHeader>
                                     <CardContent>
                                         <div className="overflow-x-auto">
@@ -3730,70 +3790,108 @@ onClick={() => {
                                                         <TableHead>Date</TableHead>
                                                         <TableHead>Technician</TableHead>
                                                         <TableHead>Stage</TableHead>
-                                                        <TableHead>Hours</TableHead>
-                                                        <TableHead>Normal</TableHead>
-                                                        <TableHead>Overtime</TableHead>
-                                                        <TableHead>Category</TableHead>
-                                                        <TableHead>Notes</TableHead>
+                                                        <TableHead className="text-right">Hours</TableHead>
+                                                        <TableHead className="text-right">Normal</TableHead>
+                                                        <TableHead className="text-right">Overtime</TableHead>
+                                                        <TableHead>Status</TableHead>
+                                                        <TableHead className="min-w-[280px]">Work Done &amp; Notes</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                    {selectedJobWorkLogs.map((log) => (
-                                                        <TableRow key={`${log.id || log._id}-${log.log_date}-${log.subtask_id}`}>
-                                                            <TableCell>{log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : '-'}</TableCell>
-                                                            <TableCell>
-                                                                {technicianNameById[String(log?.technician_id)]
-                                                                    || log?.technician_name
-                                                                    || (log?.technician_id?.name || log?.technician_id)
-                                                                    || 'Unknown'}
-                                                                {log?.requested_overtime && (
-                                                                    <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell>{log?.subtask_title || getSubtaskTitle(log?.subtask_id) || '-'}</TableCell>
-                                                            <TableCell>{Number(log?.hours_logged || 0).toFixed(1)}h</TableCell>
-                                                            <TableCell>{Number(log?.normal_hours || 0).toFixed(1)}h</TableCell>
-                                                            <TableCell>{Number(log?.overtime_hours || 0).toFixed(1)}h</TableCell>
-                                                            <TableCell>{log?.category || log?.time_category || (log?.is_idle ? 'Idle' : 'Job')}</TableCell>
-                                                            <TableCell>{log?.category_detail || log?.approval_note || '-'}</TableCell>
-                                                        </TableRow>
-                                                    ))}
+                                                    {selectedJobWorkLogs.map((log) => {
+                                                        const logId = String(log.id || log._id);
+                                                        const reports = selectedJobReportsByLogId.get(logId) || [];
+                                                        const hasBottleneck = reports.some((r) => r?.has_bottleneck);
+                                                        const entryNote = String(log?.category_detail || log?.approval_note || '').trim();
+                                                        const status = log?.approval_status || 'approved';
+                                                        return (
+                                                            <TableRow
+                                                                key={`${logId}-${log.log_date}-${log.subtask_id}`}
+                                                                className={hasBottleneck ? 'bg-amber-50/70 border-l-4 border-l-amber-400' : undefined}
+                                                            >
+                                                                <TableCell className="align-top whitespace-nowrap">{log?.log_date ? format(new Date(log.log_date), 'yyyy-MM-dd') : '-'}</TableCell>
+                                                                <TableCell className="align-top">
+                                                                    {technicianNameById[String(log?.technician_id)]
+                                                                        || log?.technician_name
+                                                                        || (log?.technician_id?.name || log?.technician_id)
+                                                                        || 'Unknown'}
+                                                                    {(log?.requested_overtime || Number(log?.overtime_hours || 0) > 0) && (
+                                                                        <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
+                                                                    )}
+                                                                </TableCell>
+                                                                <TableCell className="align-top">{log?.subtask_title || getSubtaskTitle(log?.subtask_id) || '-'}</TableCell>
+                                                                <TableCell className="align-top text-right">{Number(log?.hours_logged || 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="align-top text-right text-blue-600">{Number(log?.normal_hours || 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="align-top text-right text-yellow-700">{Number(log?.overtime_hours || 0).toFixed(1)}h</TableCell>
+                                                                <TableCell className="align-top">
+                                                                    <Badge className={
+                                                                        status === 'approved' ? 'bg-green-100 text-green-800'
+                                                                            : status === 'declined' ? 'bg-red-100 text-red-800'
+                                                                                : 'bg-slate-100 text-slate-700'
+                                                                    }>
+                                                                        {status === 'approved' ? 'Approved' : status === 'declined' ? 'Declined' : 'Pending'}
+                                                                    </Badge>
+                                                                </TableCell>
+                                                                <TableCell className="align-top">
+                                                                    {reports.length === 0 && !entryNote ? (
+                                                                        <span className="text-xs text-slate-400 italic">No report submitted</span>
+                                                                    ) : (
+                                                                        <div className="space-y-2">
+                                                                            {reports.map((report) => (
+                                                                                <div key={String(report._id || report.id)} className="space-y-1.5">
+                                                                                    <div className="text-sm text-slate-700 whitespace-pre-wrap">
+                                                                                        {String(report?.work_completed || '').trim() || <span className="text-xs text-slate-400 italic">No work-completed note</span>}
+                                                                                    </div>
+                                                                                    {report?.has_bottleneck && (
+                                                                                        <div className="rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-xs text-amber-900">
+                                                                                            <div className="flex items-center gap-1 font-semibold">
+                                                                                                <AlertTriangle className="w-3.5 h-3.5" />
+                                                                                                Bottleneck: {String(report?.bottleneck_category || 'Unknown').replace(/_/g, ' ')}
+                                                                                                <span className="font-normal">· {Number(report?.bottleneck_time_lost_hours || 0).toFixed(1)}h lost</span>
+                                                                                            </div>
+                                                                                            {String(report?.bottleneck_description || '').trim() && (
+                                                                                                <div className="mt-0.5 whitespace-pre-wrap">{report.bottleneck_description}</div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            ))}
+                                                                            {entryNote && (
+                                                                                <div className="text-xs text-slate-500"><span className="font-medium">Entry note:</span> {entryNote}</div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        );
+                                                    })}
                                                 </TableBody>
                                             </Table>
                                         </div>
-                                    </CardContent>
-                                </Card>
-                            )}
 
-                            {(selectedJobReportEntries || []).length > 0 && (
-                                <Card className="border border-slate-200 bg-slate-50">
-                                    <CardHeader>
-                                        <CardTitle className="text-slate-800">Technician Job Reports</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4">
-                                        {selectedJobReportEntries.map((report) => (
-                                            <div key={`${report._id || report.id}-${report.date}`} className="rounded border border-slate-200 bg-white p-3">
-                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                                    <div>
-                                                        <div className="text-sm font-semibold text-slate-800">{report?.technician_name || 'Technician'}</div>
-                                                        <div className="text-xs text-slate-500">{report?.date ? format(new Date(report.date), 'yyyy-MM-dd') : 'No date'}</div>
+                                        {selectedJobUnmatchedReports.length > 0 && (
+                                            <div className="mt-4 space-y-2">
+                                                <div className="text-sm font-semibold text-slate-700">Reports without a matching time entry</div>
+                                                <div className="text-xs text-slate-500">The hours these were filed with have since been deleted or moved.</div>
+                                                {selectedJobUnmatchedReports.map((report) => (
+                                                    <div key={`${report._id || report.id}-${report.date}`} className={`rounded border p-3 bg-white ${report?.has_bottleneck ? 'border-amber-300' : 'border-slate-200'}`}>
+                                                        <div className="text-xs text-slate-500">
+                                                            {report?.date ? format(new Date(report.date), 'yyyy-MM-dd') : 'No date'} · {report?.technician_name || technicianNameById[String(report?.technician_id)] || 'Technician'}
+                                                        </div>
+                                                        <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+                                                            {String(report?.work_completed || '').trim() || 'No work completed note provided.'}
+                                                        </div>
+                                                        {report?.has_bottleneck && (
+                                                            <div className="mt-2 rounded border border-amber-300 bg-amber-100/70 px-2 py-1.5 text-xs text-amber-900">
+                                                                <span className="font-semibold">Bottleneck: {String(report?.bottleneck_category || 'Unknown').replace(/_/g, ' ')}</span>
+                                                                {' '}· {Number(report?.bottleneck_time_lost_hours || 0).toFixed(1)}h lost
+                                                                {String(report?.bottleneck_description || '').trim() && <div className="mt-0.5">{report.bottleneck_description}</div>}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <div className="text-xs text-slate-500">
-                                                        Bottleneck: {report?.has_bottleneck ? 'Yes' : 'No'}
-                                                    </div>
-                                                </div>
-                                                <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">
-                                                    {report?.work_completed || 'No work completed note provided.'}
-                                                </div>
-                                                {report?.has_bottleneck && (
-                                                    <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                                                        <div><strong>Category:</strong> {report?.bottleneck_category || 'Unknown'}</div>
-                                                        <div><strong>Details:</strong> {report?.bottleneck_description || 'No description'}</div>
-                                                        <div><strong>Hours lost:</strong> {Number(report?.bottleneck_time_lost_hours || 0).toFixed(1)}h</div>
-                                                    </div>
-                                                )}
+                                                ))}
                                             </div>
-                                        ))}
+                                        )}
                                     </CardContent>
                                 </Card>
                             )}
@@ -3838,54 +3936,6 @@ onClick={() => {
                                 )}
                             </div>
 
-                            <div className="space-y-2">
-                                <div className="font-semibold text-slate-800">Technician Logged Work</div>
-                                {selectedJobWorkLogs.length === 0 ? (
-                                    <div className="text-sm text-slate-500">No job time logs found.</div>
-                                ) : (
-                                    <div className="overflow-x-auto border rounded">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow className="bg-slate-50">
-                                                    <TableHead>Date</TableHead>
-                                                    <TableHead>Technician</TableHead>
-                                                    <TableHead>Stage</TableHead>
-                                                    <TableHead className="text-right">Hours</TableHead>
-                                                    <TableHead className="text-right">Normal</TableHead>
-                                                    <TableHead className="text-right">OT</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {selectedJobWorkLogs
-                                                    .slice()
-                                                    .sort((a, b) => String(b.log_date || '').localeCompare(String(a.log_date || '')))
-                                                    .map((l) => {
-                                                        const techName = l.technician_name || technicianNameById[String(l.technician_id)] || l.technician_id;
-                                                        const stageTitle = getSubtaskTitle(l.subtask_id) || l.subtask_id || '-';
-                                                        return (
-                                                            <TableRow key={l.id}>
-                                                                <TableCell>{l.log_date ? parseISO(l.log_date).toLocaleDateString() : '-'}</TableCell>
-                                                                <TableCell>
-                                                                    {techName}
-                                                                    {l.requested_overtime && (
-                                                                        <Badge className="ml-2 bg-yellow-100 text-yellow-800 align-middle">Overtime</Badge>
-                                                                    )}
-                                                                </TableCell>
-                                                                <TableCell>{stageTitle}</TableCell>
-                                                                <TableCell className="text-right">{Number(l.hours_logged || 0).toFixed(1)}h</TableCell>
-                                                                <TableCell className="text-right text-blue-600">{Number(l.normal_hours || 0).toFixed(1)}h</TableCell>
-                                                                <TableCell className="text-right text-yellow-600">{Number(l.overtime_hours || 0).toFixed(1)}h</TableCell>
-                                                            </TableRow>
-                                                        );
-                                                    })}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                )}
-                                <div className="text-xs text-slate-500">
-                                    Job logs show what was done per stage (subtask) and hours logged.
-                                </div>
-                            </div>
                         </div>
                     </DialogContent>
                 </Dialog>

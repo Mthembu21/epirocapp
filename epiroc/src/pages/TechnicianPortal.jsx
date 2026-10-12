@@ -488,7 +488,12 @@ export default function TechnicianPortal() {
     // Housekeeping/Other idle reasons have no job number to describe the work,
     // so the technician must explain what they actually did.
     const idleSubReasonsRequiringNote = idleInfo?.idle_sub_reasons_requiring_note || ['Housekeeping', 'Other'];
-    const isIdleNoteRequired = isIdleCategorySelected && idleSubReasonsRequiringNote.includes(formData.category_detail);
+    // Every entry must describe what was done. Idle (any reason), Admin and Waiting for
+    // Parts take that in the "What were you actually doing?" box (category_note);
+    // Training, Site Work and Other have their own note fields (category_detail).
+    const categoriesNeedingDoingNote = ['Admin', 'Waiting for Parts'];
+    const isIdleNoteRequired = (isIdleCategorySelected && !!String(formData.category_detail || '').trim())
+        || (isIdleSelected && categoriesNeedingDoingNote.includes(formData.category));
     const isLeaveSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'leave';
     const isSickSelected = isIdleSelected && String(formData.category || '').trim().toLowerCase() === 'sick';
     const isSiteWorkSelected = isIdleSelected && formData.category === 'Site Work';
@@ -566,7 +571,13 @@ export default function TechnicianPortal() {
         }
         // Require explanation when the idle reason has no job number to describe the work
         if (isIdleNoteRequired && !String(formData.category_note || '').trim()) {
-            alert(`Please explain what you were actually doing during "${formData.category_detail}" idle time`);
+            const what = formData.category === 'Idle' ? `"${formData.category_detail}" idle time` : `${formData.category}`;
+            alert(`Please explain what you were actually doing during ${what}`);
+            return;
+        }
+        // Job hours must say what work was completed
+        if (!isIdleSelected && !String(reportData.work_completed || '').trim()) {
+            alert('Please describe the work you completed before submitting your hours');
             return;
         }
         // Require note when Training
@@ -660,9 +671,7 @@ export default function TechnicianPortal() {
             approved_at: null
         };
 
-        const shouldSendReport =
-            !isIdleSelected &&
-            (String(reportData.work_completed || '').trim() || reportData.has_bottleneck);
+        const shouldSendReport = !isIdleSelected;
 
         const report = shouldSendReport ? {
             job_id: jobNumber,
@@ -1425,12 +1434,13 @@ export default function TechnicianPortal() {
 
                                     {!isIdleSelected && (
                                         <div className="border-t pt-6">
-                                            <h3 className="font-semibold text-slate-800 mb-4">Daily Job Report (Optional)</h3>
+                                            <h3 className="font-semibold text-slate-800 mb-4">Daily Job Report</h3>
                                             <div className="space-y-4">
                                                 <div className="space-y-2">
-                                                    <Label>Work Completed</Label>
+                                                    <Label>Work Completed *</Label>
                                                     <Textarea
-                                                        placeholder="Describe work completed today..."
+                                                        required
+                                                        placeholder="Describe the work you completed for these hours (required)..."
                                                         value={reportData.work_completed}
                                                         onChange={(e) => setReportData(prev => ({ ...prev, work_completed: e.target.value }))}
                                                         className="h-20 border-slate-300"
