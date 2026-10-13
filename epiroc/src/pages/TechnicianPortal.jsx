@@ -505,10 +505,20 @@ export default function TechnicianPortal() {
     // full days per weekday, since customizing each day individually isn't practical.
     const isSingleDayLeaveOrSick = isMultiDayLeave &&
         (!String(formData.end_date || '').trim() || formData.end_date === formData.date);
+    // A full working day for leave/sick: 7h on Friday, 8h Monday-Thursday.
+    const fullDayHoursFor = (dateObj) => (getDay(dateObj) === 5 ? 7 : 8);
+    // Hours already booked on a date (any month), counted the same way as the day cap.
+    const hoursLoggedOnDate = (dateObj) => (myEntries || [])
+        .filter((e) => e?.log_date && isSameDay(parseISO(e.log_date), dateObj))
+        .reduce((sum, e) => sum + effectiveEntryHours(e), 0);
+    const hoursAlreadyLoggedOnSelectedDate = selectedDateObj ? hoursLoggedOnDate(selectedDateObj) : 0;
+    // Someone who worked part of the day and then went home sick books only the rest
+    // of the day, so default to the full day minus what's already been booked.
+    const singleDayFullHours = (isSingleDayLeaveOrSick && selectedDateObj) ? fullDayHoursFor(selectedDateObj) : 0;
     const singleDayDefaultHours = (() => {
-        if (!isSingleDayLeaveOrSick || !formData.date) return '';
-        try { return getDay(parseISO(formData.date)) === 5 ? '7' : '8'; }
-        catch { return '8'; }
+        if (!isSingleDayLeaveOrSick || !selectedDateObj) return '';
+        const rest = Math.max(0, singleDayFullHours - hoursAlreadyLoggedOnSelectedDate);
+        return rest > 0 ? String(rest) : '';
     })();
 
     const getAssignedSubtasksForJob = (job) => {
@@ -617,6 +627,10 @@ export default function TechnicianPortal() {
                     alert('Please enter valid hours for this day');
                     return;
                 }
+                if (hoursLoggedOnDate(start) + customHours > 24) {
+                    alert('Cannot log more than 24 hours in a day.');
+                    return;
+                }
             }
 
             const batch = [];
@@ -625,7 +639,10 @@ export default function TechnicianPortal() {
                 // Skip weekends for leave/sick entries
                 if (day === 0 || day === 6) continue;
 
-                const hours = isSingleDay ? customHours : (day === 5 ? 7 : 8);
+                // In a range, each day only gets what's left of it — e.g. worked 4h on the
+                // first day, then off sick: that day gets 4h sick, not a full 8h on top.
+                const hours = isSingleDay ? customHours : Math.max(0, fullDayHoursFor(d) - hoursLoggedOnDate(d));
+                if (hours <= 0) continue;
                 batch.push({
                     timeLog: {
                         technician_id: getTechnicianId(),
@@ -648,7 +665,10 @@ export default function TechnicianPortal() {
                 });
             }
 
-            if (!batch.length) return;
+            if (!batch.length) {
+                alert('Those days are already fully booked, so there are no hours left to book as leave or sick.');
+                return;
+            }
             createEntryMutation.mutate({ batch });
             return;
         }
@@ -1362,7 +1382,11 @@ export default function TechnicianPortal() {
                                             />
                                             {isSingleDayLeaveOrSick && (
                                                 <p className="text-xs text-slate-500">
-                                                    Defaults to a full day ({singleDayDefaultHours}h) — lower this if you worked part of the day and are booking {isLeaveSelected ? 'leave' : 'sick'} for the rest.
+                                                    {hoursAlreadyLoggedOnSelectedDate > 0
+                                                        ? (singleDayDefaultHours
+                                                            ? `You already booked ${hoursAlreadyLoggedOnSelectedDate.toFixed(1)}h on this day, so this defaults to the remaining ${singleDayDefaultHours}h of a ${singleDayFullHours}h day. Change it if needed.`
+                                                            : `You already booked ${hoursAlreadyLoggedOnSelectedDate.toFixed(1)}h on this day (a full ${singleDayFullHours}h day). Enter hours only if you still need to book ${isLeaveSelected ? 'leave' : 'sick'} time.`)
+                                                        : `Defaults to a full day (${singleDayFullHours}h). If you worked part of the day, enter only the hours you were ${isLeaveSelected ? 'on leave' : 'off sick'}.`}
                                                 </p>
                                             )}
                                         </div>
