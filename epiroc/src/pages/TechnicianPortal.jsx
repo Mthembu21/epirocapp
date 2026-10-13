@@ -21,6 +21,7 @@ import JobPauseResumeForm from '@/components/downtime/JobPauseResumeForm.jsx';
 import TechnicianKPIHeader from '@/components/kpi/TechnicianKPIHeader.jsx';
 import AlertsList from '@/components/alerts/AlertsList.jsx';
 import { normalizeKpis } from '@/utils/normalizeKpis';
+import { appliedRateFor, payableHoursFor } from '@/utils/overtime';
 
 
 
@@ -1712,8 +1713,8 @@ export default function TechnicianPortal() {
                                                     const showOtherDetail = isIdle && (editEntryDraft.category === 'Other' || entry.category === 'Other');
                                                     const editCatDetail = isEditing ? editEntryDraft.category_detail : entry.category_detail;
                                                     const showIdleNote = showIdleSubReason && idleSubReasonsRequiringNote.includes(editCatDetail);
-                                                    const multiplier = Number(entry.overtime_multiplier || 1);
-                                                    const payable = Number(entry.payable_hours || (Number(entry.hours_logged || 0) * multiplier));
+                                                    const multiplier = appliedRateFor(entry);
+                                                    const payable = payableHoursFor(entry);
 
                                                     return (
                                                     <TableRow key={entry.id}>

@@ -3,8 +3,20 @@ import { Button } from "@/components/ui/button";
 import { Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
+import { appliedRateFor } from '@/utils/overtime';
 
 const HR_HOURS_PER_DAY = 8.5;
+
+// Pay figures for one entry: overtime hours weighted at the day's rate (1.5x Mon-Sat,
+// 2x Sunday/public holiday), and payable = normal hours + weighted overtime. Overtime
+// is part of the hours worked, so it isn't added on top of them a second time.
+const payFor = (entry) => {
+    const hrHours = Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY;
+    const overtime = Number(entry.overtime_hours || 0);
+    const rate = appliedRateFor(entry);
+    const weightedOvertime = overtime * rate;
+    return { hrHours, overtime, rate, weightedOvertime, payable: Math.max(0, hrHours - overtime) + weightedOvertime };
+};
 const IDLE_JOB_ID = 'IDLE / NON-PRODUCTIVE';
 
 // An approved entry's hours: what the supervisor approved, falling back to what was
@@ -65,18 +77,21 @@ export default function HRExportButton({ timeEntries, technicians, loadEntries }
         };
 
         // Sheet 1: Attendance Records
-        const attendanceData = entries.map(entry => ({
-            'Date': normalizeDateStr(entry.log_date),
-            'Day': getDayStr(entry.log_date),
-            'Technician': techNameOf(entry),
-            'Start Time': '',
-            'End Time': '',
-            'HR Hours': Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY,
-            'Overtime Hours': Number(entry.overtime_hours || 0),
-            'Overtime Rate': 1.5,
-            'Weighted Overtime': Number(entry.overtime_hours || 0),
-            'Total Payable Hours': (Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY) + Number(entry.overtime_hours || 0)
-        }));
+        const attendanceData = entries.map(entry => {
+            const pay = payFor(entry);
+            return {
+                'Date': normalizeDateStr(entry.log_date),
+                'Day': getDayStr(entry.log_date),
+                'Technician': techNameOf(entry),
+                'Start Time': '',
+                'End Time': '',
+                'HR Hours': pay.hrHours,
+                'Overtime Hours': pay.overtime,
+                'Overtime Rate': pay.rate,
+                'Weighted Overtime': pay.weightedOvertime,
+                'Total Payable Hours': pay.payable
+            };
+        });
 
         const attendanceSheet = XLSX.utils.json_to_sheet(attendanceData);
         XLSX.utils.book_append_sheet(wb, attendanceSheet, 'Attendance Records');
@@ -84,9 +99,10 @@ export default function HRExportButton({ timeEntries, technicians, loadEntries }
         // Sheet 2: Payroll Summary by Technician
         const techSummary = (technicians || []).map(tech => {
             const techEntries = entries.filter(e => techIdOf(e) === String(tech.id));
-            const totalHRHours = techEntries.reduce((sum, e) => sum + (Number(e.hours_logged || 0) || HR_HOURS_PER_DAY), 0);
-            const totalOvertimeHours = techEntries.reduce((sum, e) => sum + Number(e.overtime_hours || 0), 0);
-            const totalWeightedOT = totalOvertimeHours;
+            const totalHRHours = techEntries.reduce((sum, e) => sum + payFor(e).hrHours, 0);
+            const totalOvertimeHours = techEntries.reduce((sum, e) => sum + payFor(e).overtime, 0);
+            const totalWeightedOT = techEntries.reduce((sum, e) => sum + payFor(e).weightedOvertime, 0);
+            const totalPayable = techEntries.reduce((sum, e) => sum + payFor(e).payable, 0);
             const daysWorked = techEntries.length;
 
             return {
@@ -97,7 +113,7 @@ export default function HRExportButton({ timeEntries, technicians, loadEntries }
                 'Total HR Hours': totalHRHours.toFixed(1),
                 'Total Overtime Hours': totalOvertimeHours.toFixed(1),
                 'Total Weighted Overtime': totalWeightedOT.toFixed(1),
-                'Total Payable Hours': (totalHRHours + totalWeightedOT).toFixed(1)
+                'Total Payable Hours': totalPayable.toFixed(1)
             };
         });
 
@@ -114,12 +130,15 @@ export default function HRExportButton({ timeEntries, technicians, loadEntries }
                     totalHRHours: 0,
                     totalOvertimeHours: 0,
                     totalWeightedOT: 0,
+                    totalPayable: 0,
                     daysWorked: 0
                 };
             }
-            monthlyData[month].totalHRHours += (Number(entry.hours_logged || 0) || HR_HOURS_PER_DAY);
-            monthlyData[month].totalOvertimeHours += Number(entry.overtime_hours || 0);
-            monthlyData[month].totalWeightedOT += Number(entry.overtime_hours || 0);
+            const pay = payFor(entry);
+            monthlyData[month].totalHRHours += pay.hrHours;
+            monthlyData[month].totalOvertimeHours += pay.overtime;
+            monthlyData[month].totalWeightedOT += pay.weightedOvertime;
+            monthlyData[month].totalPayable += pay.payable;
             monthlyData[month].daysWorked += 1;
         });
 
@@ -129,7 +148,7 @@ export default function HRExportButton({ timeEntries, technicians, loadEntries }
             'Total HR Hours': data.totalHRHours.toFixed(1),
             'Total Overtime': data.totalOvertimeHours.toFixed(1),
             'Total Weighted OT': data.totalWeightedOT.toFixed(1),
-            'Total Payable': (data.totalHRHours + data.totalWeightedOT).toFixed(1)
+            'Total Payable': data.totalPayable.toFixed(1)
         }));
 
         const monthlySheet = XLSX.utils.json_to_sheet(monthlySummary);

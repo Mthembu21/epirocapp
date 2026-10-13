@@ -34,6 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { appliedRateFor, payableHoursFor } from '@/utils/overtime';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, LabelList
@@ -2840,8 +2841,8 @@ onClick={() => {
                                             const techName = log.technician_name
                                                 || technicianNameById[String(log.technician_id)]
                                                 || log.technician_id;
-                                            const multiplier = Number(log.overtime_multiplier || 1);
-                                            const payable = Number(log.payable_hours || (Number(log.hours_logged || 0) * multiplier));
+                                            const multiplier = appliedRateFor(log);
+                                            const payable = payableHoursFor(log);
                                             return (
                                                 <TableRow key={log.id}>
                                                     <TableCell>{log.log_date ? parseISO(log.log_date).toLocaleDateString() : '-'}</TableCell>
