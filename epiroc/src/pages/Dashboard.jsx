@@ -881,15 +881,26 @@ export default function Dashboard() {
         }
     });
 
+    // "Make Active" on a completed job: brings it back to the active list (even with its
+    // hours used up) and opens it, so the supervisor can add hours or edit it straight away.
     const reopenJobMutation = useMutation({
-        mutationFn: (jobNumber) => base44.entities.Job.reopenByJobNumber(jobNumber, {
+        mutationFn: ({ jobNumber, remaining }) => base44.entities.Job.reopenByJobNumber(jobNumber, {
             technician_id: currentUser?.id,
-            reason: 'Job mistakenly marked as completed - has remaining hours'
+            reason: remaining > 0
+                ? 'Job made active again by supervisor - has remaining hours'
+                : 'Job made active again by supervisor to continue work'
         }),
-        onSuccess: () => {
+        onSuccess: async (_data, { jobNumber, remaining }) => {
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
             queryClient.invalidateQueries({ queryKey: ['completedJobsReport'] });
-            alert('Job reopened successfully! You can now add more hours.');
+            try {
+                setSelectedJobDetails(await base44.entities.Job.getByJobNumber(jobNumber));
+            } catch {
+                // The job is active again either way; opening it is just a convenience.
+            }
+            alert(remaining > 0
+                ? `Job ${jobNumber} is active again. Technicians can book its remaining ${remaining.toFixed(1)}h.`
+                : `Job ${jobNumber} is active again. It has no hours left, so use Edit Job to add hours for the technicians before they can book on it.`);
         },
         onError: (e) => {
             alert(e?.message || 'Could not reopen job');
@@ -2471,20 +2482,22 @@ onClick={() => {
                                                     <Button size="sm" variant="outline" className="text-xs h-7 px-3" onClick={() => setSelectedJobReport(j)}>
                                                         Full Report
                                                     </Button>
-                                                    {remaining > 0 && (
-                                                        <Button
-                                                            size="sm" variant="outline"
-                                                            className="text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
-                                                            disabled={reopenJobMutation.isPending}
-                                                            onClick={() => {
-                                                                if (window.confirm(`Recover job ${j.job_number}? It has ${remaining.toFixed(1)}h remaining.`)) {
-                                                                    reopenJobMutation.mutate(j.job_number);
-                                                                }
-                                                            }}
-                                                        >
-                                                            Recover
-                                                        </Button>
-                                                    )}
+                                                    <Button
+                                                        size="sm" variant="outline"
+                                                        className="text-xs h-7 px-2 border-green-400 text-green-700 hover:bg-green-50"
+                                                        disabled={reopenJobMutation.isPending}
+                                                        title="Move this job back to active so it can be edited and worked on again"
+                                                        onClick={() => {
+                                                            const msg = remaining > 0
+                                                                ? `Make job ${j.job_number} active again? It has ${remaining.toFixed(1)}h remaining.`
+                                                                : `Make job ${j.job_number} active again? Its hours are used up, so you'll need to add hours (Edit Job) before technicians can book on it.`;
+                                                            if (window.confirm(msg)) {
+                                                                reopenJobMutation.mutate({ jobNumber: j.job_number, remaining });
+                                                            }
+                                                        }}
+                                                    >
+                                                        {reopenJobMutation.isPending && reopenJobMutation.variables?.jobNumber === j.job_number ? 'Activating…' : 'Make Active'}
+                                                    </Button>
                                                 </div>
                                             </div>
                                         );
@@ -3377,6 +3390,24 @@ onClick={() => {
                                                 }}
                                             >
                                                 Mark Completed
+                                            </Button>
+                                        )}
+                                        {currentUser?.type === 'supervisor' && String(selectedJobDetails?.status || '') === 'completed' && (
+                                            <Button
+                                                variant="default"
+                                                className="bg-green-600 hover:bg-green-700 text-white"
+                                                disabled={reopenJobMutation.isPending}
+                                                onClick={() => {
+                                                    const remaining = Number(selectedJobDetails?.remaining_hours ?? 0);
+                                                    const msg = remaining > 0
+                                                        ? `Make job ${selectedJobDetails.job_number} active again? It has ${remaining.toFixed(1)}h remaining.`
+                                                        : `Make job ${selectedJobDetails.job_number} active again? Its hours are used up, so you'll need to add hours (Edit Job) before technicians can book on it.`;
+                                                    if (window.confirm(msg)) {
+                                                        reopenJobMutation.mutate({ jobNumber: selectedJobDetails.job_number, remaining });
+                                                    }
+                                                }}
+                                            >
+                                                {reopenJobMutation.isPending ? 'Activating…' : 'Make Active'}
                                             </Button>
                                         )}
 
