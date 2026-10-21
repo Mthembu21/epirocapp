@@ -202,6 +202,8 @@ class APIClient {
                 const qs = q.toString();
                 return this.request(`/jobs/completed-report${qs ? `?${qs}` : ''}`);
             },
+            // Same per-job report for jobs still in progress.
+            activeReport: (params = {}) => this.request(`/jobs/active-report${params.limit ? `?limit=${params.limit}` : ''}`),
             update: (id, data) => this.request(`/jobs/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)

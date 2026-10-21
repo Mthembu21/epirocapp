@@ -88,108 +88,115 @@ function dayKey(d) {
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-// Local midnight Date object for the same calendar day as `d`. Used for date
-// arithmetic (walking day-by-day) - never re-parse a 'yyyy-MM-dd' key string
-// with `new Date()` for this purpose, since JS parses date-only strings as
-// UTC, which reintroduces the same off-by-one this function exists to avoid.
-function localDateOnly(d) {
-    const dt = new Date(d);
-    if (Number.isNaN(dt.getTime())) return null;
-    return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
-}
-
-// Builds a standalone, print-ready A4 document for a single completed job and
-// opens it in a new tab for the browser's native print dialog (Save as PDF).
-// Built as its own HTML document rather than printing the in-app dialog: the
-// dialog is a fixed-position, scroll-clipped Radix overlay, so printing it
-// directly would only capture whatever fit on screen, not the full report.
+// Builds a clean, print-ready A4 job report (active or completed) and is opened in a
+// new tab for the browser's print dialog (Save as PDF). Built as its own document
+// rather than printing the in-app dialog, which is a scroll-clipped overlay.
 //
-// Training is deliberately left out everywhere below: technicians can only log
-// Training time against the non-job idle bucket (see IDLE_JOB_ID in the
-// backend), so it never has a real job_number and has no place in a per-job
-// report - showing a permanently-zero Training column here would just be noise.
+// Layout: one row per time entry booked on the job — date, technician, hours, what was
+// done (the technician's daily report filed with that entry) and any issue reported
+// (bottleneck) or "No issues" — then hours per technician (logged / allocated / left)
+// and the job's overall allocated / consumed / remaining hours.
 function buildJobReportPrintHtml(j) {
-    const ts = j.time_summary || {};
-    const prod  = Number(ts.productive_hours ?? 0);
-    const np    = Number(ts.non_productive_hours ?? 0);
-    const idle  = Number(ts.idle_hours ?? 0);
-    const total = Number(ts.total_hours ?? (prod + np + idle));
-    const prodPct = total > 0 ? (prod / total * 100) : 0;
-    const npPct   = total > 0 ? ((np + idle) / total * 100) : 0;
-
-    const startLabel = j.first_log_date ? new Date(j.first_log_date).toLocaleDateString() : (j.start_date ? new Date(j.start_date).toLocaleDateString() : '—');
-    const endLabel   = j.last_log_date ? new Date(j.last_log_date).toLocaleDateString() : (j.completed_at ? new Date(j.completed_at).toLocaleDateString() : '—');
-
-    // Every entry actually logged against this specific job. classification
-    // 'training' is filtered defensively - it should never occur here (see note
-    // above) but a per-job report is the wrong place for it if it ever does.
-    const entries = (j.time_entries || []).filter((e) => e.classification !== 'training');
-
-    const techRows = (j.hours_by_technician || [])
-        .map((t) => ({
-            ...t,
-            job_hours: Number(t.productive_hours ?? 0) + Number(t.non_productive_hours ?? 0) + Number(t.idle_hours ?? 0)
-        }))
-        .sort((a, b) => (b.productive_hours ?? 0) - (a.productive_hours ?? 0));
-
-    const bottleneckReports = (j.job_reports || []).filter((r) => r.has_bottleneck);
-    const totalHoursLost = bottleneckReports.reduce((sum, r) => sum + Number(r.bottleneck_time_lost_hours || 0), 0);
-
-    // Join every report onto the hours row it belongs to (same date + same
-    // technician) so "what was done" sits right next to the hours logged,
-    // instead of a separate notes list disconnected from the timeline. A
-    // report has no direct foreign key back to one TimeLog row, but date +
-    // technician_id reliably identifies it since reports are only ever filed
-    // against the technician's own job entry for that day.
-    const reportsByDateTech = new Map();
-    for (const r of (j.job_reports || [])) {
-        const key = `${dayKey(r.date)}|${String(r.technician_id || '')}`;
-        if (!reportsByDateTech.has(key)) reportsByDateTech.set(key, []);
-        reportsByDateTech.get(key).push(r);
-    }
-    const notesFor = (e) => reportsByDateTech.get(`${dayKey(e.date)}|${String(e.technician_id || '')}`) || [];
-
-    // Flag calendar gaps between the job's own logged days: any working day
-    // (Mon-Fri) strictly between the first and last logged date with zero
-    // hours logged by anyone on this job is surfaced as a possible-downtime
-    // row, in its correct chronological place in the timeline.
-    const loggedDayKeys = new Set(entries.map((e) => dayKey(e.date)).filter(Boolean));
-    const loggedDates = entries.map((e) => localDateOnly(e.date)).filter(Boolean).sort((a, b) => a - b);
-    const gapDays = [];
-    if (loggedDates.length > 1) {
-        const last = loggedDates[loggedDates.length - 1];
-        const cursor = new Date(loggedDates[0].getFullYear(), loggedDates[0].getMonth(), loggedDates[0].getDate() + 1);
-        while (cursor < last) {
-            const dow = cursor.getDay();
-            const key = dayKey(cursor);
-            if (dow !== 0 && dow !== 6 && !loggedDayKeys.has(key)) {
-                gapDays.push({ key, date: new Date(cursor) });
-            }
-            cursor.setDate(cursor.getDate() + 1);
-        }
-    }
-
-    // Merge real entries and synthetic gap rows into one chronological timeline.
-    const timeline = [
-        ...entries.map((e) => ({ type: 'entry', key: dayKey(e.date), entry: e })),
-        ...gapDays.map((g) => ({ type: 'gap', key: g.key, date: g.date })),
-    ].sort((a, b) => (a.key || '').localeCompare(b.key || '') || (a.type === 'gap' ? 1 : -1));
-
-    const classLabel = { productive: 'Productive', non_productive: 'Non-Productive', idle: 'Idle', not_available: 'Leave/Sick' };
-
-    const rows = (arr, mapFn) => arr.map(mapFn).join('');
-
-    const noteHtml = (reportsForRow) => {
-        if (!reportsForRow.length) return '<span class="muted">—</span>';
-        return reportsForRow.map((r) => {
-            const bits = [];
-            if (String(r.work_completed || '').trim()) bits.push(escapeHtml(r.work_completed));
-            if (r.has_bottleneck) {
-                bits.push(`<span class="inline-flag">${escapeHtml(String(r.bottleneck_category || 'issue').replace(/_/g, ' '))}${r.bottleneck_time_lost_hours ? ` · ${Number(r.bottleneck_time_lost_hours).toFixed(1)}h lost` : ''}${r.bottleneck_description ? ` — ${escapeHtml(r.bottleneck_description)}` : ''}</span>`);
-            }
-            return bits.join('<br/>');
-        }).join('<hr class="note-sep"/>');
+    const isCompleted = j.status === 'completed';
+    const statusLabel = String(j.status || 'in progress').replace(/_/g, ' ');
+    const fmtDate = (d) => {
+        const dt = d ? new Date(d) : null;
+        return dt && !Number.isNaN(dt.getTime())
+            ? dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+            : '—';
     };
+    const h = (n) => `${Number(n || 0).toFixed(1)}h`;
+
+    // Declined entries never counted, so they're left out of the log and every total.
+    // Older report data has no effective_hours yet; fall back to the logged hours.
+    const hoursOf = (e) => Number(e.effective_hours ?? e.hours ?? 0);
+    const entries = (j.time_entries || [])
+        .filter((e) => e.approval_status !== 'declined')
+        .slice()
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+    // Attach each daily report to the entry it was filed with; reports whose entry no
+    // longer exists fall back to the same technician + day, else are listed on their own.
+    const entryIds = new Set(entries.map((e) => String(e.id || '')).filter(Boolean));
+    const firstEntryForTechDay = new Map();
+    for (const e of entries) {
+        const key = `${String(e.technician_id || '')}|${dayKey(e.date)}`;
+        if (!firstEntryForTechDay.has(key)) firstEntryForTechDay.set(key, String(e.id || key));
+    }
+    const reportsByEntry = new Map();
+    const unmatchedReports = [];
+    for (const r of (j.job_reports || [])) {
+        const linked = r.daily_time_entry_id && entryIds.has(String(r.daily_time_entry_id)) ? String(r.daily_time_entry_id) : null;
+        const target = linked || firstEntryForTechDay.get(`${String(r.technician_id || '')}|${dayKey(r.date)}`);
+        if (!target) { unmatchedReports.push(r); continue; }
+        if (!reportsByEntry.has(target)) reportsByEntry.set(target, []);
+        reportsByEntry.get(target).push(r);
+    }
+    const reportsFor = (e) => reportsByEntry.get(String(e.id || `${String(e.technician_id || '')}|${dayKey(e.date)}`)) || [];
+
+    const workDoneHtml = (e, reports) => {
+        const stage = e.subtask_title ? `<div class="stage">${escapeHtml(e.subtask_title)}</div>` : '';
+        const notes = reports.map((r) => String(r.work_completed || '').trim()).filter(Boolean);
+        return stage + (notes.length
+            ? notes.map((n) => `<div class="work">${escapeHtml(n)}</div>`).join('')
+            : '<div class="muted">No report submitted</div>');
+    };
+    const issuesHtml = (reports) => {
+        const issues = reports.filter((r) => r.has_bottleneck);
+        if (!issues.length) return '<span class="ok">No issues</span>';
+        return issues.map((r) => {
+            const category = String(r.bottleneck_category || 'Bottleneck').replace(/_/g, ' ');
+            const lost = Number(r.bottleneck_time_lost_hours || 0);
+            return `<div class="issue"><strong>Bottleneck: ${escapeHtml(category)}</strong>${lost > 0 ? ` · ${lost.toFixed(1)}h lost` : ''}${
+                r.bottleneck_description ? `<div>${escapeHtml(r.bottleneck_description)}</div>` : ''}</div>`;
+        }).join('');
+    };
+
+    // Hours per technician: logged on this job vs their own allocation across stages.
+    const techs = new Map();
+    for (const a of (j.technician_allocations || [])) {
+        techs.set(String(a.technician_id), { name: a.technician_name || 'Technician', allocated: Number(a.allocated_hours || 0), logged: 0 });
+    }
+    for (const e of entries) {
+        const id = String(e.technician_id || '');
+        if (!techs.has(id)) techs.set(id, { name: e.technician_name || 'Technician', allocated: 0, logged: 0 });
+        const t = techs.get(id);
+        t.logged += hoursOf(e);
+        if (!t.name || t.name === 'Technician') t.name = e.technician_name || t.name;
+    }
+    const techRows = Array.from(techs.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const techAllocatedTotal = techRows.reduce((s, t) => s + t.allocated, 0);
+    const techLoggedTotal = techRows.reduce((s, t) => s + t.logged, 0);
+    const leftCell = (allocated, logged) => {
+        if (allocated <= 0) return '<td class="num muted">—</td>';
+        const left = allocated - logged;
+        return left >= 0
+            ? `<td class="num">${h(left)}</td>`
+            : `<td class="num over">Over by ${h(-left)}</td>`;
+    };
+
+    const allocated = Number(j.allocated_hours || 0);
+    const consumed = entries.reduce((s, e) => s + hoursOf(e), 0);
+    const remaining = allocated - consumed;
+    const issueCount = (j.job_reports || []).filter((r) => r.has_bottleneck).length;
+    const pendingCount = entries.filter((e) => e.approval_status === 'pending').length;
+
+    const logRows = entries.map((e) => {
+        const reports = reportsFor(e);
+        return `<tr${reports.some((r) => r.has_bottleneck) ? ' class="has-issue"' : ''}>
+          <td class="nowrap">${escapeHtml(fmtDate(e.date))}</td>
+          <td>${escapeHtml(e.technician_name || '—')}</td>
+          <td class="num">${h(hoursOf(e))}${e.approval_status === 'pending' ? '<div class="tag">pending</div>' : ''}</td>
+          <td>${workDoneHtml(e, reports)}</td>
+          <td>${issuesHtml(reports)}</td>
+        </tr>`;
+    }).join('') + unmatchedReports.map((r) => `<tr${r.has_bottleneck ? ' class="has-issue"' : ''}>
+          <td class="nowrap">${escapeHtml(fmtDate(r.date))}</td>
+          <td>${escapeHtml(r.technician_name || '—')}</td>
+          <td class="num muted">—</td>
+          <td>${String(r.work_completed || '').trim() ? `<div class="work">${escapeHtml(r.work_completed)}</div>` : '<div class="muted">No report submitted</div>'}</td>
+          <td>${issuesHtml([r])}</td>
+        </tr>`).join('');
 
     return `<!doctype html>
 <html>
@@ -197,76 +204,59 @@ function buildJobReportPrintHtml(j) {
 <meta charset="utf-8" />
 <title>Job Report - ${escapeHtml(j.job_number)}</title>
 <style>
-  @page {
-    size: A4;
-    margin: 16mm 14mm;
-    @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8px; color: #94a3b8; }
-  }
+  @page { size: A4; margin: 14mm 12mm 16mm; @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 8px; color: #94a3b8; } }
   * { box-sizing: border-box; }
-  body {
-    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-    color: #1e293b; font-size: 11px; margin: 0; line-height: 1.45;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  }
-  h2 {
-    font-size: 12px; margin: 20px 0 8px; padding: 5px 10px;
-    background: #1e293b; color: #fff; border-radius: 3px;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  h2 .count { font-weight: 400; opacity: 0.7; text-transform: none; letter-spacing: normal; }
-  .header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 16px; margin-bottom: 16px; border-radius: 6px;
-    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-    color: #fff; border-bottom: 4px solid #eab308;
-  }
-  .header h1 { font-size: 17px; margin: 0 0 2px; color: #fff; letter-spacing: 0.03em; }
-  .header .subtitle { color: #fbbf24; font-size: 11px; font-weight: 600; }
-  .header .desc { color: #cbd5e1; font-size: 10px; margin-top: 2px; }
-  .header .meta { text-align: right; font-size: 9px; color: #cbd5e1; line-height: 1.6; }
-  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
-  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
-  .card {
-    border: 1px solid #e2e8f0; border-radius: 6px; padding: 9px 11px;
-    background: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  }
-  .card .label { font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-  .card .value { font-size: 16px; font-weight: 700; margin-top: 3px; color: #0f172a; }
-  .card.accent { background: #fffbeb; border-color: #fde68a; }
-  .card.accent .value { color: #b45309; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-  th, td { border: 1px solid #e2e8f0; padding: 5px 7px; text-align: left; font-size: 9.5px; vertical-align: top; }
-  th { background: #f1f5f9; text-transform: uppercase; font-size: 8.5px; letter-spacing: 0.02em; color: #475569; }
-  tbody tr:nth-child(even) { background: #fbfcfe; }
-  .num { text-align: right; white-space: nowrap; }
-  tr { page-break-inside: avoid; }
-  .badge { display: inline-block; padding: 1.5px 7px; border-radius: 10px; font-size: 8.5px; font-weight: 700; white-space: nowrap; }
-  .b-productive { background: #dcfce7; color: #166534; }
-  .b-non_productive { background: #ffedd5; color: #9a3412; }
-  .b-idle { background: #f1f5f9; color: #475569; }
-  .b-not_available { background: #fee2e2; color: #b91c1c; }
-  .inline-flag {
-    display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 3px;
-    background: #fef3c7; color: #92400e; font-size: 9px; font-weight: 600;
-  }
-  .note-sep { border: none; border-top: 1px dashed #e2e8f0; margin: 4px 0; }
-  .muted { color: #cbd5e1; }
-  .gap-row td {
-    background: repeating-linear-gradient(45deg, #fef2f2, #fef2f2 6px, #fee2e2 6px, #fee2e2 12px);
-    color: #b91c1c; font-style: italic; text-align: center; font-weight: 600; font-size: 9.5px;
-    padding: 6px 7px;
-  }
-  .note { border: 1px solid #e2e8f0; border-left: 3px solid #94a3b8; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px; }
-  .note.bottleneck { border-left-color: #d97706; background: #fffbeb; }
-  .note .meta { font-size: 9px; color: #64748b; margin-bottom: 3px; }
-  .empty { color: #94a3b8; font-style: italic; padding: 8px 0; }
-  .footer { margin-top: 18px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 8.5px; color: #94a3b8; text-align: center; }
-  @media print {
-    .print-toolbar { display: none; }
-    .header { background: #1e293b !important; }
-  }
+  body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #1e293b; font-size: 10.5px; line-height: 1.45; margin: 0;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-toolbar { text-align: right; margin-bottom: 10px; }
-  .print-toolbar button { font-family: inherit; font-size: 12px; padding: 7px 16px; border-radius: 4px; border: none; background: #eab308; color: #1e293b; font-weight: 700; cursor: pointer; }
+  .print-toolbar button { font: inherit; font-size: 12px; padding: 7px 16px; border: none; border-radius: 4px; background: #eab308; color: #1e293b; font-weight: 700; cursor: pointer; }
+  @media print { .print-toolbar { display: none; } }
+
+  .header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 10px; border-bottom: 3px solid #eab308; }
+  .brand { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; color: #b45309; }
+  h1 { font-size: 20px; margin: 2px 0 0; color: #0f172a; }
+  .desc { color: #475569; font-size: 11px; margin-top: 2px; }
+  .status { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: capitalize; }
+  .status.done { background: #dcfce7; color: #166534; }
+  .status.active { background: #dbeafe; color: #1e40af; }
+  .meta { text-align: right; font-size: 9px; color: #64748b; line-height: 1.7; }
+
+  .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 12px 0 4px; border: 1px solid #e2e8f0; border-radius: 6px; }
+  .facts > div { padding: 7px 10px; border-right: 1px solid #e2e8f0; }
+  .facts > div:last-child { border-right: none; }
+  .facts .k { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 600; }
+  .facts .v { font-size: 12px; font-weight: 700; color: #0f172a; margin-top: 1px; }
+
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #cbd5e1; page-break-after: avoid; }
+  h2 .count { font-weight: 400; color: #64748b; text-transform: none; letter-spacing: normal; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; background: #f1f5f9; padding: 6px 7px; border-bottom: 1px solid #cbd5e1; }
+  td { padding: 6px 7px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  .num { text-align: right; white-space: nowrap; }
+  .nowrap { white-space: nowrap; }
+  .stage { font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 1px; }
+  .work { white-space: pre-wrap; }
+  .work + .work { margin-top: 3px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .ok { color: #15803d; }
+  .issue { color: #92400e; }
+  .issue strong { text-transform: capitalize; }
+  .issue + .issue { margin-top: 4px; }
+  tr.has-issue td { background: #fffbeb; }
+  .tag { font-size: 8px; color: #64748b; font-weight: 400; }
+  .over { color: #b91c1c; font-weight: 700; }
+  tfoot td { font-weight: 700; background: #f8fafc; border-top: 1px solid #cbd5e1; border-bottom: none; }
+  .empty { color: #94a3b8; font-style: italic; padding: 8px 0; }
+
+  .totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; page-break-inside: avoid; }
+  .totals > div { border: 1px solid #e2e8f0; border-radius: 6px; padding: 9px 12px; }
+  .totals .k { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; font-weight: 600; }
+  .totals .v { font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 2px; }
+  .totals .v.over { color: #b91c1c; }
+  .note { font-size: 8.5px; color: #64748b; margin-top: 8px; }
+  .footer { margin-top: 14px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 8px; color: #94a3b8; text-align: center; }
 </style>
 </head>
 <body>
@@ -274,91 +264,62 @@ function buildJobReportPrintHtml(j) {
 
   <div class="header">
     <div>
-      <div class="subtitle">EPIROC · LABOUR UTILIZATION</div>
-      <h1>Job Completion Report</h1>
-      <div class="desc">${escapeHtml(j.job_number)} — ${escapeHtml(j.description || '')}</div>
+      <div class="brand">EPIROC · LABOUR UTILIZATION</div>
+      <h1>Job ${escapeHtml(j.job_number)}</h1>
+      <div class="desc">${escapeHtml(j.description || '')}</div>
     </div>
     <div class="meta">
-      Generated ${escapeHtml(new Date().toLocaleString())}<br/>
-      Workshop: ${escapeHtml(j.supervisor_key || '—')}
+      <span class="status ${isCompleted ? 'done' : 'active'}">${escapeHtml(isCompleted ? 'Completed' : statusLabel)}</span><br/>
+      Workshop: ${escapeHtml(j.supervisor_key || '—')}<br/>
+      Generated ${escapeHtml(new Date().toLocaleString())}
     </div>
   </div>
 
-  <div class="grid">
-    <div class="card"><div class="label">Allocated</div><div class="value">${Number(j.allocated_hours ?? 0).toFixed(1)}h</div></div>
-    <div class="card"><div class="label">Total Logged</div><div class="value">${total.toFixed(1)}h</div></div>
-    <div class="card"><div class="label">Started</div><div class="value">${escapeHtml(startLabel)}</div></div>
-    <div class="card"><div class="label">Completed</div><div class="value">${escapeHtml(endLabel)}</div></div>
+  <div class="facts">
+    <div><div class="k">First booking</div><div class="v">${escapeHtml(fmtDate(j.first_log_date || j.start_date))}</div></div>
+    <div><div class="k">${isCompleted ? 'Completed' : 'Last booking'}</div><div class="v">${escapeHtml(fmtDate(isCompleted ? (j.end_date || j.completed_at) : j.last_log_date))}</div></div>
+    <div><div class="k">Technicians</div><div class="v">${techRows.length}</div></div>
+    <div><div class="k">Issues reported</div><div class="v">${issueCount}</div></div>
   </div>
 
-  <h2>Performance Summary</h2>
-  <div class="grid3">
-    <div class="card"><div class="label">Productivity</div><div class="value">${prodPct.toFixed(1)}%</div></div>
-    <div class="card"><div class="label">Non-Productive</div><div class="value">${npPct.toFixed(1)}%</div></div>
-    <div class="card accent"><div class="label">Hours Lost (Issues)</div><div class="value">${totalHoursLost.toFixed(1)}h</div></div>
-  </div>
+  <h2>Work Log <span class="count">(${entries.length} ${entries.length === 1 ? 'entry' : 'entries'})</span></h2>
+  ${entries.length || unmatchedReports.length ? `
   <table>
-    <thead><tr><th>Productive</th><th>Non-Productive</th><th>Idle</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>${prod.toFixed(1)}h (${prodPct.toFixed(1)}%)</td>
-        <td>${np.toFixed(1)}h (${total > 0 ? (np / total * 100).toFixed(1) : '0.0'}%)</td>
-        <td>${idle.toFixed(1)}h (${total > 0 ? (idle / total * 100).toFixed(1) : '0.0'}%)</td>
-      </tr>
-    </tbody>
-  </table>
+    <thead><tr>
+      <th style="width:13%">Date</th><th style="width:16%">Technician</th><th class="num" style="width:8%">Hours</th>
+      <th style="width:38%">What was done</th><th style="width:25%">Issues</th>
+    </tr></thead>
+    <tbody>${logRows}</tbody>
+  </table>` : '<div class="empty">No hours have been booked on this job yet.</div>'}
 
+  <h2>Hours Summary</h2>
   ${techRows.length ? `
-  <h2>Technician Contribution</h2>
   <table>
-    <thead><tr><th>Technician</th><th class="num">Productive</th><th class="num">Non-Productive</th><th class="num">Idle</th><th class="num">Total</th></tr></thead>
-    <tbody>
-      ${rows(techRows, (t) => `<tr>
-        <td>${escapeHtml(t.technician_name || t.technician_id)}</td>
-        <td class="num">${Number(t.productive_hours ?? 0).toFixed(1)}h</td>
-        <td class="num">${Number(t.non_productive_hours ?? 0).toFixed(1)}h</td>
-        <td class="num">${Number(t.idle_hours ?? 0).toFixed(1)}h</td>
-        <td class="num"><strong>${t.job_hours.toFixed(1)}h</strong></td>
-      </tr>`)}
-    </tbody>
-  </table>` : ''}
+    <thead><tr><th>Technician</th><th class="num">Hours Logged</th><th class="num">Hours Allocated</th><th class="num">Hours Left</th></tr></thead>
+    <tbody>${techRows.map((t) => `<tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td class="num">${h(t.logged)}</td>
+      <td class="num">${t.allocated > 0 ? h(t.allocated) : '<span class="muted">—</span>'}</td>
+      ${leftCell(t.allocated, t.logged)}
+    </tr>`).join('')}</tbody>
+    <tfoot><tr>
+      <td>All technicians</td><td class="num">${h(techLoggedTotal)}</td>
+      <td class="num">${techAllocatedTotal > 0 ? h(techAllocatedTotal) : '—'}</td>
+      ${leftCell(techAllocatedTotal, techLoggedTotal)}
+    </tr></tfoot>
+  </table>` : '<div class="empty">No technicians have booked hours on this job.</div>'}
 
-  <h2>Bottlenecks &amp; Issues <span class="count">(${bottleneckReports.length})</span></h2>
-  ${bottleneckReports.length === 0
-      ? '<div class="empty">No issues or bottlenecks were reported on this job.</div>'
-      : rows(bottleneckReports, (r) => `<div class="note bottleneck">
-          <div class="meta"><strong>${escapeHtml(r.technician_name || 'Technician')}</strong> — ${r.date ? escapeHtml(new Date(r.date).toLocaleDateString()) : 'No date'} — ${escapeHtml(String(r.bottleneck_category || 'issue').replace(/_/g, ' '))} — ${Number(r.bottleneck_time_lost_hours || 0).toFixed(1)}h lost</div>
-          ${escapeHtml(r.bottleneck_description || 'No description provided.')}
-        </div>`)
-  }
+  <div class="totals">
+    <div><div class="k">Job hours allocated</div><div class="v">${h(allocated)}</div></div>
+    <div><div class="k">Hours consumed</div><div class="v">${h(consumed)}</div></div>
+    <div><div class="k">${remaining >= 0 ? 'Hours remaining' : 'Over allocation by'}</div><div class="v${remaining < 0 ? ' over' : ''}">${h(Math.abs(remaining))}</div></div>
+  </div>
+  <div class="note">
+    Hours count approved hours, plus hours still awaiting approval${pendingCount ? ` (${pendingCount} ${pendingCount === 1 ? 'entry' : 'entries'} marked pending)` : ''}; declined entries are excluded.
+    A technician's allocation is the hours assigned to them across the job's stages.
+  </div>
 
-  <h2>Full Time Log <span class="count">(${entries.length} entries${gapDays.length ? `, ${gapDays.length} day${gapDays.length === 1 ? '' : 's'} with no activity` : ''})</span></h2>
-  ${timeline.length === 0
-      ? '<div class="empty">No time entries recorded for this job.</div>'
-      : `<table>
-          <thead><tr><th>Date</th><th>Technician</th><th>Type</th><th>Category / Reason</th><th class="num">Hours</th><th>What Was Done</th></tr></thead>
-          <tbody>
-            ${rows(timeline, (item) => {
-                if (item.type === 'gap') {
-                    return `<tr class="gap-row"><td colspan="6">⚠ No hours logged on ${escapeHtml(item.date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' }))} — possible downtime</td></tr>`;
-                }
-                const e = item.entry;
-                const dateStr = e.date ? new Date(e.date).toLocaleDateString() : '—';
-                const catLabel = e.sub_reason ? `${e.category || ''} - ${e.sub_reason}` : (e.category || (e.classification === 'productive' ? 'Job Work' : '—'));
-                return `<tr>
-                    <td>${escapeHtml(dateStr)}</td>
-                    <td>${escapeHtml(e.technician_name || '—')}</td>
-                    <td><span class="badge b-${e.classification || 'idle'}">${escapeHtml(classLabel[e.classification] || e.classification || '—')}</span></td>
-                    <td>${escapeHtml(catLabel)}</td>
-                    <td class="num">${Number(e.hours ?? 0).toFixed(1)}h</td>
-                    <td>${noteHtml(notesFor(e))}</td>
-                </tr>`;
-            })}
-          </tbody>
-        </table>`
-  }
-
-  <div class="footer">EPIROC Labour Utilization — Job ${escapeHtml(j.job_number)} — Printed ${escapeHtml(new Date().toLocaleString())}</div>
+  <div class="footer">EPIROC Labour Utilization — Job ${escapeHtml(j.job_number)} — ${escapeHtml(isCompleted ? 'Completion' : 'Progress')} report printed ${escapeHtml(new Date().toLocaleString())}</div>
 </body>
 </html>`;
 }
@@ -399,6 +360,8 @@ export default function Dashboard() {
     const [completedJobsReportOpen, setCompletedJobsReportOpen] = useState(false);
     const [selectedJobReport, setSelectedJobReport] = useState(null);
     const [completedJobSearch, setCompletedJobSearch] = useState('');
+    // Which jobs the Jobs Report dialog lists: 'completed' or 'active'.
+    const [jobReportScope, setJobReportScope] = useState('completed');
     const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
     const [operationalMetrics, setOperationalMetrics] = useState(null);
     const [lastOperationalMetrics, setLastOperationalMetrics] = useState(null);
@@ -655,7 +618,16 @@ export default function Dashboard() {
     const { data: completedJobsReport = [], isFetching: isFetchingCompletedJobsReport } = useQuery({
         queryKey: ['completedJobsReport', supervisorKey],
         queryFn: () => base44.entities.Job.completedReport({ limit: 500 }),
-        enabled: isAuthenticated && completedJobsReportOpen,
+        // Also load when the dialog is opened from the KPI card, which only sets completedDialogOpen.
+        enabled: isAuthenticated && (completedJobsReportOpen || completedDialogOpen) && jobReportScope === 'completed',
+        keepPreviousData: true,
+        staleTime: 1000 * 60
+    });
+
+    const { data: activeJobsReport = [], isFetching: isFetchingActiveJobsReport } = useQuery({
+        queryKey: ['activeJobsReport', supervisorKey],
+        queryFn: () => base44.entities.Job.activeReport({ limit: 500 }),
+        enabled: isAuthenticated && completedDialogOpen && jobReportScope === 'active',
         keepPreviousData: true,
         staleTime: 1000 * 60
     });
@@ -893,6 +865,7 @@ export default function Dashboard() {
         onSuccess: async (_data, { jobNumber, remaining }) => {
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
             queryClient.invalidateQueries({ queryKey: ['completedJobsReport'] });
+            queryClient.invalidateQueries({ queryKey: ['activeJobsReport'] });
             try {
                 setSelectedJobDetails(await base44.entities.Job.getByJobNumber(jobNumber));
             } catch {
@@ -1070,11 +1043,21 @@ export default function Dashboard() {
         });
     }, [completedJobsReport]);
 
+    const activeJobsData = React.useMemo(() => {
+        const raw = activeJobsReport;
+        const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+        return arr.filter(j => j?.job_number).sort((a, b) =>
+            String(b.last_log_date || '').localeCompare(String(a.last_log_date || '')));
+    }, [activeJobsReport]);
+
+    // The dialog lists either completed or active jobs; search applies to whichever is shown.
+    const reportJobsData = jobReportScope === 'active' ? activeJobsData : completedJobsData;
+    const isFetchingReportJobs = jobReportScope === 'active' ? isFetchingActiveJobsReport : isFetchingCompletedJobsReport;
     const filteredCompletedJobsData = React.useMemo(() => {
         const q = completedJobSearch.trim().toLowerCase();
-        if (!q) return completedJobsData;
-        return completedJobsData.filter(j => String(j.job_number || '').toLowerCase().includes(q));
-    }, [completedJobsData, completedJobSearch]);
+        if (!q) return reportJobsData;
+        return reportJobsData.filter(j => String(j.job_number || '').toLowerCase().includes(q));
+    }, [reportJobsData, completedJobSearch]);
 
     
     const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
@@ -2365,9 +2348,9 @@ onClick={() => {
                                         // Also enable the report query (completedJobsReportOpen) if used elsewhere
                                         setCompletedJobsReportOpen(true);
                                     }}
-                                    disabled={isFetchingCompletedJobsReport}
+                                    disabled={isFetchingReportJobs}
                                 >
-                                    {isFetchingCompletedJobsReport ? 'Loading report...' : 'View Completed Jobs Report'}
+                                    {isFetchingReportJobs ? 'Loading report...' : 'View Jobs Report'}
                                 </Button>
                             </div>
                             {isJobsError && (
@@ -2429,17 +2412,29 @@ onClick={() => {
                                             </Button>
                                         </>
                                     ) : (
-                                        <>Completed Jobs Report {isFetchingCompletedJobsReport && <span className="text-sm font-normal text-slate-400 ml-2">Loading…</span>}</>
+                                        <>Jobs Report {isFetchingReportJobs && <span className="text-sm font-normal text-slate-400 ml-2">Loading…</span>}</>
                                     )}
                                 </DialogTitle>
-                                <DialogDescription className="sr-only">Completed job report</DialogDescription>
+                                <DialogDescription className="sr-only">Active and completed job reports</DialogDescription>
                             </DialogHeader>
 
                             <div className="flex-1 overflow-y-auto min-h-0">
                             {/* ── LIST VIEW ── */}
                             {!selectedJobReport && (
                                 <div className="space-y-2 py-2">
-                                    <div className="sticky top-0 bg-white pb-2 z-10">
+                                    <div className="sticky top-0 bg-white pb-2 z-10 flex flex-wrap items-center gap-3">
+                                        <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                                            {[['active', 'Active Jobs'], ['completed', 'Completed Jobs']].map(([scope, label]) => (
+                                                <button
+                                                    key={scope}
+                                                    type="button"
+                                                    onClick={() => setJobReportScope(scope)}
+                                                    className={`px-3 py-1.5 text-sm rounded-md ${jobReportScope === scope ? 'bg-white shadow-sm font-semibold text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+                                                >
+                                                    {label}
+                                                </button>
+                                            ))}
+                                        </div>
                                         <Input
                                             value={completedJobSearch}
                                             onChange={(e) => setCompletedJobSearch(e.target.value)}
@@ -2447,13 +2442,13 @@ onClick={() => {
                                             className="max-w-xs"
                                         />
                                     </div>
-                                    {completedJobsData.length === 0 ? (
+                                    {reportJobsData.length === 0 ? (
                                         <div className="py-16 text-center text-slate-400">
-                                            {isFetchingCompletedJobsReport ? 'Fetching report…' : 'No completed jobs found.'}
+                                            {isFetchingReportJobs ? 'Fetching report…' : `No ${jobReportScope} jobs found.`}
                                         </div>
                                     ) : filteredCompletedJobsData.length === 0 ? (
                                         <div className="py-16 text-center text-slate-400">
-                                            No completed jobs match "{completedJobSearch}".
+                                            No {jobReportScope} jobs match "{completedJobSearch}".
                                         </div>
                                     ) : filteredCompletedJobsData.map(j => {
                                         const ts = j.time_summary || {};
@@ -2469,8 +2464,17 @@ onClick={() => {
                                                         <span className="font-mono font-semibold text-slate-800">{j.job_number}</span>
                                                         <span className="text-slate-600 text-sm truncate">{j.description}</span>
                                                     </div>
-                                                    <div className="flex gap-4 mt-1 text-xs text-slate-500">
-                                                        <span>Completed {endLabel}</span>
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-slate-500">
+                                                        {jobReportScope === 'active' ? (
+                                                            <>
+                                                                <span className="capitalize font-medium text-slate-700">{String(j.status || 'in progress').replace(/_/g, ' ')}</span>
+                                                                <span>{Number(j.progress_percentage || 0).toFixed(0)}% done</span>
+                                                                <span>{remaining.toFixed(1)}h of {Number(j.allocated_hours || 0).toFixed(1)}h left</span>
+                                                                <span>Last activity {j.last_log_date ? new Date(j.last_log_date).toLocaleDateString() : '—'}</span>
+                                                            </>
+                                                        ) : (
+                                                            <span>Completed {endLabel}</span>
+                                                        )}
                                                         <span>{total.toFixed(1)}h logged</span>
                                                         <span className={prod > 0 ? 'text-green-700 font-medium' : ''}>{prod.toFixed(1)}h productive ({prodPct}%)</span>
                                                         {(j.hours_by_technician || []).length > 0 && (
@@ -2482,6 +2486,7 @@ onClick={() => {
                                                     <Button size="sm" variant="outline" className="text-xs h-7 px-3" onClick={() => setSelectedJobReport(j)}>
                                                         Full Report
                                                     </Button>
+                                                    {jobReportScope === 'completed' && (
                                                     <Button
                                                         size="sm" variant="outline"
                                                         className="text-xs h-7 px-2 border-green-400 text-green-700 hover:bg-green-50"
@@ -2498,6 +2503,7 @@ onClick={() => {
                                                     >
                                                         {reopenJobMutation.isPending && reopenJobMutation.variables?.jobNumber === j.job_number ? 'Activating…' : 'Make Active'}
                                                     </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -2547,7 +2553,9 @@ onClick={() => {
                                                 { label: 'Allocated', value: `${Number(j.allocated_hours ?? 0).toFixed(1)}h` },
                                                 { label: 'Total Logged', value: `${total.toFixed(1)}h` },
                                                 { label: 'Start', value: startLabel },
-                                                { label: 'Completed', value: endLabel },
+                                                j.status === 'completed'
+                                                    ? { label: 'Completed', value: endLabel }
+                                                    : { label: `Last Activity · ${Number(j.progress_percentage || 0).toFixed(0)}% done`, value: endLabel },
                                             ].map(s => (
                                                 <div key={s.label} className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
                                                     <p className="text-xs text-slate-500 mb-0.5">{s.label}</p>
