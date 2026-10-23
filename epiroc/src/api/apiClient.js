@@ -283,6 +283,8 @@ class APIClient {
         JobReport: {
             list: () => this.request('/job-reports'),
             listForJob: (jobNumber) => this.request(`/job-reports?job_id=${encodeURIComponent(jobNumber)}`),
+            // Every report in a date range (yyyy-MM-dd, inclusive), not just the latest 200.
+            listRange: ({ start_date, end_date }) => this.request(`/job-reports?${new URLSearchParams({ start_date, end_date }).toString()}`),
             create: (data) => this.request('/job-reports', {
                 method: 'POST',
                 body: JSON.stringify(data)

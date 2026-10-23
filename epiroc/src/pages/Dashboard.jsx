@@ -1082,19 +1082,38 @@ export default function Dashboard() {
         const d = parseISO(e.log_date);
         return isWithinInterval(d, { start: monthStart, end: monthEnd });
     };
-    const timeLogsForMonth = (timeLogs || []).filter(isLogInSelectedPeriod);
+    // timeLogs / jobReports only hold the workshop's latest 500 entries / 200 reports,
+    // which reach back about a month — so picking an earlier month (e.g. August) showed
+    // every technician at zero. The selected period is loaded in full instead (padded a
+    // day each side for the server's UTC day boundaries, then trimmed with the same
+    // local-date rule). Keys sit under ['timeLogs'] / ['jobReports'] so the existing
+    // invalidations after edits and approvals refresh them too.
+    const [periodStartStr, periodEndStr] = selectedView === 'daily' ? [todayDateStr, todayDateStr]
+        : selectedView === 'weekly' ? [weekStartStr, weekEndStr]
+        : selectedView === 'last_week' ? [lastWeekStartStr, lastWeekEndStr]
+        : [format(monthStart, 'yyyy-MM-dd'), format(monthEnd, 'yyyy-MM-dd')];
+    const padDay = (s, days) => format(addDays(parseISO(s), days), 'yyyy-MM-dd');
+    const periodRange = { start_date: padDay(periodStartStr, -1), end_date: padDay(periodEndStr, 1) };
 
-    // timeLogs only holds the latest 500 entries workshop-wide, so an export of an
-    // earlier month came out incomplete. Exports fetch the selected period in full
-    // instead (padded a day each side for the server's UTC day boundaries, then
-    // trimmed with the same local-date rule the dashboard uses).
+    const { data: periodTimeLogs } = useQuery({
+        queryKey: ['timeLogs', 'period', periodRange.start_date, periodRange.end_date],
+        queryFn: () => base44.entities.DailyTimeEntry.listRange(periodRange),
+        enabled: isAuthenticated,
+        refetchInterval: isAuthenticated ? 30000 : false
+    });
+    const { data: periodJobReports } = useQuery({
+        queryKey: ['jobReports', 'period', periodRange.start_date, periodRange.end_date],
+        queryFn: () => base44.entities.JobReport.listRange(periodRange),
+        enabled: isAuthenticated
+    });
+
+    // Falls back to the latest-500 list only until the period's own entries arrive.
+    const timeLogsForMonth = (Array.isArray(periodTimeLogs) ? periodTimeLogs : (timeLogs || [])).filter(isLogInSelectedPeriod);
+    const jobReportsForPeriod = Array.isArray(periodJobReports) ? periodJobReports : (jobReports || []);
+
+    // Exports fetch the period fresh at click time so they never use a stale list.
     const loadTimeLogsForPeriod = async () => {
-        const [start, end] = selectedView === 'daily' ? [todayDateStr, todayDateStr]
-            : selectedView === 'weekly' ? [weekStartStr, weekEndStr]
-            : selectedView === 'last_week' ? [lastWeekStartStr, lastWeekEndStr]
-            : [format(monthStart, 'yyyy-MM-dd'), format(monthEnd, 'yyyy-MM-dd')];
-        const pad = (s, days) => format(addDays(parseISO(s), days), 'yyyy-MM-dd');
-        const logs = await base44.entities.DailyTimeEntry.listRange({ start_date: pad(start, -1), end_date: pad(end, 1) });
+        const logs = await base44.entities.DailyTimeEntry.listRange(periodRange);
         return (Array.isArray(logs) ? logs : []).filter(isLogInSelectedPeriod);
     };
 
@@ -2793,7 +2812,7 @@ onClick={() => {
                             technicians={technicians}
                             timeLogs={timeLogsForMonth}
                             jobs={jobs}
-                            jobReports={jobReports}
+                            jobReports={jobReportsForPeriod}
                             kpiData={techKpiData}
                             periodLabel={periodLabel}
                         />
