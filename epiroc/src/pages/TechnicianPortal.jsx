@@ -94,17 +94,22 @@ export default function TechnicianPortal() {
       .catch(err => console.error('Failed to load active pauses:', err));
   }, [user?.supervisor_key, user?.id]);
 
-    const [editEntryDraft, setEditEntryDraft] = useState({ hours_logged: '', category: '', category_detail: '', category_note: '' });
+    const [editEntryDraft, setEditEntryDraft] = useState({ hours_logged: '', category: '', category_detail: '', category_note: '', work_completed: '' });
     const queryClient = useQueryClient();
 
     const updateEntryMutation = useMutation({
-        mutationFn: ({ id, timeLog }) => base44.entities.DailyTimeEntry.update(id, { timeLog }),
+        // work_completed is the job entry's "what was done" note; the backend saves it to the
+        // daily job report filed with this entry, which is what supervisors see.
+        mutationFn: ({ id, timeLog, work_completed }) => base44.entities.DailyTimeEntry.update(id, { timeLog, work_completed }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['myTimeEntries'] });
             queryClient.invalidateQueries({ queryKey: ['myJobs'] });
             queryClient.invalidateQueries({ queryKey: ['technicianKPIs'] });
             setEditingEntryId(null);
-            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '', category_note: '' });
+            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '', category_note: '', work_completed: '' });
+        },
+        onError: (e) => {
+            alert(e?.message || 'Could not save your changes');
         }
     });
 
@@ -1804,11 +1809,24 @@ export default function TechnicianPortal() {
                                                                             )}
                                                                         </>
                                                                     ) : (
-                                                                        <span className="text-sm text-slate-700">{getEntryCategoryLabel(entry)}</span>
+                                                                        <>
+                                                                            <span className="text-sm text-slate-700">{getEntryCategoryLabel(entry)}</span>
+                                                                            <Textarea
+                                                                                className="min-h-16 text-sm"
+                                                                                value={editEntryDraft.work_completed}
+                                                                                onChange={(e) => setEditEntryDraft(prev => ({ ...prev, work_completed: e.target.value }))}
+                                                                                placeholder="What was done? (required)"
+                                                                            />
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             ) : (
-                                                                getEntryCategoryLabel(entry)
+                                                                <div>
+                                                                    {getEntryCategoryLabel(entry)}
+                                                                    {!isIdle && String(entry.work_completed || '').trim() && (
+                                                                        <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap max-w-xs">{entry.work_completed}</p>
+                                                                    )}
+                                                                </div>
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
@@ -1832,6 +1850,10 @@ export default function TechnicianPortal() {
                                                                     className="h-8 w-24 ml-auto text-right"
                                                                     value={editEntryDraft.hours_logged}
                                                                     onChange={(e) => setEditEntryDraft(prev => ({ ...prev, hours_logged: e.target.value }))}
+                                                                    disabled={entry.approval_status !== 'pending'}
+                                                                    title={entry.approval_status !== 'pending'
+                                                                        ? `This entry is ${entry.approval_status}, so its hours can't be changed. You can still update the notes.`
+                                                                        : undefined}
                                                                 />
                                                             ) : (
                                                                 `${(entry.hours_logged || 0).toFixed(1)}h` 
@@ -1870,7 +1892,7 @@ export default function TechnicianPortal() {
                                                                         className="h-8 w-8 text-slate-500 hover:text-slate-800"
                                                                         onClick={() => {
                                                                             setEditingEntryId(null);
-                                                                            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '', category_note: '' });
+                                                                            setEditEntryDraft({ hours_logged: '', category: '', category_detail: '', category_note: '', work_completed: '' });
                                                                         }}
                                                                         disabled={updateEntryMutation.isPending}
                                                                         title="Cancel"
@@ -1884,6 +1906,10 @@ export default function TechnicianPortal() {
                                                                         onClick={() => {
                                                                             const hours = Number(editEntryDraft.hours_logged);
                                                                             if (!hours || hours <= 0) return;
+                                                                            if (!entry.is_idle && !String(editEntryDraft.work_completed || '').trim()) {
+                                                                                alert('Please describe the work you completed');
+                                                                                return;
+                                                                            }
                                                                             if (showIdleNote && !String(editEntryDraft.category_note || '').trim()) {
                                                                                 alert(`Please explain what you were actually doing during "${editEntryDraft.category_detail}" idle time`);
                                                                                 return;
@@ -1897,7 +1923,8 @@ export default function TechnicianPortal() {
                                                                                     category_detail: entry.is_idle ? editEntryDraft.category_detail : entry.category_detail,
                                                                                     category_note: entry.is_idle ? editEntryDraft.category_note : entry.category_note,
                                                                                     subtask_id: entry.subtask_id
-                                                                                }
+                                                                                },
+                                                                                ...(entry.is_idle ? {} : { work_completed: editEntryDraft.work_completed })
                                                                             });
                                                                         }}
                                                                         disabled={updateEntryMutation.isPending}
@@ -1918,7 +1945,8 @@ export default function TechnicianPortal() {
                                                                                 hours_logged: String(entry.hours_logged ?? ''),
                                                                                 category: String(entry.category ?? ''),
                                                                                 category_detail: String(entry.category_detail ?? ''),
-                                                                                category_note: String(entry.category_note ?? '')
+                                                                                category_note: String(entry.category_note ?? ''),
+                                                                                work_completed: String(entry.work_completed ?? '')
                                                                             });
                                                                         }}
                                                                         title="Edit"
