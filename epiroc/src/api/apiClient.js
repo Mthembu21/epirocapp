@@ -220,8 +220,10 @@ class APIClient {
             // Every entry booked against one job (any date), for the job details view.
             listForJob: (jobNumber) => this.request(`/time-entries?job_id=${encodeURIComponent(jobNumber)}&limit=5000`),
             // Every entry in a date range (yyyy-MM-dd, inclusive), not just the latest 500.
-            listRange: ({ start_date, end_date }) => {
-                const q = new URLSearchParams({ start_date, end_date, limit: '5000' });
+            // scope: 'own_technicians' also returns this workshop's technicians' entries on
+            // other workshops' jobs (stored under that workshop).
+            listRange: ({ start_date, end_date, scope }) => {
+                const q = new URLSearchParams({ start_date, end_date, limit: '5000', ...(scope ? { scope } : {}) });
                 return this.request(`/time-entries?${q.toString()}`);
             },
             filter: (filter) => {
@@ -284,7 +286,7 @@ class APIClient {
             list: () => this.request('/job-reports'),
             listForJob: (jobNumber) => this.request(`/job-reports?job_id=${encodeURIComponent(jobNumber)}`),
             // Every report in a date range (yyyy-MM-dd, inclusive), not just the latest 200.
-            listRange: ({ start_date, end_date }) => this.request(`/job-reports?${new URLSearchParams({ start_date, end_date }).toString()}`),
+            listRange: ({ start_date, end_date, scope }) => this.request(`/job-reports?${new URLSearchParams({ start_date, end_date, ...(scope ? { scope } : {}) }).toString()}`),
             create: (data) => this.request('/job-reports', {
                 method: 'POST',
                 body: JSON.stringify(data)

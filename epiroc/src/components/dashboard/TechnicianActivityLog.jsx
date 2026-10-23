@@ -4,7 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ClipboardList, Search } from 'lucide-react';
+import { ClipboardList, Search, FileText } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { nonJobNote, openTechnicianReport } from '@/utils/technicianReport';
 
 // Per-technician daily activity feed: what each technician booked (job or idle
 // category), for how long, what note/bottleneck they logged, and how that stacks
@@ -15,7 +17,9 @@ export default function TechnicianActivityLog({
     jobs = [],
     jobReports = [],
     kpiData = {},
-    periodLabel = ''
+    periodLabel = '',
+    periodRange = null,
+    workshop = ''
 }) {
     const [search, setSearch] = React.useState('');
 
@@ -27,21 +31,40 @@ export default function TechnicianActivityLog({
         return map;
     }, [jobs]);
 
-    // Job work entries don't carry their own note - the note comes from the
-    // JobReport a technician optionally submits alongside that day's log for
-    // that job. Index reports by technician+job+date so we can join them.
-    const reportIndex = React.useMemo(() => {
-        const map = new Map();
+    // Job work entries don't carry their own note - it comes from the JobReport(s)
+    // submitted with that entry. Reports are matched to the exact entry they were filed
+    // with (daily_time_entry_id), falling back to technician+job+date for older reports
+    // whose entry link no longer exists. Every report is kept, not just the first.
+    const { reportsByEntryId, reportIndex } = React.useMemo(() => {
+        const byEntry = new Map();
+        const byKey = new Map();
         for (const r of jobReports) {
+            const entryId = r?.daily_time_entry_id ? String(r.daily_time_entry_id) : '';
+            if (entryId) {
+                if (!byEntry.has(entryId)) byEntry.set(entryId, []);
+                byEntry.get(entryId).push(r);
+            }
             const dateKey = r?.date ? new Date(r.date).toISOString().slice(0, 10) : '';
             const jobKey = String(r?.job_number || r?.job_id || '');
             const techKey = String(r?.technician_id ?? '');
             const key = `${techKey}|${jobKey}|${dateKey}`;
-            if (!map.has(key)) map.set(key, []);
-            map.get(key).push(r);
+            if (!byKey.has(key)) byKey.set(key, []);
+            byKey.get(key).push(r);
         }
-        return map;
+        return { reportsByEntryId: byEntry, reportIndex: byKey };
     }, [jobReports]);
+
+    const reportsFor = React.useCallback((e) => {
+        if (!e || e.is_idle) return [];
+        const linked = reportsByEntryId.get(String(e.id || e._id || ''));
+        if (linked?.length) return linked;
+        const techId = String(e.technician_id?._id || e.technician_id || '');
+        const dateKey = e.log_date ? new Date(e.log_date).toISOString().slice(0, 10) : '';
+        // Fallback only for reports with no entry link (older data), so a report that
+        // belongs to a different entry the same day isn't shown twice.
+        return (reportIndex.get(`${techId}|${String(e.job_id || '')}|${dateKey}`) || [])
+            .filter((r) => !r?.daily_time_entry_id);
+    }, [reportsByEntryId, reportIndex]);
 
     const entriesByTechnician = React.useMemo(() => {
         const map = new Map();
@@ -70,16 +93,18 @@ export default function TechnicianActivityLog({
                         let bottleneck = null;
 
                         if (e.is_idle) {
-                            note = e.category_note || '';
+                            note = nonJobNote(e);
                         } else {
-                            const key = `${id}|${String(e.job_id || '')}|${dateKey}`;
-                            const report = (reportIndex.get(key) || [])[0];
-                            note = report?.work_completed || '';
-                            bottleneck = report?.has_bottleneck ? (report.bottleneck_description || 'Bottleneck reported') : null;
+                            const reports = reportsFor(e);
+                            note = reports.map((r) => String(r.work_completed || '').trim()).filter(Boolean).join('\n');
+                            const issues = reports.filter((r) => r.has_bottleneck);
+                            bottleneck = issues.length
+                                ? issues.map((r) => r.bottleneck_description || 'Bottleneck reported').join('; ')
+                                : null;
                         }
 
                         const job = !e.is_idle ? jobByNumber[String(e.job_id || '')] : null;
-                        return { ...e, dateKey, note, bottleneck, jobDescription: job?.description || '' };
+                        return { ...e, dateKey, note, bottleneck, jobDescription: job?.description || e.job_description || '' };
                     });
 
                 // "Booked" means hours booked on jobs specifically - idle time is a
@@ -112,7 +137,7 @@ export default function TechnicianActivityLog({
                 return { tech, id, entries, dayGroups, bookedHours, idleHours, totalLoggedHours, availableHours, remainingHours };
             })
             .sort((a, b) => b.bookedHours - a.bookedHours || String(a.tech.name || '').localeCompare(String(b.tech.name || '')));
-    }, [technicians, entriesByTechnician, reportIndex, jobByNumber, kpiData, search]);
+    }, [technicians, entriesByTechnician, reportsFor, jobByNumber, kpiData, search]);
 
     return (
         <Card className="border-0 shadow-lg bg-white/95">
@@ -183,6 +208,26 @@ export default function TechnicianActivityLog({
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent>
+                                    <div className="flex justify-end pb-3">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 gap-1.5 text-xs"
+                                            onClick={() => openTechnicianReport({
+                                                technician: r.tech,
+                                                workshop,
+                                                periodLabel,
+                                                periodRange,
+                                                entries: r.entries,
+                                                reportsFor,
+                                                jobByNumber,
+                                                kpi: kpiData[r.id]
+                                            })}
+                                        >
+                                            <FileText className="w-3.5 h-3.5" />
+                                            PDF Report ({periodLabel})
+                                        </Button>
+                                    </div>
                                     {r.entries.length === 0 ? (
                                         <p className="text-sm text-slate-400 py-4">No activity logged for this period.</p>
                                     ) : (
@@ -242,7 +287,7 @@ export default function TechnicianActivityLog({
                                                                             {e.bottleneck && (
                                                                                 <div className="text-red-600 text-xs font-medium mb-0.5">⚠ {e.bottleneck}</div>
                                                                             )}
-                                                                            {e.note || <span className="text-slate-300">—</span>}
+                                                                            {e.note ? <span className="whitespace-pre-wrap">{e.note}</span> : <span className="text-slate-300">—</span>}
                                                                         </div>
                                                                     ))}
                                                                 </div>

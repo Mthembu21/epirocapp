@@ -1111,6 +1111,24 @@ export default function Dashboard() {
     const timeLogsForMonth = (Array.isArray(periodTimeLogs) ? periodTimeLogs : (timeLogs || [])).filter(isLogInSelectedPeriod);
     const jobReportsForPeriod = Array.isArray(periodJobReports) ? periodJobReports : (jobReports || []);
 
+    // Technician Activities (and its PDF report) shows everything this workshop's own
+    // technicians booked, including hours on other workshops' jobs, which are stored
+    // under that workshop and missed by the workshop-only lists above. Read-only view,
+    // so it doesn't affect the editable Time Logs tab or approvals.
+    const { data: activityTimeLogs } = useQuery({
+        queryKey: ['timeLogs', 'activity', periodRange.start_date, periodRange.end_date],
+        queryFn: () => base44.entities.DailyTimeEntry.listRange({ ...periodRange, scope: 'own_technicians' }),
+        enabled: isAuthenticated,
+        refetchInterval: isAuthenticated ? 60000 : false
+    });
+    const { data: activityJobReports } = useQuery({
+        queryKey: ['jobReports', 'activity', periodRange.start_date, periodRange.end_date],
+        queryFn: () => base44.entities.JobReport.listRange({ ...periodRange, scope: 'own_technicians' }),
+        enabled: isAuthenticated
+    });
+    const activityLogsForPeriod = Array.isArray(activityTimeLogs) ? activityTimeLogs.filter(isLogInSelectedPeriod) : timeLogsForMonth;
+    const activityReportsForPeriod = Array.isArray(activityJobReports) ? activityJobReports : jobReportsForPeriod;
+
     // Exports fetch the period fresh at click time so they never use a stale list.
     const loadTimeLogsForPeriod = async () => {
         const logs = await base44.entities.DailyTimeEntry.listRange(periodRange);
@@ -2810,11 +2828,13 @@ onClick={() => {
                     <TabsContent value="activities" className="mt-6">
                         <TechnicianActivityLog
                             technicians={technicians}
-                            timeLogs={timeLogsForMonth}
+                            timeLogs={activityLogsForPeriod}
                             jobs={jobs}
-                            jobReports={jobReportsForPeriod}
+                            jobReports={activityReportsForPeriod}
                             kpiData={techKpiData}
                             periodLabel={periodLabel}
+                            periodRange={{ start: periodStartStr, end: periodEndStr }}
+                            workshop={dashboardLabel.replace(/ DASHBOARD$/, '')}
                         />
                     </TabsContent>
 
