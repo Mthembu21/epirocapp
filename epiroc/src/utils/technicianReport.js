@@ -40,6 +40,7 @@ export const nonJobNote = (e) => (e?.category === 'Idle'
     : String(e?.category_detail || e?.category_note || '')).trim();
 
 export const nonJobLabel = (e) => {
+    if (e?.category === 'Daily Allocation') return 'Daily Allocation – Meetings & Breaks';
     if (e?.category === 'Idle') return `Idle${e.category_detail ? ` – ${e.category_detail}` : ''}`;
     return e?.category || 'Idle';
 };
@@ -78,7 +79,8 @@ export function buildTechnicianReportHtml({ technician, workshop, periodLabel, p
         }).join('');
     };
 
-    const logRows = rows.map((e) => {
+    // The automatic daily allocation is summarised under "Other time", not repeated daily.
+    const logRows = rows.filter((e) => !e.system_generated).map((e) => {
         const hoursCell = `${h(effectiveHours(e))}${Number(e.overtime_hours || 0) > 0 ? `<div class="tag ot">${h(e.overtime_hours)} OT</div>` : ''}${
             e.approval_status === 'pending' ? '<div class="tag">pending</div>' : ''}`;
         if (e.is_idle) {
@@ -223,7 +225,7 @@ export function buildTechnicianReportHtml({ technician, workshop, periodLabel, p
     <div><div class="k">Overtime · Issues</div><div class="v">${h(overtime)}</div><div class="s">${issueCount} issue${issueCount === 1 ? '' : 's'} reported</div></div>
   </div>
 
-  <h2>Daily Activity <span class="count">(${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} over ${daysBooked} day${daysBooked === 1 ? '' : 's'})</span></h2>
+  <h2>Daily Activity <span class="count">(${rows.filter((e) => !e.system_generated).length} ${rows.filter((e) => !e.system_generated).length === 1 ? 'entry' : 'entries'} over ${daysBooked} day${daysBooked === 1 ? '' : 's'})</span></h2>
   ${rows.length ? `
   <table>
     <thead><tr>

@@ -3042,6 +3042,14 @@ onClick={() => {
                                                                     <Save className="w-4 h-4" />
                                                                 </Button>
                                                             </div>
+                                                        ) : log.system_generated ? (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="text-xs text-slate-500"
+                                                                title="Added automatically for each day the technician books time"
+                                                            >
+                                                                Automatic
+                                                            </Badge>
                                                         ) : (
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <Button

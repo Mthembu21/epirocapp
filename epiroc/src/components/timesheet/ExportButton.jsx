@@ -19,6 +19,7 @@ const isNonProductiveEntry = (entry) => {
 // Housekeeping is logged as category 'Idle' with sub-reason 'Housekeeping'
 // (or as the legacy 'Housekeeping' category), so surface it as its own type.
 const getNonProductiveType = (entry) => {
+    if (entry.category === 'Daily Allocation') return 'Daily Allocation – Meetings & Breaks';
     if (entry.category === 'Idle') {
         return entry.category_detail === 'Housekeeping' ? 'Housekeeping' : 'Idle';
     }

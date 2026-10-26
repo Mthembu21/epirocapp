@@ -41,6 +41,9 @@ export default function HRExportButton({ timeEntries, technicians, loadEntries }
         let entries = timeEntries || [];
         try {
             if (loadEntries) entries = await loadEntries();
+            // The automatic daily allocation (meetings & breaks) belongs in non-productive
+            // reporting only, not in attendance/payroll hours.
+            entries = (entries || []).filter((e) => !e.system_generated);
         } catch (e) {
             alert(`Could not load all time entries for this period: ${e?.message || 'Unknown error'}`);
             setIsExporting(false);

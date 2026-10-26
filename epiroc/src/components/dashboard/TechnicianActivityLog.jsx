@@ -123,7 +123,8 @@ export default function TechnicianActivityLog({
                 // several jobs) the same day gets a single grouped row instead of the
                 // date repeating once per entry.
                 const dayMap = new Map();
-                for (const e of entries) {
+                // The automatic daily allocation is in the totals above, not listed per day.
+                for (const e of entries.filter((x) => !x.system_generated)) {
                     const key = e.dateKey || 'unknown';
                     if (!dayMap.has(key)) {
                         dayMap.set(key, { dateKey: key, log_date: e.log_date, entries: [], totalHours: 0 });
