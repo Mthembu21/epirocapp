@@ -2745,6 +2745,7 @@ onClick={() => {
                             <TechnicianPerformance
                                 technicians={technicians}
                                 kpiData={techKpiData}
+                                isLoading={operationalMetrics === null && lastOperationalMetrics === null}
                             />
                             
                             {/* Daily Productivity Chart */}

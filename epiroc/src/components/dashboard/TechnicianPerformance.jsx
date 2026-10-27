@@ -38,7 +38,7 @@ const getPerformanceCategory = (efficiency, techKPI = {}) => {
     return { label: 'Needs Improvement', color: 'bg-red-100 text-red-700' };
 };
 
-export default function TechnicianPerformance({ technicians = [], kpiData = {} }) {
+export default function TechnicianPerformance({ technicians = [], kpiData = {}, isLoading = false }) {
     // Component expects kpiData from backend with pre-calculated KPIs
     // Do not calculate KPIs in frontend - all calculations must come from backend
 
@@ -88,7 +88,15 @@ export default function TechnicianPerformance({ technicians = [], kpiData = {} }
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {performanceData.map((tech) => (
+                            {/* While the selected period's KPIs load, say so rather than
+                                showing every technician at 0.0h / Needs Improvement. */}
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={11} className="py-10 text-center text-slate-400">
+                                        Loading performance figures for this period…
+                                    </TableCell>
+                                </TableRow>
+                            ) : performanceData.map((tech) => (
                                 <TableRow key={tech.id}>
                                     <TableCell>
                                         <div>

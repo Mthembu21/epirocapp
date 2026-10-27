@@ -33,10 +33,14 @@ export default function OperationalMetricsFetcher({
   supervisorKey,
   refreshKey = 0,
 }) {
-  // Ref guard: prevents concurrent fetches without triggering re-renders
-  // (using useState here would cause an infinite loop — state change → re-render
-  //  → effect re-runs → fetch starts again).
-  const isFetchingRef = useRef(false);
+  // Latest-request guard. Every dependency change (e.g. switching the time view) starts
+  // a fresh fetch; only the most recent one may update the dashboard, so a slower
+  // response for a previous view can't overwrite the current one. This replaces an
+  // "already in flight — skip" guard, which dropped the fetch for a newly selected view
+  // whenever an earlier fetch was still running, leaving the Technician Performance
+  // table empty (all zeros) or showing the previous period.
+  // A ref, not state: changing it must not trigger a re-render / re-fetch.
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -46,12 +50,8 @@ export default function OperationalMetricsFetcher({
         console.warn('[KPI Fetcher] technicians list is empty — fetch skipped');
         return;
       }
-      if (isFetchingRef.current) {
-        console.warn('[KPI Fetcher] fetch already in flight — skipped');
-        return;
-      }
-
-      isFetchingRef.current = true;
+      const requestId = ++requestIdRef.current;
+      const isLatest = () => requestId === requestIdRef.current;
 
       // ── Build date range from current time view ─────────────────────────────
       const today = new Date();
@@ -98,6 +98,10 @@ export default function OperationalMetricsFetcher({
       try {
         // ── API call ─────────────────────────────────────────────────────────
         const apiResponse = await base44.entities.KPI.dashboardOverview(supervisorKey, filters);
+        if (!isLatest()) {
+          console.info('[KPI Fetcher] Ignoring response for a superseded request', { timeView, filters });
+          return;
+        }
         console.log('[KPI TRACE] OperationalMetricsFetcher — API response:', apiResponse);
 
         // ── Centralized normalization (single place for shape logic) ──────────
@@ -130,8 +134,6 @@ export default function OperationalMetricsFetcher({
 
       } catch (error) {
         console.error('[KPI Fetcher] Fetch failed:', error, { supervisorKey, timeView, filters });
-      } finally {
-        isFetchingRef.current = false;
       }
     };
 
